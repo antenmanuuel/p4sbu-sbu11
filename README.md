@@ -1,4 +1,4 @@
-P4SBU - Stony Brook Parking Management System
+P4SBU - Stony Brook University Parking Management System
 
 CSE 416 Section - Professor Abid Malik
 
