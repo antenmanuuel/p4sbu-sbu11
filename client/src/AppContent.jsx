@@ -8,6 +8,8 @@ import Register from './pages/Register.jsx';
 import AboutUs from './pages/AboutUs.jsx';
 import ContactUs from './pages/ContactUs.jsx';
 import UnderConstruction from './pages/UnderConstruction.jsx';
+import Profile from './pages/Profile.jsx';
+import Settings from './pages/Settings.jsx';
 
 // Protected route component
 const ProtectedRoute = ({ isAuthenticated, children, requiredUserType, user }) => {
@@ -201,6 +203,46 @@ const AppContent = () => {
               </main>
               <Footer darkMode={darkMode} />
             </>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <Profile darkMode={darkMode} user={user} />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <Settings darkMode={darkMode} user={user} />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
