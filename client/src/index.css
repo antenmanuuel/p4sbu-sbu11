@@ -1,0 +1,67 @@
+@import "tailwindcss";
+/* Add these toggle switch styles at the end of the file */
+
+/* Toggle Switch Styles */
+input:checked ~ .dot {
+  transform: translateX(100%);
+}
+
+input:checked ~ .block {
+  background-color: #dc2626; /* Tailwind's red-600 */
+}
+
+.dot {
+  transition: transform 0.3s ease-in-out;
+}
+
+/* Base Tailwind imports - using correct syntax for the project's version */
+
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    @apply h-full;
+  }
+}
+
+@layer components {
+  /* Z-index layers to ensure proper stacking of components */
+  .z-map-base {
+    z-index: 0;
+  }
+  
+  .z-map-overlay {
+    z-index: 10;
+  }
+  
+  .z-ui-base {
+    z-index: 20;
+  }
+  
+  .z-modal {
+    z-index: 30;
+  }
+  
+  .z-navbar {
+    z-index: 50;
+  }
+  
+  .z-dropdown {
+    z-index: 60;
+  }
+  
+  .z-tooltip {
+    z-index: 70;
+  }
+}
+
+/* Leaftlet adjustments for proper stacking */
+.leaflet-container {
+  z-index: 40 !important;
+}
+
+.leaflet-control,
+.leaflet-marker-pane,
+.leaflet-popup-pane {
+  z-index: 45 !important;
+}
