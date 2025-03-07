@@ -12,7 +12,7 @@ import Profile from './pages/Profile.jsx';
 import Settings from './pages/Settings.jsx';
 import FacultyDashboard from './pages/FacultyDashboard.jsx';
 import StudentDashboard from './pages/StudentDashboard.jsx';
-import AdminDashboard from './pages/AdminDashboard.jsx';
+import AdminDashboard from './pages/admin/AdminDashboard.jsx';
 
 // Protected route component
 const ProtectedRoute = ({ isAuthenticated, children, requiredUserType, user }) => {
