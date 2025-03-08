@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router";
 
-const FacultyDashboard = ({ isAuthenticated }) => {
+const FacultyDashboard = ({ isAuthenticated, darkMode }) => {
   const navigate = useNavigate();
 
   if (!isAuthenticated) {
@@ -18,7 +18,7 @@ const FacultyDashboard = ({ isAuthenticated }) => {
   ];
 
   const billingHistory = [
-    { date: "2024-03-01", description: "Spring 2024 Parking Permit", amount: "$135", status: "Paid" },
+    { date: "2024-01-10", description: "Semester Parking Permit", amount: "$125", status: "Paid" },
   ];
 
   const getStatusClass = (status) => {
@@ -39,37 +39,37 @@ const FacultyDashboard = ({ isAuthenticated }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Faculty Dashboard</h1>
+    <div className={`min-h-screen p-6 ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
+      <h1 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Faculty Dashboard</h1>
 
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow">
-          <p className="text-gray-600 text-sm font-medium">Active Permits</p>
-          <p className="text-2xl font-bold mt-1">{activePermits.length}</p>
+        <div className={`p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
+          <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Active Permits</p>
+          <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{activePermits.length}</p>
         </div>
-        <div className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow">
-          <p className="text-gray-600 text-sm font-medium">Citations</p>
-          <p className="text-2xl font-bold mt-1">{citations.length}</p>
+        <div className={`p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
+          <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Citations</p>
+          <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{citations.length}</p>
         </div>
-        <div className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow">
-          <p className="text-gray-600 text-sm font-medium">Outstanding Balance</p>
-          <p className="text-2xl font-bold mt-1">$50.00</p>
+        <div className={`p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
+          <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Outstanding Balance</p>
+          <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>$50.00</p>
         </div>
       </div>
 
       {/* Active Permits */}
-      <div className="mt-6 bg-white p-6 shadow-sm rounded-lg border border-gray-100">
-        <h2 className="text-xl font-semibold mb-4 text-gray-800">Active Permits</h2>
+      <div className={`mt-6 p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
+        <h2 className={`text-xl font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Active Permits</h2>
         {activePermits.length === 0 ? (
-          <p className="text-gray-500">You don't have any active permits.</p>
+          <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any active permits.</p>
         ) : (
           activePermits.map((permit, index) => (
-            <div key={index} className="mb-4 p-4 border border-gray-100 rounded-lg bg-gray-50">
+            <div key={index} className={`mb-4 p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
               <div className="flex justify-between items-center">
                 <div>
-                  <p className="font-medium">{permit.type} - {permit.lot}</p>
-                  <p className="text-sm text-gray-600">Valid Until: {permit.validUntil}</p>
+                  <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-800'}`}>{permit.type} - {permit.lot}</p>
+                  <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Valid Until: {permit.validUntil}</p>
                 </div>
                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusClass(permit.status)}`}>
                   {permit.status}
@@ -81,23 +81,28 @@ const FacultyDashboard = ({ isAuthenticated }) => {
       </div>
 
       {/* Citations */}
-      <div className="mt-6 bg-white p-6 shadow-sm rounded-lg border border-gray-100">
-        <h2 className="text-xl font-semibold mb-4 text-gray-800">Citations</h2>
+      <div className={`mt-6 p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
+        <h2 className={`text-xl font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Citations</h2>
         {citations.length === 0 ? (
-          <p className="text-gray-500">You don't have any citations.</p>
+          <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any citations.</p>
         ) : (
           <div className="space-y-4">
             {citations.map((citation, index) => (
-              <div key={index} className="p-4 border border-gray-100 rounded-lg bg-gray-50">
+              <div key={index} className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}>
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="font-medium">{citation.violation}</p>
-                    <p className="text-sm text-gray-600">Date: {citation.date}</p>
-                    <p className="font-medium text-gray-900 mt-2">{citation.amount}</p>
+                    <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-800'}`}>{citation.violation}</p>
+                    <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Date: {citation.date}</p>
+                    <p className={`font-medium mt-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{citation.amount}</p>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusClass(citation.status)}`}>
                     {citation.status}
                   </span>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-medium">
+                    Pay Now
+                  </button>
                 </div>
               </div>
             ))}
@@ -106,28 +111,28 @@ const FacultyDashboard = ({ isAuthenticated }) => {
       </div>
 
       {/* Billing History */}
-      <div className="mt-6 bg-white p-6 shadow-sm rounded-lg border border-gray-100">
-        <h2 className="text-xl font-semibold mb-4 text-gray-800">Billing History</h2>
+      <div className={`mt-6 p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
+        <h2 className={`text-xl font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Billing History</h2>
         {billingHistory.length === 0 ? (
-          <p className="text-gray-500">You don't have any billing history.</p>
+          <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any billing history.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
-              <thead>
+              <thead className={darkMode ? 'bg-gray-700' : 'bg-gray-50'}>
                 <tr>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Date</th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Description</th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Amount</th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Status</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className={`divide-y ${darkMode ? 'bg-gray-800 divide-gray-700' : 'bg-white divide-gray-200'}`}>
                 {billingHistory.map((bill, index) => (
-                  <tr key={index}>
-                    <td className="px-6 py-4 whitespace-nowrap">{bill.date}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">{bill.description}</td>
-                    <td className="px-6 py-4 whitespace-nowrap font-medium">{bill.amount}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                  <tr key={index} className={darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}>
+                    <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-white' : 'text-gray-800'}`}>{bill.date}</td>
+                    <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-white' : 'text-gray-800'}`}>{bill.description}</td>
+                    <td className={`px-6 py-4 whitespace-nowrap font-medium ${darkMode ? 'text-white' : 'text-gray-800'}`}>{bill.amount}</td>
+                    <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-white' : 'text-gray-800'}`}>
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusClass(bill.status)}`}>
                         {bill.status}
                       </span>
