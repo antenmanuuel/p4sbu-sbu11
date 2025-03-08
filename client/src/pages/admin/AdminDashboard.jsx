@@ -399,13 +399,6 @@ const AdminDashboard = ({ isAuthenticated }) => {
             <div className="mt-6 bg-white p-6 shadow-sm rounded-lg border border-gray-100">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-xl font-semibold text-gray-800">Pending Approvals</h2>
-                    <button
-                        onClick={goToManageUsers}
-                        className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
-                    >
-                        <FaUserCog className="mr-2" />
-                        Manage Users
-                    </button>
                 </div>
                 {pendingUsers.length === 0 ? (
                     <p className="text-gray-500">There are no pending approvals.</p>
