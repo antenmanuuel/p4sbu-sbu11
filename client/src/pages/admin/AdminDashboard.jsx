@@ -4,6 +4,9 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
 } from 'recharts';
+import { FaUsers, FaUserCog, FaParking, FaMapMarkerAlt } from 'react-icons/fa';
+import { mockUsers } from '../../utils/mockUserData';
+import { getActivePermitsCount, getLotsWithActivePermitsCount } from '../../utils/mockPermitData';
 
 const AdminDashboard = ({ isAuthenticated }) => {
     const navigate = useNavigate();
@@ -11,6 +14,10 @@ const AdminDashboard = ({ isAuthenticated }) => {
     if (!isAuthenticated) {
         navigate('/');
     }
+
+    // Get counts from mock data
+    const activePermitsCount = getActivePermitsCount();
+    const lotsWithPermitsCount = getLotsWithActivePermitsCount();
 
     const revenueData = [
         { month: "Jan", value: 38186, permits: 28500, citations: 6450, other: 3236 },
@@ -103,15 +110,41 @@ const AdminDashboard = ({ isAuthenticated }) => {
         return null;
     };
 
+    // Add function to navigate to Manage Users page
+    const goToManageUsers = () => {
+        navigate('/manage-users');
+    };
+
+    // Add function to navigate to Manage Permits page
+    const goToManagePermits = () => {
+        navigate('/manage-permits');
+    };
+
+    // Add function to navigate to Manage Lots page
+    const goToManageLots = () => {
+        navigate('/manage-lots');
+    };
+
     return (
         <div className="min-h-screen bg-gray-50 p-6">
             <h1 className="text-2xl font-bold text-gray-900 mb-6">Admin Dashboard</h1>
 
             {/* Stats Overview */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow">
-                    <p className="text-gray-600 text-sm font-medium">Total Users</p>
-                    <p className="text-2xl font-bold mt-1">0</p>
+                <div
+                    onClick={goToManageUsers}
+                    className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow cursor-pointer"
+                >
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-gray-600 text-sm font-medium">Total Users</p>
+                            <p className="text-2xl font-bold mt-1">{mockUsers.length}</p>
+                            <p className="text-xs text-blue-600 mt-1">Click to view all users</p>
+                        </div>
+                        <div className="bg-blue-50 rounded-full p-2">
+                            <FaUsers className="h-5 w-5 text-blue-500" />
+                        </div>
+                    </div>
                 </div>
                 <div className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow">
                     <div className="flex justify-between items-start">
@@ -130,13 +163,35 @@ const AdminDashboard = ({ isAuthenticated }) => {
                         </div>
                     </div>
                 </div>
-                <div className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow">
-                    <p className="text-gray-600 text-sm font-medium">Active Permits</p>
-                    <p className="text-2xl font-bold mt-1">0</p>
+                <div
+                    onClick={goToManagePermits}
+                    className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow cursor-pointer"
+                >
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-gray-600 text-sm font-medium">Active Permits</p>
+                            <p className="text-2xl font-bold mt-1">{activePermitsCount}</p>
+                            <p className="text-xs text-blue-600 mt-1">Click to manage permits</p>
+                        </div>
+                        <div className="bg-green-50 rounded-full p-2">
+                            <FaParking className="h-5 w-5 text-green-500" />
+                        </div>
+                    </div>
                 </div>
-                <div className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow">
-                    <p className="text-gray-600 text-sm font-medium">Total Lots</p>
-                    <p className="text-2xl font-bold mt-1">0</p>
+                <div
+                    onClick={goToManageLots}
+                    className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow cursor-pointer"
+                >
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-gray-600 text-sm font-medium">Total Lots</p>
+                            <p className="text-2xl font-bold mt-1">{lotsWithPermitsCount}</p>
+                            <p className="text-xs text-blue-600 mt-1">Click to manage lots</p>
+                        </div>
+                        <div className="bg-red-50 rounded-full p-2">
+                            <FaMapMarkerAlt className="h-5 w-5 text-red-500" />
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -342,7 +397,16 @@ const AdminDashboard = ({ isAuthenticated }) => {
 
             {/* Pending Approvals */}
             <div className="mt-6 bg-white p-6 shadow-sm rounded-lg border border-gray-100">
-                <h2 className="text-xl font-semibold mb-4 text-gray-800">Pending Approvals</h2>
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-semibold text-gray-800">Pending Approvals</h2>
+                    <button
+                        onClick={goToManageUsers}
+                        className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                    >
+                        <FaUserCog className="mr-2" />
+                        Manage Users
+                    </button>
+                </div>
                 {pendingUsers.length === 0 ? (
                     <p className="text-gray-500">There are no pending approvals.</p>
                 ) : (
