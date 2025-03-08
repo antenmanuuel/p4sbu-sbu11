@@ -15,7 +15,9 @@ const Login = ({ darkMode, login }) => {
   const location = useLocation();
 
   // Check if user was redirected from another page
-  const from = location.state?.from?.pathname || '/dashboard';
+  const from = location.state?.from?.pathname || location.state?.from || '/dashboard';
+  // Check if the user was redirected with a pending reservation
+  const reservationPending = location.state?.reservationPending || false;
 
   // Validate a single field
   const validateField = (name, value) => {
@@ -166,6 +168,15 @@ const Login = ({ darkMode, login }) => {
               register for a new account
             </Link>
           </p>
+
+          {/* Show message if user was redirected from a reservation */}
+          {reservationPending && (
+            <div className="mt-4 p-3 bg-blue-50 text-blue-800 rounded-lg">
+              <p className="text-sm font-medium">
+                Please log in to complete your parking reservation. Your selection will be maintained.
+              </p>
+            </div>
+          )}
         </div>
 
         {loginError && (

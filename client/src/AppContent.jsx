@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar.jsx';
 import Home from './pages/Home.jsx';
 import Login from './pages/Login.jsx';
@@ -13,7 +13,10 @@ import Settings from './pages/Settings.jsx';
 import FacultyDashboard from './pages/FacultyDashboard.jsx';
 import StudentDashboard from './pages/StudentDashboard.jsx';
 import AdminDashboard from './pages/admin/AdminDashboard.jsx';
-
+import ManageUsers from './pages/admin/ManageUsers.jsx';
+import ManagePermits from './pages/admin/ManagePermits.jsx';
+import ManageLots from './pages/admin/ManageLots.jsx';
+import FindParking from './pages/FindParking.jsx';
 // Protected route component
 const ProtectedRoute = ({ isAuthenticated, children, requiredUserType, user }) => {
   const location = useLocation();
@@ -35,7 +38,6 @@ const AppContent = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
-  const navigate = useNavigate();
 
   const login = (email, password) => {
 
@@ -154,7 +156,34 @@ const AppContent = () => {
               <Footer darkMode={darkMode} />
             </>
           }
-        />        
+        />
+        <Route
+          path="/find-parking"
+          element={
+            <>
+              {user?.userType === 'admin' ? (
+                <Navigate to="/" replace />
+              ) : (
+                <>
+                  <Navbar
+                    darkMode={darkMode}
+                    setDarkMode={setDarkMode}
+                    isAuthenticated={isAuthenticated}
+                    user={user}
+                    logout={logout}
+                  />
+                  <main className="flex-grow">
+                    <FindParking
+                      darkMode={darkMode}
+                      isAuthenticated={isAuthenticated}
+                    />
+                  </main>
+                  <Footer darkMode={darkMode} />
+                </>
+              )}
+            </>
+          }
+        />
         <Route
           path="/under-construction"
           element={
@@ -195,69 +224,69 @@ const AppContent = () => {
           path="/faculty-dashboard"
           element={
             <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
-            <>
-              <Navbar
-                darkMode={darkMode}
-                setDarkMode={setDarkMode}
-                isAuthenticated={isAuthenticated}
-                user={user}
-                logout={logout}
-              />
-              <main className="flex-grow">
-                  <FacultyDashboard 
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <FacultyDashboard
                     darkMode={darkMode}
                     user={user}
                     isAuthenticated={isAuthenticated} />
                 </main>
-              <Footer darkMode={darkMode} />
-            </>
-          </ProtectedRoute>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
           }
         />
         <Route
           path="/dashboard"
           element={
             <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
-            <>
-              <Navbar
-                darkMode={darkMode}
-                setDarkMode={setDarkMode}
-                isAuthenticated={isAuthenticated}
-                user={user}
-                logout={logout}
-              />
-              <main className="flex-grow">
-                  <StudentDashboard 
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <StudentDashboard
                     darkMode={darkMode}
                     user={user}
                     isAuthenticated={isAuthenticated} />
                 </main>
-              <Footer darkMode={darkMode} />
-            </>
-          </ProtectedRoute>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
           }
         />
         <Route
           path="/admin-dashboard"
           element={
             <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
-            <>
-              <Navbar
-                darkMode={darkMode}
-                setDarkMode={setDarkMode}
-                isAuthenticated={isAuthenticated}
-                user={user}
-                logout={logout}
-              />
-              <main className="flex-grow">
-                  <AdminDashboard 
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <AdminDashboard
                     darkMode={darkMode}
                     user={user}
                     isAuthenticated={isAuthenticated} />
                 </main>
-              <Footer darkMode={darkMode} />
-            </>
-          </ProtectedRoute>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
           }
         />
         <Route
@@ -312,6 +341,75 @@ const AppContent = () => {
                 />
                 <main className="flex-grow">
                   <Settings darkMode={darkMode} user={user} />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/manage-users"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <ManageUsers
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/manage-permits"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <ManagePermits
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/manage-lots"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <ManageLots
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                  />
                 </main>
                 <Footer darkMode={darkMode} />
               </>
