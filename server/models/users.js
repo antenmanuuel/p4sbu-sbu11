@@ -10,38 +10,41 @@ const UserSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
-    netIDusername:{
-        type: String,
-        required: true
-    },
-    netIDpassword: {
-        type: String,
-        required: true
-    },
     email: {
         type: String,
         required: true,
         unique: true,
         match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
     },
+    sbuId: {
+        type: String,
+        required: true,
+        unique: true,
+        validate: {
+            validator: function (v) {
+                return /^\d{8}$/.test(v);  // Validates exactly 8 digits
+            },
+            message: props => `${props.value} is not a valid SBU ID. Must be exactly 8 digits.`
+        }
+    },
     password: {
         type: String,
         required: true,
         minlength: 8
     },
-    userType:{
+    userType: {
         type: String,
         enum: ['student', 'faculty', 'admin'],
         required: true
     },
-    isApproved:{
+    isApproved: {
         type: Boolean,
         default: false
     },
-    car:{
-        type:Schema.ObjectID,
-        required: function (){
-            return userType!=='admin';
+    car: {
+        type: Schema.ObjectID,
+        required: function () {
+            return userType !== 'admin';
         }
     }
 });
