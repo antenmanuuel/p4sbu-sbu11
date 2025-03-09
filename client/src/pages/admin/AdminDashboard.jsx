@@ -8,7 +8,7 @@ import { FaUsers, FaUserCog, FaParking, FaMapMarkerAlt } from 'react-icons/fa';
 import { mockUsers } from '../../utils/mockUserData';
 import { getActivePermitsCount, getLotsWithActivePermitsCount } from '../../utils/mockPermitData';
 
-const AdminDashboard = ({ isAuthenticated }) => {
+const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     const navigate = useNavigate();
 
     if (!isAuthenticated) {
@@ -126,37 +126,39 @@ const AdminDashboard = ({ isAuthenticated }) => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 p-6">
-            <h1 className="text-2xl font-bold text-gray-900 mb-6">Admin Dashboard</h1>
+        <div className={`min-h-screen p-6 ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
+            <h1 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Admin Dashboard</h1>
 
             {/* Stats Overview */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div
                     onClick={goToManageUsers}
-                    className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow cursor-pointer"
+                    className={`p-6 shadow-sm rounded-lg border hover:shadow-md transition-shadow cursor-pointer 
+                              ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}
                 >
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-gray-600 text-sm font-medium">Total Users</p>
+                            <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Total Users</p>
                             <p className="text-2xl font-bold mt-1">{mockUsers.length}</p>
                             <p className="text-xs text-blue-600 mt-1">Click to view all users</p>
                         </div>
-                        <div className="bg-blue-50 rounded-full p-2">
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-blue-900' : 'bg-blue-50'}`}>
                             <FaUsers className="h-5 w-5 text-blue-500" />
                         </div>
                     </div>
                 </div>
-                <div className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow">
+                <div className={`p-6 shadow-sm rounded-lg border hover:shadow-md transition-shadow
+                               ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-gray-600 text-sm font-medium">Revenue (Current Month)</p>
+                            <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Revenue (Current Month)</p>
                             <p className="text-2xl font-bold mt-1">{formatCurrency(revenue)}</p>
                             <div className={`flex items-center mt-1 text-xs font-medium ${revenueIncreased ? 'text-green-600' : 'text-red-600'}`}>
                                 <span>{revenueIncreased ? '↑' : '↓'} {revenueChange}%</span>
-                                <span className="ml-1 text-gray-500">vs last month</span>
+                                <span className={`ml-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>vs last month</span>
                             </div>
                         </div>
-                        <div className="bg-blue-50 rounded-full p-2">
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-blue-900' : 'bg-blue-50'}`}>
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
                                 <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
                             </svg>
@@ -165,30 +167,32 @@ const AdminDashboard = ({ isAuthenticated }) => {
                 </div>
                 <div
                     onClick={goToManagePermits}
-                    className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow cursor-pointer"
+                    className={`p-6 shadow-sm rounded-lg border hover:shadow-md transition-shadow cursor-pointer
+                              ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}
                 >
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-gray-600 text-sm font-medium">Active Permits</p>
+                            <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Active Permits</p>
                             <p className="text-2xl font-bold mt-1">{activePermitsCount}</p>
                             <p className="text-xs text-blue-600 mt-1">Click to manage permits</p>
                         </div>
-                        <div className="bg-green-50 rounded-full p-2">
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-green-900' : 'bg-green-50'}`}>
                             <FaParking className="h-5 w-5 text-green-500" />
                         </div>
                     </div>
                 </div>
                 <div
                     onClick={goToManageLots}
-                    className="bg-white p-6 shadow-sm rounded-lg border border-gray-100 hover:shadow-md transition-shadow cursor-pointer"
+                    className={`p-6 shadow-sm rounded-lg border hover:shadow-md transition-shadow cursor-pointer
+                              ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}
                 >
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-gray-600 text-sm font-medium">Total Lots</p>
+                            <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Total Lots</p>
                             <p className="text-2xl font-bold mt-1">{lotsWithPermitsCount}</p>
                             <p className="text-xs text-blue-600 mt-1">Click to manage lots</p>
                         </div>
-                        <div className="bg-red-50 rounded-full p-2">
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-red-900' : 'bg-red-50'}`}>
                             <FaMapMarkerAlt className="h-5 w-5 text-red-500" />
                         </div>
                     </div>
@@ -196,11 +200,11 @@ const AdminDashboard = ({ isAuthenticated }) => {
             </div>
 
             {/* Revenue Overview */}
-            <div className="mt-6 bg-white p-6 shadow-sm rounded-lg border border-gray-100">
+            <div className={`mt-6 p-6 shadow-sm rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                 <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-semibold text-gray-800">Revenue Overview</h2>
-                    <div className="text-sm font-medium text-gray-500">
-                        Year Total: <span className="text-gray-900">{formatCurrency(yearlyTotal)}</span>
+                    <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Revenue Overview</h2>
+                    <div className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Year Total: <span className={darkMode ? 'text-white' : 'text-gray-900'}>{formatCurrency(yearlyTotal)}</span>
                     </div>
                 </div>
 
@@ -310,53 +314,53 @@ const AdminDashboard = ({ isAuthenticated }) => {
                 </div>
 
                 {/* Text-based Revenue Breakdown */}
-                <div className="mt-4 p-4 border border-gray-100 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-600 mb-3">Detailed Revenue Breakdown (Current Month: {currentMonth.month})</h3>
+                <div className={`mt-4 p-4 border rounded-lg ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                    <h3 className={`text-sm font-medium mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Detailed Revenue Breakdown (Current Month: {currentMonth.month})</h3>
 
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
-                            <thead>
+                            <thead className={darkMode ? 'bg-gray-700' : 'bg-gray-50'}>
                                 <tr>
-                                    <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue Source</th>
-                                    <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                                    <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Revenue Source</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Amount</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Percentage</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                            <tbody className={`${darkMode ? 'bg-gray-800 divide-y divide-gray-700' : 'bg-white divide-y divide-gray-200'}`}>
                                 <tr>
-                                    <td className="px-6 py-4 whitespace-nowrap font-medium">
+                                    <td className={`px-6 py-4 whitespace-nowrap font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                                         <div className="flex items-center">
                                             <div className="w-3 h-3 rounded bg-green-500 mr-2"></div>
                                             <span>Parking Permits</span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">{formatCurrency(currentMonth.permits)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap">{permitPercentage}%</td>
+                                    <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(currentMonth.permits)}</td>
+                                    <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-white' : 'text-gray-900'}`}>{permitPercentage}%</td>
                                 </tr>
                                 <tr>
-                                    <td className="px-6 py-4 whitespace-nowrap font-medium">
+                                    <td className={`px-6 py-4 whitespace-nowrap font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                                         <div className="flex items-center">
                                             <div className="w-3 h-3 rounded bg-red-500 mr-2"></div>
                                             <span>Citations</span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">{formatCurrency(currentMonth.citations)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap">{citationPercentage}%</td>
+                                    <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(currentMonth.citations)}</td>
+                                    <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-white' : 'text-gray-900'}`}>{citationPercentage}%</td>
                                 </tr>
                                 <tr>
-                                    <td className="px-6 py-4 whitespace-nowrap font-medium">
+                                    <td className={`px-6 py-4 whitespace-nowrap font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                                         <div className="flex items-center">
                                             <div className="w-3 h-3 rounded bg-blue-500 mr-2"></div>
                                             <span>Other Revenue</span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">{formatCurrency(currentMonth.other)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap">{otherPercentage}%</td>
+                                    <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(currentMonth.other)}</td>
+                                    <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-white' : 'text-gray-900'}`}>{otherPercentage}%</td>
                                 </tr>
-                                <tr className="bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap font-bold">Total Revenue</td>
-                                    <td className="px-6 py-4 whitespace-nowrap font-bold">{formatCurrency(currentMonth.value)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap font-bold">100%</td>
+                                <tr className={darkMode ? 'bg-gray-700' : 'bg-gray-50'}>
+                                    <td className={`px-6 py-4 whitespace-nowrap font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Total Revenue</td>
+                                    <td className={`px-6 py-4 whitespace-nowrap font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(currentMonth.value)}</td>
+                                    <td className={`px-6 py-4 whitespace-nowrap font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>100%</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -364,27 +368,27 @@ const AdminDashboard = ({ isAuthenticated }) => {
 
                     {/* Year-to-Date Summary */}
                     <div className="mt-6">
-                        <h3 className="text-sm font-medium text-gray-600 mb-3">Year-to-Date Summary</h3>
-                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+                        <h3 className={`text-sm font-medium mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Year-to-Date Summary</h3>
+                        <div className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <div className="flex justify-between items-center mb-2">
-                                        <span className="text-gray-600">Total Revenue (YTD):</span>
-                                        <span className="font-bold">{formatCurrency(yearlyTotal)}</span>
+                                        <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Total Revenue (YTD):</span>
+                                        <span className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(yearlyTotal)}</span>
                                     </div>
                                     <div className="flex justify-between items-center mb-2">
-                                        <span className="text-gray-600">Monthly Average:</span>
-                                        <span className="font-bold">{formatCurrency(yearlyTotal / revenueData.length)}</span>
+                                        <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Monthly Average:</span>
+                                        <span className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(yearlyTotal / revenueData.length)}</span>
                                     </div>
                                 </div>
                                 <div>
                                     <div className="flex justify-between items-center mb-2">
-                                        <span className="text-gray-600">Highest Month:</span>
-                                        <span className="font-bold">{formatCurrency(Math.max(...revenueData.map(d => d.value)))}</span>
+                                        <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Highest Month:</span>
+                                        <span className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(Math.max(...revenueData.map(d => d.value)))}</span>
                                     </div>
                                     <div className="flex justify-between items-center mb-2">
-                                        <span className="text-gray-600">Overall Growth:</span>
-                                        <span className={`font-bold ${revenueData[revenueData.length - 1].value > revenueData[0].value ? 'text-green-600' : 'text-red-600'}`}>
+                                        <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Overall Growth:</span>
+                                        <span className={`font-bold ${(revenueData[revenueData.length - 1].value > revenueData[0].value) ? 'text-green-600' : 'text-red-600'}`}>
                                             {(((revenueData[revenueData.length - 1].value - revenueData[0].value) / revenueData[0].value) * 100).toFixed(1)}%
                                         </span>
                                     </div>
@@ -396,9 +400,9 @@ const AdminDashboard = ({ isAuthenticated }) => {
             </div>
 
             {/* Pending Approvals */}
-            <div className="mt-6 bg-white p-6 shadow-sm rounded-lg border border-gray-100">
+            <div className={`mt-6 p-6 shadow-sm rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                 <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-semibold text-gray-800">Pending Approvals</h2>
+                    <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Pending Approvals</h2>
                     <button
                         onClick={goToManageUsers}
                         className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
@@ -408,21 +412,21 @@ const AdminDashboard = ({ isAuthenticated }) => {
                     </button>
                 </div>
                 {pendingUsers.length === 0 ? (
-                    <p className="text-gray-500">There are no pending approvals.</p>
+                    <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>There are no pending approvals.</p>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead>
                                 <tr>
-                                    <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                    <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                                    <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User Type</th>
-                                    <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-500'}`}>Name</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-500'}`}>Email</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-500'}`}>User Type</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-500'}`}>Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                            <tbody className={`${darkMode ? 'bg-gray-800 divide-y divide-gray-700' : 'bg-white divide-y divide-gray-200'}`}>
                                 {pendingUsers.map((user, index) => (
-                                    <tr key={index}>
+                                    <tr key={index} className={darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}>
                                         <td className="px-6 py-4 whitespace-nowrap">{user.name}</td>
                                         <td className="px-6 py-4 whitespace-nowrap">{user.email}</td>
                                         <td className="px-6 py-4 whitespace-nowrap">
