@@ -6,10 +6,6 @@ const LotSchema = new mongoose.Schema({
         y: { type: Number, required: true },
         required: true
     },
-    zone: {
-        type: Schema._id,
-        required: true
-    },
     isReserved: {
         type: Boolean,
         required:true
