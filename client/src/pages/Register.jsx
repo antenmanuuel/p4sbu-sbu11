@@ -21,7 +21,7 @@ const Register = ({ darkMode }) => {
     const navigate = useNavigate();
 
     // Validate a single field
-    const validateField = (name, value) => {
+    const validateField = (name, value, allValues) => {
         switch (name) {
             case 'firstName':
                 if (!value.trim()) {
@@ -43,15 +43,17 @@ const Register = ({ darkMode }) => {
             case 'password':
                 if (!value) {
                     return 'Password is required';
-                } else if (value.length < 6) {
-                    return 'Password must be at least 6 characters';
+                } else if (value.length < 8) {
+                    return 'Password must be at least 8 characters';
                 }
                 break;
             case 'confirmPassword':
                 if (!value) {
                     return 'Please confirm your password';
-                } else if (value !== formData.password) {
+                } else if (value !== allValues.password) {
                     return 'Passwords do not match';
+                } else if (value.length < 8) {
+                    return 'Password must be at least 8 characters';
                 }
                 break;
             case 'sbuId':
@@ -89,7 +91,7 @@ const Register = ({ darkMode }) => {
         if (formSubmitted) {
             setErrors(prev => ({
                 ...prev,
-                [name]: validateField(name, value)
+                [name]: validateField(name, value, formData)
             }));
         }
     };
@@ -101,7 +103,7 @@ const Register = ({ darkMode }) => {
 
             const newErrors = { ...errors };
             fieldsToValidate.forEach(field => {
-                const error = validateField(field, formData[field]);
+                const error = validateField(field, formData[field], formData);
                 if (error) {
                     newErrors[field] = error;
                 } else {
@@ -118,7 +120,7 @@ const Register = ({ darkMode }) => {
 
         // Validate each field
         Object.keys(formData).forEach(field => {
-            const error = validateField(field, formData[field]);
+            const error = validateField(field, formData[field], formData);
             if (error) {
                 newErrors[field] = error;
             }

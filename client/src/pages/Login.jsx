@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { FaEnvelope, FaLock, FaExclamationCircle, FaCheckCircle } from 'react-icons/fa';
@@ -32,8 +33,8 @@ const Login = ({ darkMode, login }) => {
       case 'password':
         if (!value) {
           return 'Password is required';
-        } else if (value.length < 6) {
-          return 'Password must be at least 6 characters';
+        } else if (value.length < 8) {
+          return 'Password must be at least 8 characters';
         }
         break;
       default:
@@ -135,8 +136,23 @@ const Login = ({ darkMode, login }) => {
 
       setTimeout(() => {
         setIsLoading(false);
-        // Redirect to the intended destination or dashboard
-        navigate(from);
+
+        // Determine which dashboard to redirect to based on email (which indicates user type)
+        let dashboardRoute;
+        if (email.includes('admin')) {
+          dashboardRoute = '/admin-dashboard';
+        } else if (email.includes('faculty')) {
+          dashboardRoute = '/faculty-dashboard';
+        } else {
+          dashboardRoute = '/dashboard'; // Student dashboard
+        }
+
+        // Redirect to the appropriate dashboard or the intended destination
+        if (from === '/dashboard') {
+          navigate(dashboardRoute);
+        } else {
+          navigate(from);
+        }
       }, 1000);
     } catch {
       setLoginError('Invalid email or password');
