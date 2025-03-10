@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+
+/* Toggle Switch Styles */
+input:checked ~ .dot {
+  transform: translateX(100%);
+}
+
+input:checked ~ .block {
+  background-color: #dc2626; 
+}
+
+.dot {
+  transition: transform 0.3s ease-in-out;
+}
+
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    @apply h-full;
+  }
+}
+
+@layer components {
+  .z-map-base {
+    z-index: 0;
+  }
+  
+  .z-map-overlay {
+    z-index: 10;
+  }
+  
+  .z-ui-base {
+    z-index: 20;
+  }
+  
+  .z-modal {
+    z-index: 30;
+  }
+  
+  .z-navbar {
+    z-index: 50;
+  }
+  
+  .z-dropdown {
+    z-index: 60;
+  }
+  
+  .z-tooltip {
+    z-index: 70;
+  }
+  
+  /* Leaflet map styling using Tailwind's @apply */
+  .leaflet-container {
+    @apply h-full w-full bg-gray-100 z-40;
+  }
+  
+  .leaflet-control {
+    @apply z-[45];
+  }
+  
+  .leaflet-marker-pane,
+  .leaflet-popup-pane {
+    @apply z-[45];
+  }
+  
+  .leaflet-popup-content-wrapper {
+    @apply bg-white text-gray-900 rounded-lg overflow-hidden shadow-md;
+  }
+  
+  .leaflet-popup-content {
+    @apply m-0 p-0;
+    width: 200px !important;
+  }
+  
+  .leaflet-popup-tip {
+    @apply bg-white;
+  }
+  
+  .leaflet-control-zoom a {
+    @apply bg-white text-gray-900 border-gray-300;
+  }
+  
+  .leaflet-control-zoom a:hover {
+    @apply bg-gray-100;
+  }
+  
+  .leaflet-control-attribution {
+    @apply bg-white/80 text-gray-600;
+  }
+  
+  .leaflet-control-attribution a {
+    @apply text-blue-600;
+  }
+  
+  /* Dark mode styles for Leaflet */
+  .dark-map.leaflet-container {
+    @apply bg-gray-800;
+  }
+  
+  .dark-map .leaflet-popup-content-wrapper {
+    @apply bg-gray-700 text-gray-200;
+  }
+  
+  .dark-map .leaflet-popup-tip {
+    @apply bg-gray-700;
+  }
+  
+  .dark-map .leaflet-control-zoom a {
+    @apply bg-gray-700 text-gray-200 border-gray-800;
+  }
+  
+  .dark-map .leaflet-control-zoom a:hover {
+    @apply bg-gray-600;
+  }
+}
+
+@layer utilities {
+  /* Custom border width utility */
+  .border-3 {
+    border-width: 3px;
+  }
+}
+
+
