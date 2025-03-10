@@ -17,6 +17,11 @@ import ManageUsers from './pages/admin/ManageUsers.jsx';
 import ManagePermits from './pages/admin/ManagePermits.jsx';
 import ManageLots from './pages/admin/ManageLots.jsx';
 import FindParking from './pages/FindParking.jsx';
+import Billing from './pages/Billing.jsx';
+import PastReservations from './pages/PastReservations.jsx';
+import PastCitations from './pages/PastCitations.jsx';
+import PastPermits from './pages/PastPermits.jsx';
+
 // Protected route component
 const ProtectedRoute = ({ isAuthenticated, children, requiredUserType, user }) => {
   const location = useLocation();
@@ -267,6 +272,28 @@ const AppContent = () => {
           }
         />
         <Route
+          path="/past-reservations"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <PastReservations
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated} />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/admin-dashboard"
           element={
             <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
@@ -407,6 +434,75 @@ const AppContent = () => {
                 />
                 <main className="flex-grow">
                   <ManageLots
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/billing"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <Billing
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/past-citations"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <PastCitations
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/past-permits"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <PastPermits
                     darkMode={darkMode}
                     isAuthenticated={isAuthenticated}
                   />
