@@ -43,6 +43,7 @@ const FacultyDashboard = ({ isAuthenticated, darkMode }) => {
 
   const citations = [
     { date: "2024-03-15", violation: "No Valid Permit", amount: "$50", status: "Unpaid" },
+    { date: "2024-02-26", violation: "Incorrect Spot", amount: "$75", status: "Unpaid" }
   ];
 
   const billingHistory = [
@@ -402,15 +403,15 @@ const FacultyDashboard = ({ isAuthenticated, darkMode }) => {
       </div>
 
       {/* Parking Reservations Section */}
-      <div className={`mt-6 p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
+      <div className={`mt-6 p-6 mb-10 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
           <div className="flex flex-col mb-3 md:mb-0">
-            <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>My Parking Reservations</h2>
+            <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>My Parking Reservations</h2>
             <button
-              className={`mt-1 text-sm font-medium flex items-center ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'}`}
+              className={`mt-1 text-sm font-medium flex items-center ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
               onClick={() => navigate('/past-reservations')}
             >
-              View all reservation history
+              View all reservation history <FaArrowLeft className="ml-1 transform rotate-180" />
             </button>
           </div>
           <button
@@ -760,7 +761,7 @@ const FacultyDashboard = ({ isAuthenticated, darkMode }) => {
       )}
 
       {/* Active Permits Section - Fixed to properly use darkMode prop */}
-      <div className={`rounded-lg shadow-md p-6 mb-6 ${darkMode ? 'bg-gray-900' : 'bg-white'}`}>
+      <div className={`rounded-lg shadow-sm p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
         <div className="flex justify-between items-center mb-4">
           <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Active Permits</h2>
           <button
@@ -776,13 +777,13 @@ const FacultyDashboard = ({ isAuthenticated, darkMode }) => {
         ) : (
           <div className="space-y-4">
             {activePermits.map((permit, index) => (
-              <div key={index} className={`rounded-lg p-4 shadow-sm ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+              <div key={index} className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}>
                 <div className="flex justify-between items-center">
                   <div>
                     <h3 className={`font-semibold text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>{permit.type} - {permit.lot}</h3>
                     <p className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Valid Until: {permit.validUntil}</p>
                   </div>
-                  <span className="bg-green-500 text-white text-xs px-3 py-1 rounded-full font-medium">
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusClass(permit.status)}`}>
                     {permit.status}
                   </span>
                 </div>
@@ -793,7 +794,7 @@ const FacultyDashboard = ({ isAuthenticated, darkMode }) => {
       </div>
 
       {/* Citations Section - Updated to properly use darkMode prop */}
-      <div className={`rounded-lg shadow-md p-6 mb-6 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+      <div className={`rounded-lg shadow-sm p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
         <div className="flex justify-between items-center mb-4">
           <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Citations</h2>
           <button
@@ -836,7 +837,7 @@ const FacultyDashboard = ({ isAuthenticated, darkMode }) => {
       </div>
 
       {/* Billing History Section - Updated to properly use darkMode prop */}
-      <div className={`rounded-lg shadow-md p-6 mb-6 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+      <div className={`rounded-lg shadow-sm p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
         <div className="flex justify-between items-center mb-4">
           <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Billing History</h2>
           <button
@@ -850,9 +851,9 @@ const FacultyDashboard = ({ isAuthenticated, darkMode }) => {
         {billingHistory.length === 0 ? (
           <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any billing history.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {billingHistory.map((bill, index) => (
-              <div key={index} className={`rounded-lg p-4 shadow-sm ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+              <div key={index} className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}>
                 <div className="flex flex-col md:flex-row justify-between">
                   <div>
                     <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>
@@ -866,7 +867,7 @@ const FacultyDashboard = ({ isAuthenticated, darkMode }) => {
                     <span className={`font-bold text-lg mr-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                       {bill.amount}
                     </span>
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${bill.status.toLowerCase() === 'paid' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(bill.status)}`}>
                       {bill.status}
                     </span>
                   </div>
