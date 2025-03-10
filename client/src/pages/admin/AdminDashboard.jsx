@@ -1,15 +1,25 @@
-import React from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router";
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
 } from 'recharts';
-import { FaUsers, FaUserCog, FaParking, FaMapMarkerAlt } from 'react-icons/fa';
+import { FaUsers, FaUserCog, FaParking, FaMapMarkerAlt, FaCheckCircle, FaTimesCircle, FaInfoCircle } from 'react-icons/fa';
 import { mockUsers } from '../../utils/mockUserData';
 import { getActivePermitsCount, getLotsWithActivePermitsCount } from '../../utils/mockPermitData';
 
 const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     const navigate = useNavigate();
+
+    // Add state for pending users and notifications
+    const [pendingUsers, setPendingUsers] = useState([
+        { id: 1, name: "John Doe", email: "john@example.com", userType: "Student" },
+        { id: 2, name: "Jane Smith", email: "jane@example.com", userType: "Faculty" },
+        { id: 3, name: "Alice Johnson", email: "alice@example.com", userType: "Faculty" },
+    ]);
+    const [showNotification, setShowNotification] = useState(false);
+    const [notificationMessage, setNotificationMessage] = useState('');
+    const [notificationType, setNotificationType] = useState('success'); // 'success' or 'error'
 
     if (!isAuthenticated) {
         navigate('/');
@@ -47,12 +57,6 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
 
     const COLORS = ['#4CAF50', '#F44336', '#2196F3'];
 
-    const pendingUsers = [
-        { name: "John Doe", email: "john@example.com", userType: "Student" },
-        { name: "Jane Smith", email: "jane@example.com", userType: "Faculty" },
-        { name: "Alice Johnson", email: "alice@example.com", userType: "Faculty" },
-    ];
-
     const revenue = revenueData[revenueData.length - 1].value;
     const prevRevenue = revenueData[revenueData.length - 2].value;
     const revenueChange = ((revenue - prevRevenue) / prevRevenue * 100).toFixed(1);
@@ -65,6 +69,54 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
 
     // Calculate total revenue for the year
     const yearlyTotal = revenueData.reduce((sum, month) => sum + month.value, 0);
+
+    // Handle approving a user
+    const handleApproveUser = (userId) => {
+        // In a real application, this would make an API call to update the user status
+        // For now, we'll just update our local state
+
+        // Find the user to approve
+        const userToApprove = pendingUsers.find(user => user.id === userId);
+
+        if (userToApprove) {
+            // Remove the user from the pending list
+            setPendingUsers(pendingUsers.filter(user => user.id !== userId));
+
+            // Show a success notification
+            setNotificationMessage(`Approved ${userToApprove.name} (${userToApprove.email}) as ${userToApprove.userType}`);
+            setNotificationType('success');
+            setShowNotification(true);
+
+            // Hide notification after 3 seconds
+            setTimeout(() => {
+                setShowNotification(false);
+            }, 3000);
+        }
+    };
+
+    // Handle denying a user
+    const handleDenyUser = (userId) => {
+        // In a real application, this would make an API call to update the user status
+        // For now, we'll just update our local state
+
+        // Find the user to deny
+        const userToDeny = pendingUsers.find(user => user.id === userId);
+
+        if (userToDeny) {
+            // Remove the user from the pending list
+            setPendingUsers(pendingUsers.filter(user => user.id !== userId));
+
+            // Show an error notification
+            setNotificationMessage(`Denied ${userToDeny.name} (${userToDeny.email})`);
+            setNotificationType('error');
+            setShowNotification(true);
+
+            // Hide notification after 3 seconds
+            setTimeout(() => {
+                setShowNotification(false);
+            }, 3000);
+        }
+    };
 
     const getStatusClass = (status) => {
         switch (status.toLowerCase()) {
@@ -94,10 +146,10 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     };
 
     // Custom tooltip for charts
-    const CustomTooltip = ({ active, payload, label }) => {
+    const CustomTooltip = ({ active, payload, label, darkMode }) => {
         if (active && payload && payload.length) {
             return (
-                <div className="bg-white p-3 shadow-md rounded border border-gray-200">
+                <div className={`${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200 text-gray-800'} p-3 shadow-md rounded border`}>
                     <p className="font-medium text-sm">{label}</p>
                     {payload.map((entry, index) => (
                         <p key={index} style={{ color: entry.color }} className="text-sm">
@@ -128,6 +180,24 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     return (
         <div className={`min-h-screen p-6 ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
             <h1 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Admin Dashboard</h1>
+
+            {/* Notification Toast */}
+            {showNotification && (
+                <div className={`fixed top-20 right-4 px-4 py-3 rounded z-50 shadow-md flex items-center ${notificationType === 'success'
+                    ? 'bg-green-100 border border-green-400 text-green-700'
+                    : 'bg-red-100 border border-red-400 text-red-700'
+                    }`}>
+                    {notificationType === 'success' ? (
+                        <FaCheckCircle className="mr-2" />
+                    ) : (
+                        <FaTimesCircle className="mr-2" />
+                    )}
+                    <span>{notificationMessage}</span>
+                    <button className="ml-4" onClick={() => setShowNotification(false)}>
+                        <FaTimesCircle />
+                    </button>
+                </div>
+            )}
 
             {/* Stats Overview */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -203,26 +273,26 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
             <div className={`mt-6 p-6 shadow-sm rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                 <div className="flex justify-between items-center mb-6">
                     <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Revenue Overview</h2>
-                    <div className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <div className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>
                         Year Total: <span className={darkMode ? 'text-white' : 'text-gray-900'}>{formatCurrency(yearlyTotal)}</span>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                     {/* Stacked Bar Chart */}
-                    <div className="p-4 border border-gray-100 rounded-lg">
-                        <h3 className="text-sm font-medium text-gray-600 mb-3">Monthly Revenue Breakdown</h3>
+                    <div className={`p-4 border rounded-lg ${darkMode ? 'border-gray-700 bg-gray-750' : 'border-gray-100 bg-white'}`}>
+                        <h3 className={`text-sm font-medium mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-600'}`}>Monthly Revenue Breakdown</h3>
                         <div className="h-72">
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart
                                     data={revenueData}
                                     margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
                                 >
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="month" />
-                                    <YAxis tickFormatter={(value) => `$${value / 1000}k`} />
-                                    <Tooltip content={<CustomTooltip />} />
-                                    <Legend />
+                                    <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#4b5563" : "#e5e7eb"} />
+                                    <XAxis dataKey="month" stroke={darkMode ? "#e5e7eb" : "#374151"} />
+                                    <YAxis tickFormatter={(value) => `$${value / 1000}k`} stroke={darkMode ? "#e5e7eb" : "#374151"} />
+                                    <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
+                                    <Legend wrapperStyle={{ color: darkMode ? "#e5e7eb" : "#374151" }} />
                                     <Bar dataKey="permits" stackId="a" fill="#4CAF50" name="Permits" />
                                     <Bar dataKey="citations" stackId="a" fill="#F44336" name="Citations" />
                                     <Bar dataKey="other" stackId="a" fill="#2196F3" name="Other" />
@@ -232,8 +302,8 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                     </div>
 
                     {/* Pie Chart */}
-                    <div className="p-4 border border-gray-100 rounded-lg">
-                        <h3 className="text-sm font-medium text-gray-600 mb-3">Current Month Breakdown</h3>
+                    <div className={`p-4 border rounded-lg ${darkMode ? 'border-gray-700 bg-gray-750' : 'border-gray-100 bg-white'}`}>
+                        <h3 className={`text-sm font-medium mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-600'}`}>Current Month Breakdown</h3>
                         <div className="h-72">
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
@@ -252,7 +322,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                                         ))}
                                     </Pie>
                                     <Tooltip formatter={(value) => formatCurrency(value)} />
-                                    <Legend />
+                                    <Legend wrapperStyle={{ color: darkMode ? "#e5e7eb" : "#374151" }} />
                                 </PieChart>
                             </ResponsiveContainer>
                         </div>
@@ -261,19 +331,19 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                     {/* Line Chart for Growth Trend */}
-                    <div className="p-4 border border-gray-100 rounded-lg">
-                        <h3 className="text-sm font-medium text-gray-600 mb-3">Month-over-Month Growth</h3>
+                    <div className={`p-4 border rounded-lg ${darkMode ? 'border-gray-700 bg-gray-750' : 'border-gray-100 bg-white'}`}>
+                        <h3 className={`text-sm font-medium mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-600'}`}>Month-over-Month Growth</h3>
                         <div className="h-72">
                             <ResponsiveContainer width="100%" height="100%">
                                 <LineChart
                                     data={growthData}
                                     margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                                 >
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="month" />
-                                    <YAxis tickFormatter={(value) => `${value}%`} />
+                                    <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#4b5563" : "#e5e7eb"} />
+                                    <XAxis dataKey="month" stroke={darkMode ? "#e5e7eb" : "#374151"} />
+                                    <YAxis tickFormatter={(value) => `${value}%`} stroke={darkMode ? "#e5e7eb" : "#374151"} />
                                     <Tooltip formatter={(value) => `${value}%`} />
-                                    <Legend />
+                                    <Legend wrapperStyle={{ color: darkMode ? "#e5e7eb" : "#374151" }} />
                                     <Line
                                         type="monotone"
                                         dataKey="growth"
@@ -287,18 +357,18 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                     </div>
 
                     {/* Area Chart for Total Revenue Trend */}
-                    <div className="p-4 border border-gray-100 rounded-lg">
-                        <h3 className="text-sm font-medium text-gray-600 mb-3">Revenue Trend</h3>
+                    <div className={`p-4 border rounded-lg ${darkMode ? 'border-gray-700 bg-gray-750' : 'border-gray-100 bg-white'}`}>
+                        <h3 className={`text-sm font-medium mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-600'}`}>Revenue Trend</h3>
                         <div className="h-72">
                             <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart
                                     data={revenueData}
                                     margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
                                 >
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="month" />
-                                    <YAxis tickFormatter={(value) => `$${value / 1000}k`} />
-                                    <Tooltip content={<CustomTooltip />} />
+                                    <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#4b5563" : "#e5e7eb"} />
+                                    <XAxis dataKey="month" stroke={darkMode ? "#e5e7eb" : "#374151"} />
+                                    <YAxis tickFormatter={(value) => `$${value / 1000}k`} stroke={darkMode ? "#e5e7eb" : "#374151"} />
+                                    <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
                                     <Area
                                         type="monotone"
                                         dataKey="value"
@@ -314,16 +384,16 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                 </div>
 
                 {/* Text-based Revenue Breakdown */}
-                <div className={`mt-4 p-4 border rounded-lg ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
-                    <h3 className={`text-sm font-medium mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Detailed Revenue Breakdown (Current Month: {currentMonth.month})</h3>
+                <div className={`mt-4 p-4 border rounded-lg ${darkMode ? 'border-gray-700 bg-gray-750' : 'border-gray-100 bg-white'}`}>
+                    <h3 className={`text-sm font-medium mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-600'}`}>Detailed Revenue Breakdown (Current Month: {currentMonth.month})</h3>
 
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className={darkMode ? 'bg-gray-700' : 'bg-gray-50'}>
                                 <tr>
-                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Revenue Source</th>
-                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Amount</th>
-                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Percentage</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-200' : 'text-gray-500'}`}>Revenue Source</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-200' : 'text-gray-500'}`}>Amount</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'text-gray-200' : 'text-gray-500'}`}>Percentage</th>
                                 </tr>
                             </thead>
                             <tbody className={`${darkMode ? 'bg-gray-800 divide-y divide-gray-700' : 'bg-white divide-y divide-gray-200'}`}>
@@ -368,27 +438,27 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
 
                     {/* Year-to-Date Summary */}
                     <div className="mt-6">
-                        <h3 className={`text-sm font-medium mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Year-to-Date Summary</h3>
+                        <h3 className={`text-sm font-medium mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-600'}`}>Year-to-Date Summary</h3>
                         <div className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <div className="flex justify-between items-center mb-2">
-                                        <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Total Revenue (YTD):</span>
+                                        <span className={darkMode ? 'text-gray-200' : 'text-gray-600'}>Total Revenue (YTD):</span>
                                         <span className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(yearlyTotal)}</span>
                                     </div>
                                     <div className="flex justify-between items-center mb-2">
-                                        <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Monthly Average:</span>
+                                        <span className={darkMode ? 'text-gray-200' : 'text-gray-600'}>Monthly Average:</span>
                                         <span className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(yearlyTotal / revenueData.length)}</span>
                                     </div>
                                 </div>
                                 <div>
                                     <div className="flex justify-between items-center mb-2">
-                                        <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Highest Month:</span>
+                                        <span className={darkMode ? 'text-gray-200' : 'text-gray-600'}>Highest Month:</span>
                                         <span className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(Math.max(...revenueData.map(d => d.value)))}</span>
                                     </div>
                                     <div className="flex justify-between items-center mb-2">
-                                        <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Overall Growth:</span>
-                                        <span className={`font-bold ${(revenueData[revenueData.length - 1].value > revenueData[0].value) ? 'text-green-600' : 'text-red-600'}`}>
+                                        <span className={darkMode ? 'text-gray-200' : 'text-gray-600'}>Overall Growth:</span>
+                                        <span className={`font-bold ${(revenueData[revenueData.length - 1].value > revenueData[0].value) ? 'text-green-500' : 'text-red-500'}`}>
                                             {(((revenueData[revenueData.length - 1].value - revenueData[0].value) / revenueData[0].value) * 100).toFixed(1)}%
                                         </span>
                                     </div>
@@ -412,33 +482,42 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                     </button>
                 </div>
                 {pendingUsers.length === 0 ? (
-                    <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>There are no pending approvals.</p>
+                    <div className={`p-4 rounded-lg flex items-center justify-center ${darkMode ? 'bg-gray-750 border border-gray-700' : 'bg-gray-50 border border-gray-200'}`}>
+                        <FaInfoCircle className={`mr-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                        <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>There are no pending approvals at this time.</p>
+                    </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead>
                                 <tr>
-                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-500'}`}>Name</th>
-                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-500'}`}>Email</th>
-                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-500'}`}>User Type</th>
-                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-500'}`}>Actions</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-50 text-gray-500'}`}>Name</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-50 text-gray-500'}`}>Email</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-50 text-gray-500'}`}>User Type</th>
+                                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-50 text-gray-500'}`}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody className={`${darkMode ? 'bg-gray-800 divide-y divide-gray-700' : 'bg-white divide-y divide-gray-200'}`}>
-                                {pendingUsers.map((user, index) => (
-                                    <tr key={index} className={darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}>
-                                        <td className="px-6 py-4 whitespace-nowrap">{user.name}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap">{user.email}</td>
+                                {pendingUsers.map((user) => (
+                                    <tr key={user.id} className={darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}>
+                                        <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-white' : 'text-gray-900'}`}>{user.name}</td>
+                                        <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-white' : 'text-gray-900'}`}>{user.email}</td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusClass("pending")}`}>
                                                 {user.userType}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <button className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-medium mr-2">
+                                            <button
+                                                className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-medium mr-2"
+                                                onClick={() => handleApproveUser(user.id)}
+                                            >
                                                 Approve
                                             </button>
-                                            <button className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm font-medium">
+                                            <button
+                                                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm font-medium"
+                                                onClick={() => handleDenyUser(user.id)}
+                                            >
                                                 Deny
                                             </button>
                                         </td>

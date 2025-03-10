@@ -323,7 +323,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                             Find Parking
                         </h1>
 
-                        <p className="mb-4 text-gray-600 dark:text-gray-300">
+                        <p className="mb-4 text-gray-900 dark:text-gray-300">
                             Search for parking spots near your location or a specific address
                         </p>
 
