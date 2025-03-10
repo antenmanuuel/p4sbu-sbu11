@@ -113,7 +113,7 @@ const Register = ({ darkMode }) => {
 
             setErrors(newErrors);
         }
-    }, [formData, touched]);
+    }, [errors, formData, touched]);
 
     const validateForm = () => {
         const newErrors = {};
