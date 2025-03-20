@@ -5,6 +5,7 @@ import Home from './pages/Home.jsx';
 import Login from './pages/Login.jsx';
 import Footer from './components/Footer.jsx';
 import Register from './pages/Register.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
 import AboutUs from './pages/AboutUs.jsx';
 import ContactUs from './pages/ContactUs.jsx';
 import UnderConstruction from './pages/UnderConstruction.jsx';
@@ -510,6 +511,24 @@ const AppContent = () => {
                 <Footer darkMode={darkMode} />
               </>
             </ProtectedRoute>
+          }
+        /> 
+        <Route
+          path="/forgot-password"
+          element={
+            <>
+              <Navbar
+                darkMode={darkMode}
+                setDarkMode={setDarkMode}
+                isAuthenticated={isAuthenticated}
+                user={user}
+                logout={logout}
+              />
+              <main className="flex-grow">
+                <ForgotPassword darkMode={darkMode} />
+              </main>
+              <Footer darkMode={darkMode} />
+            </>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
