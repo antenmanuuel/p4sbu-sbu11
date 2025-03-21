@@ -1,26 +1,31 @@
 const mongoose = require('mongoose');
 
 const TicketSchema = new mongoose.Schema({
-    amount:{
+    name: {
+        type: String,
+        required: true
+    },
+    amount: {
         type: Number,
         required: true
     },
-    date_posted:{
+    date_posted: {
         type: Date,
         required: true
     },
-    isPaid:{
-        type:Boolean,
+    isPaid: {
+        type: Boolean,
         required: true
     },
-    user:{
-        type:Schema._id,
-        required:true
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
     },
-    canPetition:{
+    canPetition: {
         type: Boolean,
-        required:true,
-        default:true
+        required: true,
+        default: true
     }
 });
 

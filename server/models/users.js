@@ -41,11 +41,29 @@ const UserSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    phone: {
+        type: String,
+        required: false,
+        default: ''
+    },
+    address: {
+        type: String,
+        required: false,
+        default: ''
+    },
+    emergencyContact: {
+        type: String,
+        required: false,
+        default: ''
+    },
     car: {
-        type: Schema.ObjectID,
-        required: function () {
-            return userType !== 'admin';
-        }
+        type: mongoose.Schema.Types.ObjectId,
+        required: false,
+        default: null
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
     }
 });
 

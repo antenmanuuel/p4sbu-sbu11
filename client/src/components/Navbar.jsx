@@ -281,7 +281,7 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
                             {user?.email || 'user@example.com'}
                           </p>
                           <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                            ID: {user?.id || '12345678'}
+                            ID: {user?.sbuId || user?._id || '12345678'}
                           </p>
                         </div>
                       </div>

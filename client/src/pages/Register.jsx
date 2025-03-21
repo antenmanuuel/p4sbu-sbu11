@@ -1,6 +1,8 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { FaUser, FaEnvelope, FaLock, FaIdCard, FaUserTag, FaCheckCircle, FaExclamationCircle } from 'react-icons/fa';
+import { AuthService } from '../utils/api';
 
 const Register = ({ darkMode }) => {
     const [formData, setFormData] = useState({
@@ -156,20 +158,40 @@ const Register = ({ darkMode }) => {
         setSuccess(false);
 
         try {
-            // Simulate registration request
-            // In a real app, you would call an API here
-            setTimeout(() => {
-                setIsLoading(false);
+            // Call the API to register the user
+            const { firstName, lastName, email, password, sbuId, userType } = formData;
+            const result = await AuthService.register({
+                firstName,
+                lastName,
+                email,
+                password,
+                sbuId,
+                userType
+            });
+
+            setIsLoading(false);
+
+            if (result.success) {
                 setSuccess(true);
+                setRegisterError('');
 
                 // Navigate to login after successful registration with a small delay
                 setTimeout(() => {
-                    navigate('/login');
+                    navigate('/login', {
+                        state: {
+                            message: 'Registration successful! Your account is pending approval from an administrator.'
+                        }
+                    });
                 }, 1500);
-            }, 1000);
-        } catch {
-            setRegisterError('An error occurred. Please try again.');
+            } else {
+                setRegisterError(result.error);
+                setSuccess(false);
+            }
+        } catch (error) {
+            console.error('Registration error:', error);
+            setRegisterError('An unexpected error occurred. Please try again.');
             setIsLoading(false);
+            setSuccess(false);
         }
     };
 

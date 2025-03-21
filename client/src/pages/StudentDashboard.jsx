@@ -1,9 +1,28 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaMapMarkerAlt, FaClock, FaPlug, FaMoneyBillWave, FaCarAlt, FaTimes, FaCalendarAlt, FaInfoCircle, FaExclamationTriangle, FaArrowLeft, FaCreditCard, FaPlus, FaCheck } from "react-icons/fa";
+import { FaMapMarkerAlt, FaClock, FaPlug, FaMoneyBillWave, FaTimes, FaInfoCircle, FaExclamationTriangle, FaArrowLeft, FaCreditCard, FaPlus, FaCheck } from "react-icons/fa";
+import { AuthService, TicketService } from "../utils/api";
 
-const StudentDashboard = ({ isAuthenticated, darkMode }) => {
+const StudentDashboard = ({ darkMode }) => {
   const navigate = useNavigate();
+
+  // Check authentication on component mount
+  useEffect(() => {
+    if (!AuthService.isAuthenticated()) {
+      navigate('/login', { state: { from: '/dashboard' } });
+    } else {
+      // Check if user type is student
+      const currentUser = AuthService.getCurrentUser();
+      if (currentUser && currentUser.userType !== 'student') {
+        // Redirect to appropriate dashboard based on user type
+        if (currentUser.userType === 'admin') {
+          navigate('/admin-dashboard');
+        } else if (currentUser.userType === 'faculty') {
+          navigate('/faculty-dashboard');
+        }
+      }
+    }
+  }, [navigate]);
 
   // Modal state management
   const [selectedReservation, setSelectedReservation] = useState(null);
@@ -33,17 +52,33 @@ const StudentDashboard = ({ isAuthenticated, darkMode }) => {
   const [cardErrors, setCardErrors] = useState({});
   const [isAddingCard, setIsAddingCard] = useState(false);
 
-  if (!isAuthenticated) {
-    navigate('/');
-  }
+  // State for tickets
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Fetch tickets on component mount
+  useEffect(() => {
+    const fetchTickets = async () => {
+      try {
+        const response = await TicketService.getUserTickets();
+        if (response.success) {
+          setTickets(response.data);
+        } else {
+          setError(response.error);
+        }
+      } catch {
+        setError('Failed to fetch tickets');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTickets();
+  }, []);
 
   const activePermits = [
     { type: "Student Permit", lot: "Lot 2", validUntil: "2024-12-31", status: "Active" },
-  ];
-
-  const citations = [
-    { date: "2024-03-15", violation: "No Valid Permit", amount: "$50", status: "Unpaid" },
-    { date: "2024-02-26", violation: "Incorrect Spot", amount: "$75", status: "Unpaid" }
   ];
 
   const billingHistory = [
@@ -233,42 +268,37 @@ const StudentDashboard = ({ isAuthenticated, darkMode }) => {
     setShowBillingDetailsModal(true);
   };
 
-  // Add a new function to handle opening the payment modal
-  const handlePayCitation = (citation) => {
-    setSelectedCitation(citation);
+  // Handle ticket payment
+  const handlePayTicket = async (ticket) => {
+    setSelectedCitation(ticket);
     setShowCitationPaymentModal(true);
   };
 
-  // Add a function to process the citation payment
-  const handleProcessCitationPayment = () => {
+  // Process ticket payment
+  const handleProcessTicketPayment = async () => {
     setIsProcessingPayment(true);
+    try {
+      const response = await TicketService.payTicket(selectedCitation._id);
+      if (response.success) {
+        // Update local tickets state
+        setTickets(tickets.map(ticket =>
+          ticket._id === selectedCitation._id
+            ? { ...ticket, isPaid: true }
+            : ticket
+        ));
 
-    // Simulate payment processing
-    setTimeout(() => {
-      // Update the citations array
-      const updatedCitations = citations.map(citation => {
-        if (citation === selectedCitation) {
-          return { ...citation, status: "Paid" };
-        }
-        return citation;
-      });
-
-      // Update the citation list (in a real app, this would be an API call)
-      // For now we're just working with the mock data
-      citations.splice(0, citations.length, ...updatedCitations);
-
+        setShowCitationPaymentModal(false);
+        setSuccessMessage("Ticket payment processed successfully!");
+        setShowSuccessMessage(true);
+        setTimeout(() => setShowSuccessMessage(false), 3000);
+      } else {
+        setError(response.error);
+      }
+    } catch {
+      setError('Failed to process payment');
+    } finally {
       setIsProcessingPayment(false);
-      setShowCitationPaymentModal(false);
-
-      // Show success message
-      setSuccessMessage(`Citation payment of ${selectedCitation.amount} has been processed successfully.`);
-      setShowSuccessMessage(true);
-
-      // Hide success message after 3 seconds
-      setTimeout(() => {
-        setShowSuccessMessage(false);
-      }, 3000);
-    }, 1500);
+    }
   };
 
   // Function to validate credit card form
@@ -390,11 +420,13 @@ const StudentDashboard = ({ isAuthenticated, darkMode }) => {
         </div>
         <div className={`p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
           <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Citations</p>
-          <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{citations.length}</p>
+          <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{tickets.length}</p>
         </div>
         <div className={`p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
           <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Outstanding Balance</p>
-          <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>$50.00</p>
+          <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            {formatCurrency(tickets.filter(ticket => !ticket.isPaid).reduce((total, ticket) => total + ticket.amount, 0))}
+          </p>
         </div>
         <div className={`p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
           <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Active Reservations</p>
@@ -793,49 +825,6 @@ const StudentDashboard = ({ isAuthenticated, darkMode }) => {
         )}
       </div>
 
-      {/* Citations Section - Updated to properly use darkMode prop */}
-      <div className={`rounded-lg shadow-sm p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Citations</h2>
-          <button
-            className={`text-sm font-medium flex items-center ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
-            onClick={() => navigate('/past-citations')}
-          >
-            View All Citations <FaArrowLeft className="ml-1 transform rotate-180" />
-          </button>
-        </div>
-        {citations.length === 0 ? (
-          <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any citations.</p>
-        ) : (
-          <div className="space-y-4">
-            {citations.map((citation, index) => (
-              <div key={index} className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-800'}`}>{citation.violation}</p>
-                    <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Date: {citation.date}</p>
-                    <p className={`font-medium mt-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{citation.amount}</p>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusClass(citation.status)}`}>
-                      {citation.status}
-                    </span>
-                    {citation.status === "Unpaid" && (
-                      <button
-                        onClick={() => handlePayCitation(citation)}
-                        className="mt-2 flex items-center px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"
-                      >
-                        <FaCreditCard className="mr-1" /> Pay Now
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* Billing History Section - Updated to properly use darkMode prop */}
       <div className={`rounded-lg shadow-sm p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
         <div className="flex justify-between items-center mb-4">
@@ -1163,7 +1152,7 @@ const StudentDashboard = ({ isAuthenticated, darkMode }) => {
                 Cancel
               </button>
               <button
-                onClick={handleProcessCitationPayment}
+                onClick={handleProcessTicketPayment}
                 disabled={isProcessingPayment || (paymentMethod === 'credit-card' && !hasStoredCard)}
                 className={`px-4 py-2 rounded-lg font-medium text-sm ${isProcessingPayment || (paymentMethod === 'credit-card' && !hasStoredCard)
                   ? 'bg-blue-400 cursor-not-allowed'
@@ -1176,6 +1165,56 @@ const StudentDashboard = ({ isAuthenticated, darkMode }) => {
           </div>
         </div>
       )}
+
+      {/* Citations Section - Using tickets data from API */}
+      <div className={`rounded-lg shadow-sm p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Citations</h2>
+          <button
+            className={`text-sm font-medium flex items-center ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
+            onClick={() => navigate('/past-citations')}
+          >
+            View All Citations <FaArrowLeft className="ml-1 transform rotate-180" />
+          </button>
+        </div>
+
+        {loading ? (
+          <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Loading citations...</p>
+        ) : error ? (
+          <p className="text-red-500">Error: {error}</p>
+        ) : tickets.length === 0 ? (
+          <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any citations.</p>
+        ) : (
+          <div className="space-y-4">
+            {tickets.map((ticket) => (
+              <div key={ticket._id} className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-800'}`}>{ticket.name}</p>
+                    <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                      Date: {new Date(ticket.date_posted).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                    </p>
+                    <p className={`font-medium mt-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>${ticket.amount}</p>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusClass(ticket.isPaid ? 'Paid' : 'Unpaid')}`}>
+                      {ticket.isPaid ? 'Paid' : 'Unpaid'}
+                    </span>
+                    {!ticket.isPaid && (
+                      <button
+                        onClick={() => handlePayTicket(ticket)}
+                        className="mt-2 flex items-center px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"
+                      >
+                        <FaCreditCard className="mr-1" /> Pay Now
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
