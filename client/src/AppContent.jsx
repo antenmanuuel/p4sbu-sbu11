@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar.jsx';
@@ -22,6 +23,8 @@ import Billing from './pages/Billing.jsx';
 import PastReservations from './pages/PastReservations.jsx';
 import PastCitations from './pages/PastCitations.jsx';
 import PastPermits from './pages/PastPermits.jsx';
+import ManageTickets from './pages/admin/ManageTickets';
+import { AuthService, UserService } from './utils/api.js';
 
 // Protected route component
 const ProtectedRoute = ({ isAuthenticated, children, requiredUserType, user }) => {
@@ -44,63 +47,124 @@ const AppContent = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const login = (email, password) => {
-
-    if (password && password.length > 0) {
-      let userType = 'student';
-      let firstName = 'John';
-      let lastName = 'Doe';
-
-      if (email.includes('admin')) {
-        userType = 'admin';
-        firstName = 'Admin';
-        lastName = 'User';
-      } else if (email.includes('faculty')) {
-        userType = 'faculty';
-        firstName = 'Faculty';
-        lastName = 'Member';
+  // Fetch user profile data from backend
+  const fetchUserProfile = async () => {
+    try {
+      const result = await UserService.getProfile();
+      if (result.success) {
+        setUser(result.data.user);
+      } else {
+        console.error('Failed to fetch user profile:', result.error);
+        // If profile fetch fails, log the user out
+        logout();
       }
-
-      setIsAuthenticated(true);
-      setUser({
-        firstName: firstName,
-        lastName: lastName,
-        email: email,
-        id: '12345678',
-        userType: userType,
-        phone: '(631) 555-1234'
-      });
-      return true;
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      logout();
+    } finally {
+      setLoading(false);
     }
-    return false;
   };
 
-  // Mock logout function
+  // Real login function using AuthService
+  const login = async (email, password) => {
+    try {
+      console.log('Login attempt for:', email);
+      const result = await AuthService.login({ email, password });
+
+      if (result.success) {
+        console.log('Login successful, result:', result.data);
+
+        // Set authentication state
+        setIsAuthenticated(true);
+
+        // Set basic user info from login response
+        setUser(result.data.user);
+        console.log('User state set:', result.data.user);
+
+        // Determine appropriate dashboard based on user type
+        let dashboardRoute = '/dashboard'; // Default to student dashboard
+
+        if (result.data.user.userType === 'admin') {
+          dashboardRoute = '/admin-dashboard';
+          console.log('Admin user detected, redirecting to admin dashboard');
+        } else if (result.data.user.userType === 'faculty') {
+          dashboardRoute = '/faculty-dashboard';
+          console.log('Faculty user detected, redirecting to faculty dashboard');
+        } else {
+          console.log('Student user detected, redirecting to student dashboard');
+        }
+
+        // Use a more robust approach for redirection
+        console.log('Starting redirection to:', dashboardRoute);
+
+        // First update the state, then redirect after a brief delay
+        setTimeout(() => {
+          console.log('Executing redirect to:', dashboardRoute);
+          // Use direct navigation to ensure the page reloads with the new auth state
+          window.location.href = dashboardRoute;
+        }, 300); // Slightly longer delay to ensure state updates
+
+        return true;
+      } else {
+        console.error('Login failed:', result.error);
+        return false;
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      return false;
+    }
+  };
+
+  // Real logout function
   const logout = () => {
+    AuthService.logout();
     setIsAuthenticated(false);
     setUser(null);
-    localStorage.removeItem('auth_token');
   };
 
+  // Check authentication status on component mount
   useEffect(() => {
-    const checkAuth = () => {
-      const token = localStorage.getItem('auth_token');
-      if (token) {
+    const checkAuth = async () => {
+      setLoading(true);
+      console.log('Checking authentication status...');
+      const isAuth = AuthService.isAuthenticated();
+      console.log('Auth check result:', isAuth);
+
+      if (isAuth) {
         setIsAuthenticated(true);
-        setUser({
-          firstName: 'John',
-          lastName: 'Doe',
-          email: 'john.doe@stonybrook.edu',
-          id: '12345678',
-          userType: 'student',
-          phone: '(631) 555-1234'
-        });
+
+        // Get basic user info from localStorage
+        const currentUser = AuthService.getCurrentUser();
+        if (currentUser) {
+          setUser(currentUser);
+          console.log('User data loaded from localStorage:', currentUser);
+        }
+
+        // Fetch complete profile data
+        await fetchUserProfile();
+      } else {
+        setIsAuthenticated(false);
+        setUser(null);
+        console.log('User not authenticated');
       }
+
+      setLoading(false);
+      console.log('Authentication check completed, loading:', false);
     };
 
     checkAuth();
   }, []);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
@@ -297,7 +361,7 @@ const AppContent = () => {
         <Route
           path="/admin-dashboard"
           element={
-            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+            <ProtectedRoute isAuthenticated={isAuthenticated} requiredUserType="admin" user={user}>
               <>
                 <Navbar
                   darkMode={darkMode}
@@ -378,7 +442,7 @@ const AppContent = () => {
         <Route
           path="/manage-users"
           element={
-            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+            <ProtectedRoute isAuthenticated={isAuthenticated} requiredUserType="admin" user={user}>
               <>
                 <Navbar
                   darkMode={darkMode}
@@ -401,7 +465,7 @@ const AppContent = () => {
         <Route
           path="/manage-permits"
           element={
-            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+            <ProtectedRoute isAuthenticated={isAuthenticated} requiredUserType="admin" user={user}>
               <>
                 <Navbar
                   darkMode={darkMode}
@@ -424,7 +488,7 @@ const AppContent = () => {
         <Route
           path="/manage-lots"
           element={
-            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+            <ProtectedRoute isAuthenticated={isAuthenticated} requiredUserType="admin" user={user}>
               <>
                 <Navbar
                   darkMode={darkMode}
@@ -512,23 +576,28 @@ const AppContent = () => {
               </>
             </ProtectedRoute>
           }
-        /> 
+        />
         <Route
-          path="/forgot-password"
+          path="/admin/tickets"
           element={
-            <>
-              <Navbar
-                darkMode={darkMode}
-                setDarkMode={setDarkMode}
-                isAuthenticated={isAuthenticated}
-                user={user}
-                logout={logout}
-              />
-              <main className="flex-grow">
-                <ForgotPassword darkMode={darkMode} />
-              </main>
-              <Footer darkMode={darkMode} />
-            </>
+            <ProtectedRoute isAuthenticated={isAuthenticated} requiredUserType="admin" user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <ManageTickets
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />

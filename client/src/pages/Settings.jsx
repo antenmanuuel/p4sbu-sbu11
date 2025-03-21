@@ -1,19 +1,45 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { UserService, AuthService } from '../utils/api';
 
-const Settings = ({ darkMode, user }) => {
+const Settings = ({ darkMode }) => {
     // State for form values
     const [formData, setFormData] = useState({
-        email: user?.email || '',
-        phone: user?.phone || '',
+        email: '',
+        phone: '',
         currentPassword: '',
         newPassword: '',
-        confirmPassword: ''
+        confirmPassword: '',
+        address: '',
+        emergencyContact: ''
     });
 
     // State for form sections
     const [activeSection, setActiveSection] = useState('contact');
-    const [showSuccessMessage, setShowSuccessMessage] = useState('');
+    const [successMessage, setSuccessMessage] = useState('');
     const [errors, setErrors] = useState({});
+    const [loading, setLoading] = useState(false);
+
+    // Fetch user data on component mount
+    useEffect(() => {
+        const fetchUserData = async () => {
+            try {
+                const result = await UserService.getProfile();
+                if (result.success) {
+                    setFormData(prevData => ({
+                        ...prevData,
+                        email: result.data.user.email || '',
+                        phone: result.data.user.phone || '',
+                        address: result.data.user.address || '',
+                        emergencyContact: result.data.user.emergencyContact || ''
+                    }));
+                }
+            } catch (error) {
+                console.error('Error fetching user data:', error);
+            }
+        };
+
+        fetchUserData();
+    }, []);
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
@@ -34,14 +60,19 @@ const Settings = ({ darkMode, user }) => {
     const validateContactInfo = () => {
         const newErrors = {};
 
-        if (!formData.email) {
-            newErrors.email = 'Email is required';
-        } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-            newErrors.email = 'Email is invalid';
+        // Validate phone number format
+        if (formData.phone && !/^\d{3}-\d{3}-\d{4}$/.test(formData.phone)) {
+            newErrors.phone = 'Phone number should be in format 123-456-7890';
         }
 
-        if (formData.phone && !/^\(\d{3}\) \d{3}-\d{4}$/.test(formData.phone)) {
-            newErrors.phone = 'Phone number should be in format (XXX) XXX-XXXX';
+        // We don't need strict validation for address and emergency contact
+        // But we could add length checks if desired
+        if (formData.address && formData.address.length > 200) {
+            newErrors.address = 'Address is too long (maximum 200 characters)';
+        }
+
+        if (formData.emergencyContact && formData.emergencyContact.length > 100) {
+            newErrors.emergencyContact = 'Emergency contact is too long (maximum 100 characters)';
         }
 
         setErrors(newErrors);
@@ -71,33 +102,62 @@ const Settings = ({ darkMode, user }) => {
         return Object.keys(newErrors).length === 0;
     };
 
-    const handleUpdateContactInfo = (e) => {
+    const handleUpdateContactInfo = async (e) => {
         e.preventDefault();
 
         if (validateContactInfo()) {
-            // Simulate API call
-            setTimeout(() => {
-                setShowSuccessMessage('Contact information updated successfully!');
-                setTimeout(() => setShowSuccessMessage(''), 3000);
-            }, 1000);
+            setLoading(true);
+            try {
+                const result = await UserService.updateProfile({
+                    phone: formData.phone,
+                    address: formData.address,
+                    emergencyContact: formData.emergencyContact
+                });
+
+                if (result.success) {
+                    setSuccessMessage('Contact information updated successfully!');
+                    setTimeout(() => setSuccessMessage(''), 3000);
+                } else {
+                    setErrors({ form: result.error || 'Failed to update contact information' });
+                }
+            } catch (err) {
+                console.error('Error updating contact info:', err);
+                setErrors({ form: 'An unexpected error occurred' });
+            } finally {
+                setLoading(false);
+            }
         }
     };
 
-    const handleChangePassword = (e) => {
+    const handleChangePassword = async (e) => {
         e.preventDefault();
 
         if (validatePasswordChange()) {
-            // Simulate API call
-            setTimeout(() => {
-                setFormData({
-                    ...formData,
-                    currentPassword: '',
-                    newPassword: '',
-                    confirmPassword: ''
+            setLoading(true);
+            try {
+                const result = await UserService.changePassword({
+                    currentPassword: formData.currentPassword,
+                    newPassword: formData.newPassword
                 });
-                setShowSuccessMessage('Password changed successfully!');
-                setTimeout(() => setShowSuccessMessage(''), 3000);
-            }, 1000);
+
+                if (result.success) {
+                    setFormData(prevData => ({
+                        ...prevData,
+                        currentPassword: '',
+                        newPassword: '',
+                        confirmPassword: ''
+                    }));
+                    setSuccessMessage('Password changed successfully!');
+                    setTimeout(() => setSuccessMessage(''), 3000);
+                } else {
+                    setErrors({ form: result.error || 'Failed to change password' });
+                }
+            } catch (err) {
+                console.error('Error changing password:', err);
+                setErrors({ form: 'An unexpected error occurred' });
+            } finally {
+                setLoading(false);
+            }
         }
     };
 
@@ -113,8 +173,8 @@ const Settings = ({ darkMode, user }) => {
                         className={`px-4 py-2 rounded-md text-sm font-medium ${activeSection === 'contact'
                             ? 'bg-red-600 text-white'
                             : darkMode
-                                ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                ? 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                                : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
                             }`}
                     >
                         Contact Information
@@ -124,8 +184,8 @@ const Settings = ({ darkMode, user }) => {
                         className={`px-4 py-2 rounded-md text-sm font-medium ${activeSection === 'password'
                             ? 'bg-red-600 text-white'
                             : darkMode
-                                ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                ? 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                                : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
                             }`}
                     >
                         Change Password
@@ -135,8 +195,8 @@ const Settings = ({ darkMode, user }) => {
                         className={`px-4 py-2 rounded-md text-sm font-medium ${activeSection === 'notifications'
                             ? 'bg-red-600 text-white'
                             : darkMode
-                                ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                ? 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                                : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
                             }`}
                     >
                         Notification Settings
@@ -144,9 +204,16 @@ const Settings = ({ darkMode, user }) => {
                 </div>
 
                 {/* Success Message */}
-                {showSuccessMessage && (
+                {successMessage && (
                     <div className={`p-4 mb-6 rounded-md ${darkMode ? 'bg-green-900 text-green-200' : 'bg-green-100 text-green-800'}`}>
-                        {showSuccessMessage}
+                        {successMessage}
+                    </div>
+                )}
+
+                {/* Error Message */}
+                {errors.form && (
+                    <div className={`p-4 mb-6 rounded-md ${darkMode ? 'bg-red-900 text-red-200' : 'bg-red-100 text-red-800'}`}>
+                        {errors.form}
                     </div>
                 )}
 
@@ -161,7 +228,7 @@ const Settings = ({ darkMode, user }) => {
                                     Update your contact information. This information will be used for notifications and account recovery.
                                 </p>
 
-                                <div className="space-y-6">
+                                <div className="space-y-6 max-w-lg">
                                     <div>
                                         <label htmlFor="email" className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                                             Email Address
@@ -171,13 +238,12 @@ const Settings = ({ darkMode, user }) => {
                                             name="email"
                                             id="email"
                                             value={formData.email}
-                                            onChange={handleInputChange}
-                                            className={`mt-1 block w-full rounded-md shadow-sm focus:border-red-500 focus:ring focus:ring-red-500 focus:ring-opacity-50 sm:text-sm ${darkMode
+                                            readOnly
+                                            className={`mt-1 block w-full rounded-md border px-3 py-2 shadow-sm focus:border-red-500 focus:ring focus:ring-red-500 focus:ring-opacity-50 sm:text-sm ${darkMode
                                                 ? 'bg-gray-700 border-gray-600 text-white'
                                                 : 'border-gray-300 text-gray-900'
                                                 } ${errors.email ? 'border-red-500' : ''}`}
                                         />
-                                        {errors.email && <p className="mt-1 text-sm text-red-500">{errors.email}</p>}
                                     </div>
 
                                     <div>
@@ -188,10 +254,10 @@ const Settings = ({ darkMode, user }) => {
                                             type="text"
                                             name="phone"
                                             id="phone"
-                                            placeholder="(555) 123-4567"
+                                            placeholder="123-456-7890"
                                             value={formData.phone}
                                             onChange={handleInputChange}
-                                            className={`mt-1 block w-full rounded-md shadow-sm focus:border-red-500 focus:ring focus:ring-red-500 focus:ring-opacity-50 sm:text-sm ${darkMode
+                                            className={`mt-1 block w-full rounded-md border px-3 py-2 shadow-sm focus:border-red-500 focus:ring focus:ring-red-500 focus:ring-opacity-50 sm:text-sm ${darkMode
                                                 ? 'bg-gray-700 border-gray-600 text-white'
                                                 : 'border-gray-300 text-gray-900'
                                                 } ${errors.phone ? 'border-red-500' : ''}`}
@@ -199,12 +265,51 @@ const Settings = ({ darkMode, user }) => {
                                         {errors.phone && <p className="mt-1 text-sm text-red-500">{errors.phone}</p>}
                                     </div>
 
+                                    <div>
+                                        <label htmlFor="address" className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                            Address
+                                        </label>
+                                        <input
+                                            type="text"
+                                            name="address"
+                                            id="address"
+                                            placeholder="123 Main St, Stony Brook, NY 11790"
+                                            value={formData.address}
+                                            onChange={handleInputChange}
+                                            className={`mt-1 block w-full rounded-md border px-3 py-2 shadow-sm focus:border-red-500 focus:ring focus:ring-red-500 focus:ring-opacity-50 sm:text-sm ${darkMode
+                                                ? 'bg-gray-700 border-gray-600 text-white'
+                                                : 'border-gray-300 text-gray-900'
+                                                } ${errors.address ? 'border-red-500' : ''}`}
+                                        />
+                                        {errors.address && <p className="mt-1 text-sm text-red-500">{errors.address}</p>}
+                                    </div>
+
+                                    <div>
+                                        <label htmlFor="emergencyContact" className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                            Emergency Contact
+                                        </label>
+                                        <input
+                                            type="text"
+                                            name="emergencyContact"
+                                            id="emergencyContact"
+                                            placeholder="John Doe: 123-456-7890"
+                                            value={formData.emergencyContact}
+                                            onChange={handleInputChange}
+                                            className={`mt-1 block w-full rounded-md border px-3 py-2 shadow-sm focus:border-red-500 focus:ring focus:ring-red-500 focus:ring-opacity-50 sm:text-sm ${darkMode
+                                                ? 'bg-gray-700 border-gray-600 text-white'
+                                                : 'border-gray-300 text-gray-900'
+                                                } ${errors.emergencyContact ? 'border-red-500' : ''}`}
+                                        />
+                                        {errors.emergencyContact && <p className="mt-1 text-sm text-red-500">{errors.emergencyContact}</p>}
+                                    </div>
+
                                     <div className="flex justify-end">
                                         <button
                                             type="submit"
-                                            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
+                                            disabled={loading}
+                                            className={`px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
                                         >
-                                            Update Contact Information
+                                            {loading ? 'Updating...' : 'Update Contact Information'}
                                         </button>
                                     </div>
                                 </div>
@@ -219,7 +324,7 @@ const Settings = ({ darkMode, user }) => {
                                     Update your password to maintain account security. Choose a strong password that you don't use elsewhere.
                                 </p>
 
-                                <div className="space-y-6">
+                                <div className="space-y-6 max-w-lg">
                                     <div>
                                         <label htmlFor="currentPassword" className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                                             Current Password
@@ -230,7 +335,7 @@ const Settings = ({ darkMode, user }) => {
                                             id="currentPassword"
                                             value={formData.currentPassword}
                                             onChange={handleInputChange}
-                                            className={`mt-1 block w-full rounded-md shadow-sm focus:border-red-500 focus:ring focus:ring-red-500 focus:ring-opacity-50 sm:text-sm ${darkMode
+                                            className={`mt-1 block w-full rounded-md border px-3 py-2 shadow-sm focus:border-red-500 focus:ring focus:ring-red-500 focus:ring-opacity-50 sm:text-sm ${darkMode
                                                 ? 'bg-gray-700 border-gray-600 text-white'
                                                 : 'border-gray-300 text-gray-900'
                                                 } ${errors.currentPassword ? 'border-red-500' : ''}`}
@@ -248,7 +353,7 @@ const Settings = ({ darkMode, user }) => {
                                             id="newPassword"
                                             value={formData.newPassword}
                                             onChange={handleInputChange}
-                                            className={`mt-1 block w-full rounded-md shadow-sm focus:border-red-500 focus:ring focus:ring-red-500 focus:ring-opacity-50 sm:text-sm ${darkMode
+                                            className={`mt-1 block w-full rounded-md border px-3 py-2 shadow-sm focus:border-red-500 focus:ring focus:ring-red-500 focus:ring-opacity-50 sm:text-sm ${darkMode
                                                 ? 'bg-gray-700 border-gray-600 text-white'
                                                 : 'border-gray-300 text-gray-900'
                                                 } ${errors.newPassword ? 'border-red-500' : ''}`}
@@ -266,7 +371,7 @@ const Settings = ({ darkMode, user }) => {
                                             id="confirmPassword"
                                             value={formData.confirmPassword}
                                             onChange={handleInputChange}
-                                            className={`mt-1 block w-full rounded-md shadow-sm focus:border-red-500 focus:ring focus:ring-red-500 focus:ring-opacity-50 sm:text-sm ${darkMode
+                                            className={`mt-1 block w-full rounded-md border px-3 py-2 shadow-sm focus:border-red-500 focus:ring focus:ring-red-500 focus:ring-opacity-50 sm:text-sm ${darkMode
                                                 ? 'bg-gray-700 border-gray-600 text-white'
                                                 : 'border-gray-300 text-gray-900'
                                                 } ${errors.confirmPassword ? 'border-red-500' : ''}`}
@@ -277,9 +382,10 @@ const Settings = ({ darkMode, user }) => {
                                     <div className="flex justify-end">
                                         <button
                                             type="submit"
-                                            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
+                                            disabled={loading}
+                                            className={`px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
                                         >
-                                            Change Password
+                                            {loading ? 'Updating...' : 'Change Password'}
                                         </button>
                                     </div>
                                 </div>
@@ -291,72 +397,14 @@ const Settings = ({ darkMode, user }) => {
                             <div>
                                 <h2 className="text-xl font-bold mb-4">Notification Settings</h2>
                                 <p className={`mb-6 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                    Manage how and when you receive notifications from P4SBU.
+                                    Manage how you receive notifications from P4SBU.
                                 </p>
 
-                                <div className="space-y-4">
-                                    <div className={`p-4 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <h3 className="text-md font-medium">Email Notifications</h3>
-                                                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                                    Receive updates about your account, permits, and citations via email
-                                                </p>
-                                            </div>
-                                            <label className="flex items-center cursor-pointer">
-                                                <div className="relative">
-                                                    <input type="checkbox" className="sr-only" defaultChecked />
-                                                    <div className={`block w-10 h-6 rounded-full ${darkMode ? 'bg-gray-600' : 'bg-gray-300'}`}></div>
-                                                    <div className="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform translate-x-full"></div>
-                                                </div>
-                                            </label>
-                                        </div>
-                                    </div>
-
-                                    <div className={`p-4 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <h3 className="text-md font-medium">SMS Notifications</h3>
-                                                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                                    Receive text messages for important alerts and reminders
-                                                </p>
-                                            </div>
-                                            <label className="flex items-center cursor-pointer">
-                                                <div className="relative">
-                                                    <input type="checkbox" className="sr-only" />
-                                                    <div className={`block w-10 h-6 rounded-full ${darkMode ? 'bg-gray-600' : 'bg-gray-300'}`}></div>
-                                                    <div className="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform"></div>
-                                                </div>
-                                            </label>
-                                        </div>
-                                    </div>
-
-                                    <div className={`p-4 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <h3 className="text-md font-medium">Permit Expiration Reminders</h3>
-                                                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                                    Get notified when your parking permits are about to expire
-                                                </p>
-                                            </div>
-                                            <label className="flex items-center cursor-pointer">
-                                                <div className="relative">
-                                                    <input type="checkbox" className="sr-only" defaultChecked />
-                                                    <div className={`block w-10 h-6 rounded-full ${darkMode ? 'bg-gray-600' : 'bg-gray-300'}`}></div>
-                                                    <div className="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform translate-x-full"></div>
-                                                </div>
-                                            </label>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex justify-end mt-6">
-                                        <button
-                                            type="button"
-                                            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
-                                        >
-                                            Save Notification Preferences
-                                        </button>
-                                    </div>
+                                {/* Notification settings can be added here in the future */}
+                                <div className="flex items-center justify-center h-40">
+                                    <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                        Notification settings coming soon.
+                                    </p>
                                 </div>
                             </div>
                         )}

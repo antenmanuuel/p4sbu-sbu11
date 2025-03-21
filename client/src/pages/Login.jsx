@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { FaEnvelope, FaLock, FaExclamationCircle, FaCheckCircle } from 'react-icons/fa';
@@ -12,6 +11,7 @@ const Login = ({ darkMode, login }) => {
   const [formSubmitted, setFormSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [loginMessage, setLoginMessage] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -19,6 +19,15 @@ const Login = ({ darkMode, login }) => {
   const from = location.state?.from?.pathname || location.state?.from || '/dashboard';
   // Check if the user was redirected with a pending reservation
   const reservationPending = location.state?.reservationPending || false;
+  // Check for message from registration
+  const registrationMessage = location.state?.message || '';
+
+  // Set message from registration if exists
+  useEffect(() => {
+    if (registrationMessage) {
+      setLoginMessage(registrationMessage);
+    }
+  }, [registrationMessage]);
 
   // Validate a single field
   const validateField = (name, value) => {
@@ -126,36 +135,24 @@ const Login = ({ darkMode, login }) => {
     setLoginError('');
 
     try {
-      // Use the login function from props
-      const success = login(email, password);
+      // Call the login function from props that now uses the real API
+      if (login) {
+        const success = await login(email, password);
 
-      // Store token for persistence (mock)
-      if (success && rememberMe) {
-        localStorage.setItem('auth_token', 'mock-token-value');
+        if (success) {
+          // Login was successful, the parent component will handle redirection
+          // AppContent will decide which dashboard to show based on user type
+        } else {
+          setLoginError('Invalid email or password. Please try again.');
+        }
+      } else {
+        setLoginError('Login function not available');
       }
 
-      setTimeout(() => {
-        setIsLoading(false);
-
-        // Determine which dashboard to redirect to based on email (which indicates user type)
-        let dashboardRoute;
-        if (email.includes('admin')) {
-          dashboardRoute = '/admin-dashboard';
-        } else if (email.includes('faculty')) {
-          dashboardRoute = '/faculty-dashboard';
-        } else {
-          dashboardRoute = '/dashboard'; // Student dashboard
-        }
-
-        // Redirect to the appropriate dashboard or the intended destination
-        if (from === '/dashboard') {
-          navigate(dashboardRoute);
-        } else {
-          navigate(from);
-        }
-      }, 1000);
-    } catch {
-      setLoginError('Invalid email or password');
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Login error:', error);
+      setLoginError('An unexpected error occurred. Please try again.');
       setIsLoading(false);
     }
   };
@@ -190,6 +187,15 @@ const Login = ({ darkMode, login }) => {
             <div className="mt-4 p-3 bg-blue-50 text-blue-800 rounded-lg">
               <p className="text-sm font-medium">
                 Please log in to complete your parking reservation. Your selection will be maintained.
+              </p>
+            </div>
+          )}
+
+          {/* Show message from registration */}
+          {loginMessage && (
+            <div className={`mt-4 p-3 rounded-lg ${darkMode ? 'bg-blue-900/50 text-blue-200' : 'bg-blue-50 text-blue-800'}`}>
+              <p className="text-sm font-medium">
+                {loginMessage}
               </p>
             </div>
           )}
