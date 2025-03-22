@@ -1,24 +1,64 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaSearch, FaFilter, FaEdit, FaTrash, FaLock, FaLockOpen, FaPlusCircle, FaArrowLeft, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
-import { getPermits, togglePermitStatus, deletePermit, updatePermitPaymentStatus, createPermit, updatePermit } from '../../utils/mockPermitData';
+import { FaSearch, FaFilter, FaEdit, FaTrash, FaLock, FaLockOpen, FaArrowLeft, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
+import { getPermits, togglePermitStatus, deletePermit, updatePermitPaymentStatus, createPermit, updatePermit, getPermitTypes } from '../../utils/mockPermitData';
 import { mockUsers } from '../../utils/mockUserData';
+
+// Mock payments for demonstration (this would come from your payment API in a real app)
+const mockPayments = [
+    { id: 'PAY001', userDetails: { userId: '1001', name: 'John Doe', email: 'john.doe@stonybrook.edu' }, amount: 125.00, status: 'completed' },
+    { id: 'PAY002', userDetails: { userId: '1002', name: 'Jane Smith', email: 'jane.smith@stonybrook.edu' }, amount: 275.00, status: 'pending' },
+    { id: 'PAY003', userDetails: { userId: '1003', name: 'Robert Johnson', email: 'robert.johnson@stonybrook.edu' }, amount: 250.00, status: 'completed' },
+];
 
 // New Permit Form Component
 const PermitForm = ({ permit = null, onSubmit, onCancel, darkMode }) => {
+    // Note: In a real application, this form would be connected to a payment system
+    // and the payment/user data would be passed from the payment form
+    // The fields are disabled here to indicate they should be managed elsewhere
+
     const [formData, setFormData] = useState({
         permitType: permit?.permitType || 'Student',
+        permitName: permit?.permitName || '',
         userId: permit?.userId || '',
-        lotId: permit?.lotId || 'L001',
-        lotName: permit?.lotName || 'South P Lot',
+        lots: permit?.lots || [{ lotId: 'L001', lotName: 'South P Lot' }],
         startDate: permit?.startDate || new Date().toISOString().split('T')[0],
         endDate: permit?.endDate || new Date(new Date().setMonth(new Date().getMonth() + 4)).toISOString().split('T')[0],
         status: permit?.status || 'active',
         price: permit?.price || 125.00,
         paymentStatus: permit?.paymentStatus || 'unpaid',
         userFullName: permit?.userFullName || '',
-        userEmail: permit?.userEmail || ''
+        userEmail: permit?.userEmail || '',
+        paymentId: permit?.paymentId || '',
     });
+
+    const [permitTypes, setPermitTypes] = useState([]);
+
+    // Load permit types when the form loads
+    useEffect(() => {
+        const fetchPermitTypes = () => {
+            const result = getPermitTypes({}, 1, 100);
+            setPermitTypes(result.permitTypes);
+        };
+        fetchPermitTypes();
+    }, []);
+
+    // If editing, set the payment ID and related fields from the permit data
+    useEffect(() => {
+        if (permit?.paymentId) {
+            const payment = mockPayments.find(p => p.id === permit.paymentId);
+            if (payment) {
+                setFormData(prev => ({
+                    ...prev,
+                    paymentId: permit.paymentId,
+                    userId: payment.userDetails.userId,
+                    userFullName: payment.userDetails.name,
+                    userEmail: payment.userDetails.email,
+                    paymentStatus: payment.status === 'completed' ? 'paid' : 'unpaid'
+                }));
+            }
+        }
+    }, [permit]);
 
     // Load user information when userId changes
     useEffect(() => {
@@ -52,6 +92,26 @@ const PermitForm = ({ permit = null, onSubmit, onCancel, darkMode }) => {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
+    // Add handler for removing a lot
+    const handleRemoveLot = (index) => {
+        if (formData.lots.length > 1) {
+            setFormData(prev => ({
+                ...prev,
+                lots: prev.lots.filter((_, i) => i !== index)
+            }));
+        }
+    };
+
+    // Update handler for changing lot info
+    const handleLotChange = (index, lotId, lotName) => {
+        const updatedLots = [...formData.lots];
+        updatedLots[index] = { lotId, lotName };
+        setFormData(prev => ({
+            ...prev,
+            lots: updatedLots
+        }));
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
         onSubmit(formData);
@@ -73,113 +133,198 @@ const PermitForm = ({ permit = null, onSubmit, onCancel, darkMode }) => {
                 <div>
                     <label className={`block mb-1 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                         Permit Type
+                        <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">(managed by permit types)</span>
                     </label>
                     <select
                         name="permitType"
                         value={formData.permitType}
                         onChange={handleChange}
-                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} focus:outline-none`}
-                        required
+                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600 opacity-75' : 'bg-gray-100 text-gray-900 border-gray-300 opacity-75'} focus:outline-none cursor-not-allowed`}
+                        disabled
                     >
-                        <option value="Student">Student</option>
-                        <option value="Faculty">Faculty</option>
-                        <option value="Staff">Staff</option>
-                        <option value="Visitor">Visitor</option>
+                        {permitTypes.map(type => (
+                            <option key={type.id} value={type.category}>
+                                {type.name} ({type.category})
+                            </option>
+                        ))}
                     </select>
+                    <div className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        This is defined in Manage Permit Types
+                    </div>
                 </div>
 
-                {/* User Selection */}
+                {/* Permit Name */}
                 <div>
                     <label className={`block mb-1 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                        User
+                        Permit Name
+                        <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">(managed by permit types)</span>
                     </label>
-                    <select
-                        name="userId"
-                        value={formData.userId}
+                    <input
+                        type="text"
+                        name="permitName"
+                        value={formData.permitName}
                         onChange={handleChange}
-                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} focus:outline-none`}
-                    >
-                        <option value="">Select User</option>
-                        {mockUsers.map(user => (
-                            <option key={user.id} value={user.id}>
-                                {user.firstName} {user.lastName} ({user.email})
-                            </option>
-                        ))}
-                    </select>
+                        placeholder="Enter permit name"
+                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600 opacity-75' : 'bg-gray-100 text-gray-900 border-gray-300 opacity-75'} focus:outline-none cursor-not-allowed`}
+                        disabled
+                    />
+                    <div className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        This is defined in Manage Permit Types
+                    </div>
                 </div>
 
-                {/* Lot Selection */}
+                {/* Payment Selection (which includes user information) */}
                 <div>
                     <label className={`block mb-1 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                        Parking Lot
+                        Payment (User)
+                        <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">(set in payment form)</span>
                     </label>
                     <select
-                        name="lotId"
-                        value={formData.lotId}
+                        name="paymentId"
+                        value={formData.paymentId}
                         onChange={(e) => {
-                            const selectedLot = parkingLots.find(lot => lot.id === e.target.value);
-                            setFormData(prev => ({
-                                ...prev,
-                                lotId: e.target.value,
-                                lotName: selectedLot ? selectedLot.name : ''
-                            }));
+                            const paymentId = e.target.value;
+                            const payment = mockPayments.find(p => p.id === paymentId);
+                            if (payment) {
+                                setFormData(prev => ({
+                                    ...prev,
+                                    paymentId,
+                                    userId: payment.userDetails.userId,
+                                    userFullName: payment.userDetails.name,
+                                    userEmail: payment.userDetails.email,
+                                    paymentStatus: payment.status === 'completed' ? 'paid' : 'unpaid'
+                                }));
+                            } else {
+                                setFormData(prev => ({
+                                    ...prev,
+                                    paymentId: '',
+                                    userId: '',
+                                    userFullName: '',
+                                    userEmail: '',
+                                }));
+                            }
                         }}
-                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} focus:outline-none`}
-                        required
+                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600 opacity-75' : 'bg-gray-100 text-gray-900 border-gray-300 opacity-75'} focus:outline-none cursor-not-allowed`}
+                        disabled
                     >
-                        {parkingLots.map(lot => (
-                            <option key={lot.id} value={lot.id}>
-                                {lot.name} ({lot.id})
+                        <option value="">Select Payment</option>
+                        {mockPayments.map(payment => (
+                            <option key={payment.id} value={payment.id}>
+                                {payment.userDetails.name} - ${payment.amount} ({payment.status})
                             </option>
                         ))}
                     </select>
+                    <div className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        User information and payment status should be managed in the payment form
+                    </div>
+
+                    {/* Display user info from the selected payment */}
+                    {formData.userId && (
+                        <div className={`mt-2 p-2 rounded ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                            <div className="font-medium">{formData.userFullName}</div>
+                            <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {formData.userEmail}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Multiple Lot Selection */}
+                <div className="md:col-span-2">
+                    <label className={`block mb-1 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Parking Lots
+                        <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">(managed by permit types)</span>
+                    </label>
+                    {formData.lots.map((lot, index) => (
+                        <div key={index} className="flex items-center mb-2 gap-2">
+                            <select
+                                value={lot.lotId}
+                                onChange={(e) => {
+                                    const selectedLot = parkingLots.find(l => l.id === e.target.value);
+                                    handleLotChange(index, e.target.value, selectedLot ? selectedLot.name : '');
+                                }}
+                                className={`flex-1 px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600 opacity-75' : 'bg-gray-100 text-gray-900 border-gray-300 opacity-75'} focus:outline-none cursor-not-allowed`}
+                                disabled
+                            >
+                                <option value="">Select Lot</option>
+                                {parkingLots.map(lot => (
+                                    <option key={lot.id} value={lot.id}>
+                                        {lot.name} ({lot.id})
+                                    </option>
+                                ))}
+                            </select>
+                            <button
+                                type="button"
+                                onClick={() => handleRemoveLot(index)}
+                                className="p-2 text-red-500 hover:text-red-700 opacity-50 cursor-not-allowed"
+                                disabled
+                            >
+                                <FaTrash />
+                            </button>
+                        </div>
+                    ))}
+                    <div className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Parking lots are defined in Manage Permit Types
+                    </div>
                 </div>
 
                 {/* Price */}
                 <div>
                     <label className={`block mb-1 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                         Price
+                        <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">(managed by permit types)</span>
                     </label>
                     <input
                         type="number"
                         name="price"
                         value={formData.price}
                         onChange={handleChange}
-                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} focus:outline-none`}
+                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600 opacity-75' : 'bg-gray-100 text-gray-900 border-gray-300 opacity-75'} focus:outline-none cursor-not-allowed`}
                         step="0.01"
                         min="0"
-                        required
+                        disabled
                     />
+                    <div className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        This is defined in Manage Permit Types
+                    </div>
                 </div>
 
                 {/* Start Date */}
                 <div>
                     <label className={`block mb-1 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                         Start Date
+                        <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">(managed by permit types)</span>
                     </label>
                     <input
                         type="date"
                         name="startDate"
                         value={formData.startDate}
                         onChange={handleChange}
-                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} focus:outline-none`}
-                        required
+                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600 opacity-75' : 'bg-gray-100 text-gray-900 border-gray-300 opacity-75'} focus:outline-none cursor-not-allowed`}
+                        disabled
                     />
+                    <div className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        This is defined in Manage Permit Types
+                    </div>
                 </div>
 
                 {/* End Date */}
                 <div>
                     <label className={`block mb-1 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                         End Date
+                        <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">(managed by permit types)</span>
                     </label>
                     <input
                         type="date"
                         name="endDate"
                         value={formData.endDate}
                         onChange={handleChange}
-                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} focus:outline-none`}
-                        required
+                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600 opacity-75' : 'bg-gray-100 text-gray-900 border-gray-300 opacity-75'} focus:outline-none cursor-not-allowed`}
+                        disabled
                     />
+                    <div className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        This is defined in Manage Permit Types
+                    </div>
                 </div>
 
                 {/* Status */}
@@ -204,52 +349,24 @@ const PermitForm = ({ permit = null, onSubmit, onCancel, darkMode }) => {
                 <div>
                     <label className={`block mb-1 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                         Payment Status
+                        <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">(set by payment)</span>
                     </label>
                     <select
                         name="paymentStatus"
                         value={formData.paymentStatus}
                         onChange={handleChange}
-                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} focus:outline-none`}
-                        required
+                        className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600 opacity-75' : 'bg-gray-100 text-gray-900 border-gray-300 opacity-75'} focus:outline-none cursor-not-allowed`}
+                        disabled
                     >
                         <option value="paid">Paid</option>
                         <option value="unpaid">Unpaid</option>
                         <option value="refunded">Refunded</option>
                     </select>
+                    <div className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        This is automatically set based on the selected payment
+                    </div>
                 </div>
             </div>
-
-            {/* Manual User Info for Visitor Permits */}
-            {formData.permitType === 'Visitor' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <div>
-                        <label className={`block mb-1 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                            Full Name
-                        </label>
-                        <input
-                            type="text"
-                            name="userFullName"
-                            value={formData.userFullName}
-                            onChange={handleChange}
-                            className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} focus:outline-none`}
-                            required={formData.permitType === 'Visitor'}
-                        />
-                    </div>
-                    <div>
-                        <label className={`block mb-1 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                            Email
-                        </label>
-                        <input
-                            type="email"
-                            name="userEmail"
-                            value={formData.userEmail}
-                            onChange={handleChange}
-                            className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} focus:outline-none`}
-                            required={formData.permitType === 'Visitor'}
-                        />
-                    </div>
-                </div>
-            )}
 
             {/* Form Buttons */}
             <div className="flex justify-end space-x-3 mt-6">
@@ -273,23 +390,45 @@ const PermitForm = ({ permit = null, onSubmit, onCancel, darkMode }) => {
 
 const ManagePermits = ({ darkMode, isAuthenticated }) => {
     const navigate = useNavigate();
-
-    // Redirect if not authenticated
-    if (!isAuthenticated) {
-        navigate('/');
-    }
-
-    // State for permit data and pagination
     const [permitData, setPermitData] = useState({ permits: [], pagination: { totalPages: 1, currentPage: 1, total: 0 } });
     const [currentPage, setCurrentPage] = useState(1);
     const [searchTerm, setSearchTerm] = useState('');
-    const [filters, setFilters] = useState({ status: '', permitType: '', paymentStatus: '' });
+    const [filters, setFilters] = useState({
+        status: '',
+        permitType: '',
+        paymentStatus: ''
+    });
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [currentPermit, setCurrentPermit] = useState(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+    const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
+    const [permitTypes, setPermitTypes] = useState([]);
+
+    // Function to show toast messages
+    const showToast = (message, type = 'info') => {
+        setToast({ show: true, message, type });
+        // Auto-hide toast after 3 seconds
+        setTimeout(() => {
+            setToast({ show: false, message: '', type: 'info' });
+        }, 3000);
+    };
+
+    // Fetch permit types
+    useEffect(() => {
+        const fetchPermitTypes = () => {
+            const result = getPermitTypes({}, 1, 100);
+            setPermitTypes(result.permitTypes);
+        };
+        fetchPermitTypes();
+    }, []);
+
+    // Redirect if not authenticated
+    if (!isAuthenticated) {
+        navigate('/');
+    }
 
     // Fetch permits based on current filters and pagination
     useEffect(() => {
@@ -303,36 +442,141 @@ const ManagePermits = ({ darkMode, isAuthenticated }) => {
         setIsLoading(false);
     }, [filters, searchTerm, currentPage]);
 
-    // Handle adding a new permit
+    // Handle adding a permit
     const handleAddPermit = (formData) => {
-        const newPermit = createPermit(formData);
-        if (newPermit) {
+        // In a real application, you would validate that a payment was selected
+        // Since payment field is disabled, we would get this data from a separate payment form
+        // For demo purposes, we'll use a default payment if none is selected
+        const paymentId = formData.paymentId || 'PAY001';
+        const payment = mockPayments.find(p => p.id === paymentId);
+
+        // Default values if no payment is selected
+        let userId = formData.userId;
+        let userFullName = formData.userFullName;
+        let userEmail = formData.userEmail;
+        let paymentStatus = 'unpaid';
+
+        // If payment is found, use its data
+        if (payment) {
+            userId = payment.userDetails.userId;
+            userFullName = payment.userDetails.name;
+            userEmail = payment.userDetails.email;
+            paymentStatus = payment.status === 'completed' ? 'paid' : 'unpaid';
+        }
+
+        // Prepare the data for the API
+        const newPermitData = {
+            permitType: formData.permitType,
+            permitName: formData.permitName,
+            userId: userId,
+            userFullName: userFullName,
+            userEmail: userEmail,
+            lots: formData.lots,
+            startDate: formData.startDate,
+            endDate: formData.endDate,
+            status: formData.status,
+            price: parseFloat(formData.price),
+            paymentStatus: paymentStatus,
+            paymentId: paymentId,
+            permitTypeId: formData.permitTypeId // Ensure permitTypeId is included
+        };
+
+        // Create the permit using the API function
+        try {
+            const newPermit = createPermit(newPermitData);
+            console.log('New permit created:', newPermit);
+
+            // Update permit list with the new permit
+            setPermitData(prevPermitData => ({
+                permits: [newPermit, ...prevPermitData.permits],
+                pagination: prevPermitData.pagination
+            }));
+
+            // Close the dialog and reset form
             setShowAddModal(false);
-            // Refresh permit data
-            const result = getPermits(
-                { ...filters, search: searchTerm },
-                currentPage,
-                10
-            );
-            setPermitData(result);
+            showToast('Permit created successfully', 'success');
+        } catch (error) {
+            console.error('Error creating permit:', error);
+            let errorMessage = 'Failed to create permit';
+            // Check if it's a quantity error
+            if (error.message && error.message.includes('No more')) {
+                errorMessage = error.message;
+            }
+            showToast(errorMessage, 'error');
         }
     };
 
     // Handle editing a permit
     const handleEditPermit = (formData) => {
-        if (currentPermit) {
-            const updatedPermit = updatePermit(currentPermit.id, formData);
-            if (updatedPermit) {
+        // Check if we have a permit to edit
+        if (!currentPermit) return;
+
+        // In a real application, you would validate that a payment was selected
+        // Since payment field is disabled, we would get this data from a separate payment form
+        // For demo, we'll keep the existing payment or use a default
+        const paymentId = formData.paymentId || currentPermit.paymentId || 'PAY001';
+        const payment = mockPayments.find(p => p.id === paymentId);
+
+        // Default to current values from the permit
+        let userId = currentPermit.userId;
+        let userFullName = currentPermit.userFullName;
+        let userEmail = currentPermit.userEmail;
+        let paymentStatus = currentPermit.paymentStatus;
+
+        // If payment is found, use its data
+        if (payment) {
+            userId = payment.userDetails.userId;
+            userFullName = payment.userDetails.name;
+            userEmail = payment.userDetails.email;
+            paymentStatus = payment.status === 'completed' ? 'paid' : 'unpaid';
+        }
+
+        // Prepare the data for the API
+        const updatedPermitData = {
+            permitType: formData.permitType,
+            permitName: formData.permitName,
+            userId: userId,
+            userFullName: userFullName,
+            userEmail: userEmail,
+            lots: formData.lots,
+            startDate: formData.startDate,
+            endDate: formData.endDate,
+            status: formData.status,
+            price: parseFloat(formData.price),
+            paymentStatus: paymentStatus,
+            paymentId: paymentId,
+            permitTypeId: formData.permitTypeId // Ensure permitTypeId is included
+        };
+
+        // Update the permit using the API function
+        try {
+            const success = updatePermit(currentPermit.id, updatedPermitData);
+            if (success) {
+                // Update the permit in the UI
+                setPermitData(prevPermitData => ({
+                    permits: prevPermitData.permits.map(permit =>
+                        permit.id === currentPermit.id
+                            ? { ...permit, ...updatedPermitData }
+                            : permit
+                    ),
+                    pagination: prevPermitData.pagination
+                }));
+
+                // Close the dialog
                 setShowEditModal(false);
                 setCurrentPermit(null);
-                // Refresh permit data
-                const result = getPermits(
-                    { ...filters, search: searchTerm },
-                    currentPage,
-                    10
-                );
-                setPermitData(result);
+                showToast('Permit updated successfully', 'success');
+            } else {
+                throw new Error('Failed to update permit');
             }
+        } catch (error) {
+            console.error('Error updating permit:', error);
+            let errorMessage = 'Failed to update permit';
+            // Check if it's a quantity error
+            if (error.message && error.message.includes('No more')) {
+                errorMessage = error.message;
+            }
+            showToast(errorMessage, 'error');
         }
     };
 
@@ -537,98 +781,100 @@ const ManagePermits = ({ darkMode, isAuthenticated }) => {
                         Filters
                     </button>
 
-                    {/* Add New Permit Button */}
+                    {/* Manage Permit Types Button */}
                     <button
-                        onClick={() => setShowAddModal(true)}
-                        className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                        onClick={() => navigate('/admin/permit-types')}
+                        className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                     >
-                        <FaPlusCircle className="mr-2" />
-                        Add Permit
+                        <FaFilter className="mr-2" />
+                        Manage Permit Types
                     </button>
                 </div>
 
                 {/* Filter Panel */}
                 {isFilterOpen && (
-                    <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 
-                                  ${darkMode ? 'border-t border-gray-700' : 'border-t border-gray-200'}`}>
-                        {/* Status Filter */}
-                        <div>
-                            <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                Status
-                            </label>
-                            <select
-                                value={filters.status}
-                                onChange={(e) => handleFilterChange('status', e.target.value)}
-                                className={`w-full px-3 py-2 rounded-lg 
+                    <div className={`mt-4 p-4 rounded-lg border ${darkMode ? 'bg-gray-750 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            {/* Status Filter */}
+                            <div>
+                                <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                    Status
+                                </label>
+                                <select
+                                    value={filters.status}
+                                    onChange={(e) => handleFilterChange('status', e.target.value)}
+                                    className={`w-full px-3 py-2 rounded-lg 
                                          ${darkMode
-                                        ? 'bg-gray-700 text-white border-gray-600'
-                                        : 'bg-white text-gray-900 border-gray-300'} 
+                                            ? 'bg-gray-700 text-white border-gray-600'
+                                            : 'bg-white text-gray-900 border-gray-300'} 
                                          border focus:outline-none`}
-                            >
-                                <option value="">All Statuses</option>
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
-                                <option value="pending">Pending</option>
-                            </select>
-                        </div>
+                                >
+                                    <option value="">All Statuses</option>
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                    <option value="pending">Pending</option>
+                                </select>
+                            </div>
 
-                        {/* Permit Type Filter */}
-                        <div>
-                            <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                Permit Type
-                            </label>
-                            <select
-                                value={filters.permitType}
-                                onChange={(e) => handleFilterChange('permitType', e.target.value)}
-                                className={`w-full px-3 py-2 rounded-lg 
+                            {/* Permit Type Filter */}
+                            <div>
+                                <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                    Permit Type
+                                </label>
+                                <select
+                                    value={filters.permitType}
+                                    onChange={(e) => handleFilterChange('permitType', e.target.value)}
+                                    className={`w-full px-3 py-2 rounded-lg 
                                          ${darkMode
-                                        ? 'bg-gray-700 text-white border-gray-600'
-                                        : 'bg-white text-gray-900 border-gray-300'} 
+                                            ? 'bg-gray-700 text-white border-gray-600'
+                                            : 'bg-white text-gray-900 border-gray-300'} 
                                          border focus:outline-none`}
-                            >
-                                <option value="">All Types</option>
-                                <option value="Student">Student</option>
-                                <option value="Faculty">Faculty</option>
-                                <option value="Staff">Staff</option>
-                                <option value="Visitor">Visitor</option>
-                            </select>
-                        </div>
+                                >
+                                    <option value="">All Types</option>
+                                    {permitTypes.map(type => (
+                                        <option key={type.id} value={type.category}>
+                                            {type.name} ({type.category})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
 
-                        {/* Payment Status Filter */}
-                        <div>
-                            <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                Payment Status
-                            </label>
-                            <select
-                                value={filters.paymentStatus}
-                                onChange={(e) => handleFilterChange('paymentStatus', e.target.value)}
-                                className={`w-full px-3 py-2 rounded-lg 
+                            {/* Payment Status Filter */}
+                            <div>
+                                <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                    Payment Status
+                                </label>
+                                <select
+                                    value={filters.paymentStatus}
+                                    onChange={(e) => handleFilterChange('paymentStatus', e.target.value)}
+                                    className={`w-full px-3 py-2 rounded-lg 
                                          ${darkMode
-                                        ? 'bg-gray-700 text-white border-gray-600'
-                                        : 'bg-white text-gray-900 border-gray-300'} 
+                                            ? 'bg-gray-700 text-white border-gray-600'
+                                            : 'bg-white text-gray-900 border-gray-300'} 
                                          border focus:outline-none`}
-                            >
-                                <option value="">All Payment Statuses</option>
-                                <option value="paid">Paid</option>
-                                <option value="unpaid">Unpaid</option>
-                                <option value="refunded">Refunded</option>
-                            </select>
-                        </div>
+                                >
+                                    <option value="">All Payment Statuses</option>
+                                    <option value="paid">Paid</option>
+                                    <option value="unpaid">Unpaid</option>
+                                    <option value="refunded">Refunded</option>
+                                </select>
+                            </div>
 
-                        {/* Reset Filters Button */}
-                        <div className="flex items-end">
-                            <button
-                                onClick={() => {
-                                    setFilters({ status: '', permitType: '', paymentStatus: '' });
-                                    setSearchTerm('');
-                                }}
-                                className={`px-4 py-2 rounded-lg 
+                            {/* Reset Filters Button */}
+                            <div className="flex items-end">
+                                <button
+                                    onClick={() => {
+                                        setFilters({ status: '', permitType: '', paymentStatus: '' });
+                                        setSearchTerm('');
+                                    }}
+                                    className={`px-4 py-2 rounded-lg 
                                           ${darkMode
-                                        ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-                            >
-                                Reset Filters
-                            </button>
+                                            ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+                                >
+                                    Reset Filters
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -647,140 +893,168 @@ const ManagePermits = ({ darkMode, isAuthenticated }) => {
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
-                            <thead className={darkMode ? 'bg-gray-700' : 'bg-gray-50'}>
+                            <thead className={`${darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-50 text-gray-600'}`}>
                                 <tr>
-                                    <th scope="col" className={`px-6 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-300' : 'text-gray-500'} uppercase tracking-wider`}>
-                                        Permit
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                                        Permit Number
                                     </th>
-                                    <th scope="col" className={`px-6 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-300' : 'text-gray-500'} uppercase tracking-wider`}>
-                                        User
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                                        Permit Name
                                     </th>
-                                    <th scope="col" className={`px-6 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-300' : 'text-gray-500'} uppercase tracking-wider`}>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
                                         Type
                                     </th>
-                                    <th scope="col" className={`px-6 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-300' : 'text-gray-500'} uppercase tracking-wider`}>
-                                        Lot
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                                        User
                                     </th>
-                                    <th scope="col" className={`px-6 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-300' : 'text-gray-500'} uppercase tracking-wider`}>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                                        Parking Lots
+                                    </th>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
                                         Dates
                                     </th>
-                                    <th scope="col" className={`px-6 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-300' : 'text-gray-500'} uppercase tracking-wider`}>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                                        Price
+                                    </th>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
                                         Status
                                     </th>
-                                    <th scope="col" className={`px-6 py-3 text-left text-xs font-medium ${darkMode ? 'text-gray-300' : 'text-gray-500'} uppercase tracking-wider`}>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
                                         Payment
                                     </th>
-                                    <th scope="col" className={`px-6 py-3 text-right text-xs font-medium ${darkMode ? 'text-gray-300' : 'text-gray-500'} uppercase tracking-wider`}>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
                                         Actions
                                     </th>
                                 </tr>
                             </thead>
                             <tbody className={`${darkMode ? 'bg-gray-800 divide-y divide-gray-700' : 'bg-white divide-y divide-gray-200'}`}>
-                                {permitData.permits.map((permit) => (
-                                    <tr key={permit.id} className={darkMode ? 'hover:bg-gray-750' : 'hover:bg-gray-50'}>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex items-center">
-                                                <div>
-                                                    <div className={darkMode ? 'text-white' : 'text-gray-900'}>
-                                                        {permit.permitNumber}
-                                                    </div>
-                                                    <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                                        ID: {permit.id}
-                                                    </div>
-                                                </div>
+                                {permitData.permits.map(permit => (
+                                    <tr
+                                        key={permit.id}
+                                        className={`border-t ${darkMode
+                                            ? 'border-gray-700 hover:bg-gray-800'
+                                            : 'border-gray-200 hover:bg-gray-50'
+                                            } transition-colors`}
+                                    >
+                                        {/* Permit number */}
+                                        <td className="px-4 py-3 text-sm">
+                                            <div className="font-medium">{permit.permitNumber}</div>
+                                            <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                ID: {permit.id}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className={darkMode ? 'text-white' : 'text-gray-900'}>
-                                                {permit.userFullName}
-                                            </div>
-                                            <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+
+                                        {/* Permit Name */}
+                                        <td className="px-4 py-3">
+                                            <div className="font-medium">{permit.permitName}</div>
+                                        </td>
+
+                                        {/* Type */}
+                                        <td className="px-4 py-3">
+                                            <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${permit.permitType === 'Faculty'
+                                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                                                : permit.permitType === 'Commuter Student'
+                                                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                                                    : permit.permitType === 'Resident Student'
+                                                        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                                                        : 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
+                                                }`}>
+                                                {permit.permitType}
+                                            </span>
+                                        </td>
+
+                                        {/* User */}
+                                        <td className="px-4 py-3">
+                                            <div className="font-medium">{permit.userFullName}</div>
+                                            <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                                 {permit.userEmail}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium 
-                                                          ${permit.permitType === 'Student'
-                                                    ? 'bg-green-100 text-green-800'
-                                                    : permit.permitType === 'Faculty'
-                                                        ? 'bg-blue-100 text-blue-800'
-                                                        : permit.permitType === 'Staff'
-                                                            ? 'bg-purple-100 text-purple-800'
-                                                            : 'bg-yellow-100 text-yellow-800'}`}>
-                                                {permit.permitType}
-                                            </span>
-                                            <div className={`text-sm mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                                {formatCurrency(permit.price)}
-                                            </div>
+
+                                        {/* Parking Lot */}
+                                        <td className="px-4 py-3">
+                                            {permit.lots.map((lot, index) => (
+                                                <div key={index}>
+                                                    <div className="font-medium">{lot.lotName}</div>
+                                                    <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                        ID: {lot.lotId}
+                                                    </div>
+                                                    {index < permit.lots.length - 1 && <hr className={`my-1 ${darkMode ? 'border-gray-700' : 'border-gray-200'}`} />}
+                                                </div>
+                                            ))}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className={darkMode ? 'text-white' : 'text-gray-900'}>
-                                                {permit.lotName}
-                                            </div>
-                                            <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                                Lot ID: {permit.lotId}
-                                            </div>
+
+                                        {/* Dates */}
+                                        <td className="px-4 py-3">
+                                            <div>{permit.startDate} to</div>
+                                            <div>{permit.endDate}</div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className={darkMode ? 'text-white' : 'text-gray-900'}>
-                                                {permit.startDate} - {permit.endDate}
-                                            </div>
-                                            <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                                Created: {permit.createdAt}
-                                            </div>
+
+                                        {/* Price */}
+                                        <td className="px-4 py-3 font-medium">
+                                            {formatCurrency(permit.price)}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeStyles(permit.status)}`}>
+
+                                        {/* Status */}
+                                        <td className="px-4 py-3">
+                                            <span className={getStatusBadgeStyles(permit.status)}>
                                                 {permit.status.charAt(0).toUpperCase() + permit.status.slice(1)}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeStyles(permit.paymentStatus)}`}>
+
+                                        {/* Payment Status */}
+                                        <td className="px-4 py-3">
+                                            <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${permit.paymentStatus === 'paid'
+                                                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                                                : permit.paymentStatus === 'unpaid'
+                                                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                                                    : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                                }`}>
                                                 {permit.paymentStatus.charAt(0).toUpperCase() + permit.paymentStatus.slice(1)}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                                            <div className="flex justify-end space-x-2">
+
+                                        {/* Actions */}
+                                        <td className="px-4 py-3">
+                                            <div className="flex space-x-2">
+                                                {/* Edit button */}
                                                 <button
-                                                    className={`p-1.5 rounded-full ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
-                                                    title="Edit Permit"
-                                                    onClick={() => {
-                                                        setCurrentPermit(permit);
-                                                        setShowEditModal(true);
-                                                    }}
+                                                    onClick={() => { setCurrentPermit(permit); setShowEditModal(true); }}
+                                                    className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                                    title="Edit permit"
                                                 >
-                                                    <FaEdit className="text-blue-500" />
+                                                    <FaEdit />
                                                 </button>
+
+                                                {/* Toggle status button */}
                                                 <button
-                                                    className={`p-1.5 rounded-full ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
-                                                    title={permit.status === 'active' ? 'Deactivate Permit' : 'Activate Permit'}
                                                     onClick={() => handleToggleStatus(permit.id, permit.status)}
+                                                    className={`p-1 ${permit.status === 'active'
+                                                        ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300'
+                                                        : 'text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300'}`}
+                                                    title={permit.status === 'active' ? 'Deactivate permit' : 'Activate permit'}
                                                 >
-                                                    {permit.status === 'active' ? (
-                                                        <FaLock className="text-yellow-500" />
-                                                    ) : (
-                                                        <FaLockOpen className="text-green-500" />
-                                                    )}
+                                                    {permit.status === 'active' ? <FaLock /> : <FaLockOpen />}
                                                 </button>
+
+                                                {/* Toggle payment status button */}
                                                 <button
-                                                    className={`p-1.5 rounded-full ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
-                                                    title="Toggle Payment Status"
                                                     onClick={() => handleUpdatePaymentStatus(permit.id, permit.paymentStatus)}
+                                                    className={`p-1 ${permit.paymentStatus === 'paid'
+                                                        ? 'text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300'
+                                                        : 'text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300'}`}
+                                                    title={permit.paymentStatus === 'paid' ? 'Mark as unpaid' : 'Mark as paid'}
                                                 >
-                                                    {permit.paymentStatus === 'paid' ? (
-                                                        <FaCheckCircle className="text-green-500" />
-                                                    ) : permit.paymentStatus === 'unpaid' ? (
-                                                        <FaTimesCircle className="text-red-500" />
-                                                    ) : (
-                                                        <FaCheckCircle className="text-blue-500" />
-                                                    )}
+                                                    {permit.paymentStatus === 'paid' ? <FaTimesCircle /> : <FaCheckCircle />}
                                                 </button>
+
+                                                {/* Delete button */}
                                                 <button
-                                                    className={`p-1.5 rounded-full ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
-                                                    title="Delete Permit"
                                                     onClick={() => setConfirmDeleteId(permit.id)}
+                                                    className="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                                    title="Delete permit"
                                                 >
-                                                    <FaTrash className="text-red-500" />
+                                                    <FaTrash />
                                                 </button>
                                             </div>
                                         </td>
@@ -848,6 +1122,16 @@ const ManagePermits = ({ darkMode, isAuthenticated }) => {
                             darkMode={darkMode}
                         />
                     </div>
+                </div>
+            )}
+
+            {/* Toast notification */}
+            {toast.show && (
+                <div className={`fixed bottom-4 right-4 px-4 py-2 rounded-md shadow-lg ${toast.type === 'success' ? 'bg-green-500 text-white' :
+                    toast.type === 'error' ? 'bg-red-500 text-white' :
+                        'bg-blue-500 text-white'
+                    } transition-opacity duration-300`}>
+                    {toast.message}
                 </div>
             )}
         </div>
