@@ -18,6 +18,7 @@ import AdminDashboard from './pages/admin/AdminDashboard.jsx';
 import ManageUsers from './pages/admin/ManageUsers.jsx';
 import ManagePermits from './pages/admin/ManagePermits.jsx';
 import ManageLots from './pages/admin/ManageLots.jsx';
+import ManagePermitTypes from './pages/admin/ManagePermitTypes.jsx';
 import FindParking from './pages/FindParking.jsx';
 import Billing from './pages/Billing.jsx';
 import PastReservations from './pages/PastReservations.jsx';
@@ -591,6 +592,33 @@ const AppContent = () => {
                 />
                 <main className="flex-grow">
                   <ManageTickets
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/permit-types"
+          element={
+            <ProtectedRoute
+              isAuthenticated={isAuthenticated}
+              allowedRoles={['Admin']}
+              userRole={user?.userType}
+            >
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <ManagePermitTypes
                     darkMode={darkMode}
                     isAuthenticated={isAuthenticated}
                   />

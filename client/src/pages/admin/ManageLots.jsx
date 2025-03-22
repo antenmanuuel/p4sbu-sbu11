@@ -15,7 +15,7 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
     const [lotsData, setLotsData] = useState({ lots: [], pagination: { totalPages: 1, currentPage: 1, total: 0 } });
     const [currentPage, setCurrentPage] = useState(1);
     const [searchTerm, setSearchTerm] = useState('');
-    const [filters, setFilters] = useState({ status: '', permitType: '' });
+    const [filters, setFilters] = useState({ status: '', permitType: '', lotType: '', rateType: '' });
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -33,7 +33,9 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
         availableSpaces: 0,
         permitTypes: [],
         hourlyRate: '$0.00',
-        status: 'active'
+        status: 'active',
+        isEV: false,
+        isMetered: false
     });
 
     // Validation state
@@ -104,7 +106,9 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
             availableSpaces: lot.availableSpaces,
             permitTypes: lot.permitTypes,
             hourlyRate: lot.hourlyRate,
-            status: lot.status
+            status: lot.status,
+            isEV: lot.isEV || false,
+            isMetered: lot.isMetered || false
         });
         setModalMode('edit');
         setIsModalOpen(true);
@@ -119,9 +123,11 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
             coordinates: [40.9148, -73.1259],
             totalSpaces: 0,
             availableSpaces: 0,
-            permitTypes: ['Student', 'Faculty', 'Staff'],
+            permitTypes: ['Commuter Student', 'Faculty'],
             hourlyRate: '$0.00',
-            status: 'active'
+            status: 'active',
+            isEV: false,
+            isMetered: false
         });
         setModalMode('create');
         setIsModalOpen(true);
@@ -161,6 +167,12 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
         });
     };
 
+    // Handle checkbox changes
+    const handleCheckboxChange = (e) => {
+        const { name, checked } = e.target;
+        setFormData(prev => ({ ...prev, [name]: checked }));
+    };
+
     // Validate form
     const validateForm = () => {
         const errors = {};
@@ -185,8 +197,9 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
             errors.permitTypes = "At least one permit type is required";
         }
 
-        if (!formData.hourlyRate.trim() || !formData.hourlyRate.includes('$')) {
-            errors.hourlyRate = "Hourly rate must be in format $X.XX";
+        // Only validate hourly rate if the lot is metered or has EV charging
+        if ((formData.isMetered || formData.isEV) && (!formData.hourlyRate.trim() || !formData.hourlyRate.includes('$'))) {
+            errors.hourlyRate = "Hourly rate must be in format $X.XX for metered or EV lots";
         }
 
         setFormErrors(errors);
@@ -395,20 +408,26 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                 </div>
                             </div>
 
-                            {/* Hourly Rate */}
+                            {/* Hourly Rate - only for metered or EV lots */}
                             <div>
                                 <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                    Hourly Rate*
+                                    {(formData.isMetered || formData.isEV) ? 'Hourly Rate*' : 'Rate Type'}
                                 </label>
-                                <input
-                                    type="text"
-                                    name="hourlyRate"
-                                    value={formData.hourlyRate}
-                                    onChange={handleFormChange}
-                                    className={`w-full px-3 py-2 border ${formErrors.hourlyRate ? 'border-red-500' : darkMode ? 'border-gray-600' : 'border-gray-300'} 
-                                            rounded-md ${darkMode ? 'bg-gray-700 text-white' : 'bg-white text-gray-900'} focus:outline-none`}
-                                    placeholder="$0.00"
-                                />
+                                {(formData.isMetered || formData.isEV) ? (
+                                    <input
+                                        type="text"
+                                        name="hourlyRate"
+                                        value={formData.hourlyRate}
+                                        onChange={handleFormChange}
+                                        className={`w-full px-3 py-2 border ${formErrors.hourlyRate ? 'border-red-500' : darkMode ? 'border-gray-600' : 'border-gray-300'} 
+                                                rounded-md ${darkMode ? 'bg-gray-700 text-white' : 'bg-white text-gray-900'} focus:outline-none`}
+                                        placeholder="$0.00"
+                                    />
+                                ) : (
+                                    <div className={`px-3 py-2 border ${darkMode ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-gray-100 text-gray-700'} rounded-md`}>
+                                        Permit-based (Semester Rate)
+                                    </div>
+                                )}
                                 {formErrors.hourlyRate && <p className="text-red-500 text-xs mt-1">{formErrors.hourlyRate}</p>}
                             </div>
 
@@ -436,7 +455,7 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                     Permit Types*
                                 </label>
                                 <div className="grid grid-cols-2 gap-2">
-                                    {['Student', 'Faculty', 'Staff', 'Visitor', 'Medical', 'Resident', 'Event', 'Admin'].map(type => (
+                                    {['Commuter Student', 'Resident Student', 'Faculty'].map(type => (
                                         <div key={type} className="flex items-center">
                                             <input
                                                 type="checkbox"
@@ -452,6 +471,44 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                     ))}
                                 </div>
                                 {formErrors.permitTypes && <p className="text-red-500 text-xs mt-1">{formErrors.permitTypes}</p>}
+                            </div>
+
+                            {/* Additional Features */}
+                            <div>
+                                <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                    Additional Features
+                                </label>
+                                <div className="space-y-2">
+                                    <div className="flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            id="isEV"
+                                            name="isEV"
+                                            checked={formData.isEV}
+                                            onChange={handleCheckboxChange}
+                                            className="mr-2"
+                                        />
+                                        <label htmlFor="isEV" className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                                            EV Charging Available
+                                        </label>
+                                    </div>
+                                    <div className="flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            id="isMetered"
+                                            name="isMetered"
+                                            checked={formData.isMetered}
+                                            onChange={handleCheckboxChange}
+                                            className="mr-2"
+                                        />
+                                        <label htmlFor="isMetered" className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                                            Metered Parking
+                                        </label>
+                                    </div>
+                                    <div className={`text-xs italic ${darkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>
+                                        Note: Metered and EV lots use hourly rates. Other lots use permit-based semester rates.
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Action Buttons */}
@@ -499,7 +556,7 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                             <FaSearch className={`mr-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
                             <input
                                 type="text"
-                                placeholder="Search lots by name, address, or ID..."
+                                placeholder="Search by name, address, ID, or 'EV', 'metered', 'permit'..."
                                 value={searchTerm}
                                 onChange={handleSearchChange}
                                 className={`w-full bg-transparent focus:outline-none ${darkMode ? 'text-white placeholder-gray-500' : 'text-gray-900 placeholder-gray-500'}`}
@@ -531,7 +588,7 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
 
                 {/* Filter Panel */}
                 {isFilterOpen && (
-                    <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 
+                    <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mt-4 pt-4 
                                   ${darkMode ? 'border-t border-gray-700' : 'border-t border-gray-200'}`}>
                         {/* Status Filter */}
                         <div>
@@ -569,13 +626,50 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                          border focus:outline-none`}
                             >
                                 <option value="">All Permit Types</option>
-                                <option value="student">Student</option>
+                                <option value="commuter student">Commuter Student</option>
+                                <option value="resident student">Resident Student</option>
                                 <option value="faculty">Faculty</option>
-                                <option value="staff">Staff</option>
-                                <option value="visitor">Visitor</option>
-                                <option value="resident">Resident</option>
-                                <option value="medical">Medical</option>
-                                <option value="event">Event</option>
+                            </select>
+                        </div>
+
+                        {/* Lot Type Filter */}
+                        <div>
+                            <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                Lot Type
+                            </label>
+                            <select
+                                value={filters.lotType}
+                                onChange={(e) => handleFilterChange('lotType', e.target.value)}
+                                className={`w-full px-3 py-2 rounded-lg 
+                                         ${darkMode
+                                        ? 'bg-gray-700 text-white border-gray-600'
+                                        : 'bg-white text-gray-900 border-gray-300'} 
+                                         border focus:outline-none`}
+                            >
+                                <option value="">All Lot Types</option>
+                                <option value="ev">EV Charging</option>
+                                <option value="metered">Metered</option>
+                                <option value="standard">Standard</option>
+                            </select>
+                        </div>
+
+                        {/* Rate Type Filter */}
+                        <div>
+                            <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                Rate Type
+                            </label>
+                            <select
+                                value={filters.rateType}
+                                onChange={(e) => handleFilterChange('rateType', e.target.value)}
+                                className={`w-full px-3 py-2 rounded-lg 
+                                         ${darkMode
+                                        ? 'bg-gray-700 text-white border-gray-600'
+                                        : 'bg-white text-gray-900 border-gray-300'} 
+                                         border focus:outline-none`}
+                            >
+                                <option value="">All Rate Types</option>
+                                <option value="hourly">Hourly (Metered/EV)</option>
+                                <option value="permit">Permit-based (Semester)</option>
                             </select>
                         </div>
 
@@ -583,7 +677,7 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                         <div className="flex items-end">
                             <button
                                 onClick={() => {
-                                    setFilters({ status: '', permitType: '' });
+                                    setFilters({ status: '', permitType: '', lotType: '', rateType: '' });
                                     setSearchTerm('');
                                 }}
                                 className={`px-4 py-2 rounded-lg 
@@ -667,8 +761,17 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className={darkMode ? 'text-white' : 'text-gray-900'}>
-                                                {lot.hourlyRate}/hour
+                                                {lot.isMetered || lot.isEV ?
+                                                    `${lot.hourlyRate}/hour` :
+                                                    'Permit-based'}
                                             </div>
+                                            {(lot.isMetered || lot.isEV) && (
+                                                <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                    {lot.isMetered && 'Metered'}
+                                                    {lot.isMetered && lot.isEV && ' & '}
+                                                    {lot.isEV && 'EV'}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeStyles(lot.status)}`}>
