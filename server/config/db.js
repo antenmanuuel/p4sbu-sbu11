@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const User = require('../models/users');
+const Lot = require('../models/lot');
 
 // Create default admin user function
 const createDefaultAdmin = async () => {
@@ -30,6 +31,82 @@ const createDefaultAdmin = async () => {
     }
 };
 
+// Create default lots
+const createDefaultLots = async () => {
+    try {
+        const lotsCount = await Lot.countDocuments();
+        if (lotsCount === 0) {
+            const lots = [
+                {
+                    lotId: 'LOT001',
+                    name: 'North P Lot',
+                    latitude: 40.9181,
+                    longitude: -73.1259
+                },
+                {
+                    lotId: 'LOT002',
+                    name: 'South P Lot',
+                    latitude: 40.9048,
+                    longitude: -73.1278
+                },
+                {
+                    lotId: 'LOT003',
+                    name: 'Administration Garage',
+                    latitude: 40.9158,
+                    longitude: -73.1243
+                },
+                {
+                    lotId: 'LOT004',
+                    name: 'Health Sciences Garage',
+                    latitude: 40.9085,
+                    longitude: -73.1161
+                },
+                {
+                    lotId: 'LOT005',
+                    name: 'Chapin Apartments Lot',
+                    latitude: 40.9222,
+                    longitude: -73.1267
+                },
+                {
+                    lotId: 'LOT006',
+                    name: 'Stadium Lot',
+                    latitude: 40.9218,
+                    longitude: -73.1225
+                },
+                {
+                    lotId: 'LOT007',
+                    name: 'West Apartment Lot',
+                    latitude: 40.9154,
+                    longitude: -73.1310
+                },
+                {
+                    lotId: 'LOT008',
+                    name: 'Engineering Lot',
+                    latitude: 40.9138,
+                    longitude: -73.1247
+                },
+                {
+                    lotId: 'LOT009',
+                    name: 'East Campus Lot',
+                    latitude: 40.9110,
+                    longitude: -73.1180
+                },
+                {
+                    lotId: 'LOT010',
+                    name: 'Visitor Parking Center',
+                    latitude: 40.9155,
+                    longitude: -73.1235
+                }
+            ];
+
+            await Lot.insertMany(lots);
+            console.log('Default lots created successfully');
+        }
+    } catch (error) {
+        console.error('Error creating default lots:', error);
+    }
+};
+
 // Enhanced connect function with retry logic
 const connectDB = async (retryCount = 3, delay = 3000) => {
     let attempts = 0;
@@ -42,8 +119,9 @@ const connectDB = async (retryCount = 3, delay = 3000) => {
 
             console.log(`MongoDB Connected: ${conn.connection.host}`);
 
-            // Create default admin after DB connection
+            // Create default admin and lots after DB connection
             await createDefaultAdmin();
+            await createDefaultLots();
 
             return true;
         } catch (error) {
