@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaSearch, FaFilter, FaEdit, FaTrash, FaPlusCircle, FaArrowLeft } from 'react-icons/fa';
-import { getPermitTypes, createPermitType, updatePermitType, deletePermitType } from '../../utils/mockPermitData';
-import { mockLots } from '../../utils/mockLotsData';
-
+//import { getPermitTypes, createPermitType, updatePermitType, deletePermitType } from '../../utils/mockPermitData';
+//import { mockLots } from '../../utils/mockLotsData';
+import { LotService } from '../../utils/api'; // new import for real lot data
+import { PermitTypeService } from '../../utils/api'; // new import for real permit type data
 // Permit Type Form Component
-const PermitTypeForm = ({ permitType = null, onSubmit, onCancel, darkMode }) => {
+
+const formatDateForInput = (date) => new Date(date).toISOString().split('T')[0];
+
+const PermitTypeForm = ({ permitType = null, onSubmit, onCancel, darkMode, lots }) => {
     const [formData, setFormData] = useState({
         name: permitType?.name || '',
         quantity: permitType?.quantity || 100,
-        startDate: permitType?.startDate || new Date().toISOString().split('T')[0],
-        endDate: permitType?.endDate || new Date(new Date().setMonth(new Date().getMonth() + 4)).toISOString().split('T')[0],
+        startDate: permitType ? formatDateForInput(permitType.startDate) : new Date().toISOString().split('T')[0],
+        endDate: permitType ? formatDateForInput(permitType.endDate) : new Date(new Date().setMonth(new Date().getMonth() + 4)).toISOString().split('T')[0],
         lots: permitType?.lots || [],
         price: permitType?.price || 0.00,
         category: permitType?.category || 'Student',
@@ -144,46 +148,43 @@ const PermitTypeForm = ({ permitType = null, onSubmit, onCancel, darkMode }) => 
                         Available Parking Lots
                     </label>
                     <div className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} overflow-y-auto max-h-[250px]`}>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            {mockLots.map(lot => (
-                                <div
-                                    key={lot.id}
-                                    className={`flex items-center p-2 rounded ${formData.lots.includes(lot.id)
-                                        ? (darkMode ? 'bg-gray-600' : 'bg-gray-100')
-                                        : ''
-                                        }`}
-                                >
-                                    <input
-                                        type="checkbox"
-                                        id={`lot-${lot.id}`}
-                                        value={lot.id}
-                                        checked={formData.lots.includes(lot.id)}
-                                        onChange={(e) => {
-                                            const lotId = e.target.value;
-                                            if (e.target.checked) {
-                                                setFormData(prev => ({
-                                                    ...prev,
-                                                    lots: [...prev.lots, lotId]
-                                                }));
-                                            } else {
-                                                setFormData(prev => ({
-                                                    ...prev,
-                                                    lots: prev.lots.filter(id => id !== lotId)
-                                                }));
-                                            }
-                                        }}
-                                        className="mr-2"
-                                    />
-                                    <label
-                                        htmlFor={`lot-${lot.id}`}
-                                        className="flex flex-1 cursor-pointer"
-                                    >
-                                        <span className="font-medium">{lot.name}</span>
-                                        <span className="ml-2 text-xs text-gray-500">({lot.id})</span>
-                                    </label>
-                                </div>
-                            ))}
-                        </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {lots.map(lot => (
+              <div
+                key={lot.id}
+                className={`flex items-center p-2 rounded ${formData.lots.includes(lot.id)
+                  ? (darkMode ? 'bg-gray-600' : 'bg-gray-100')
+                  : ''
+                  }`}
+              >
+                <input
+                  type="checkbox"
+                  id={`lot-${lot.id}`}
+                  value={lot.id}
+                  checked={formData.lots.includes(lot.id)}
+                  onChange={(e) => {
+                    const lotId = e.target.value;
+                    if (e.target.checked) {
+                      setFormData(prev => ({
+                        ...prev,
+                        lots: [...prev.lots, lotId]
+                      }));
+                    } else {
+                      setFormData(prev => ({
+                        ...prev,
+                        lots: prev.lots.filter(id => id !== lotId)
+                      }));
+                    }
+                  }}
+                  className="mr-2"
+                />
+                <label htmlFor={`lot-${lot.id}`} className="flex flex-1 cursor-pointer">
+                  <span className="font-medium">{lot.name}</span>
+                  <span className="ml-2 text-xs text-gray-500">({lot.id})</span>
+                </label>
+              </div>
+            ))}
+          </div>
                     </div>
                     <div className="mt-2 flex justify-between text-xs">
                         <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>
@@ -192,7 +193,7 @@ const PermitTypeForm = ({ permitType = null, onSubmit, onCancel, darkMode }) => 
                         <div className="flex space-x-2">
                             <button
                                 type="button"
-                                onClick={() => setFormData(prev => ({ ...prev, lots: mockLots.map(lot => lot.id) }))}
+                                onClick={() => setFormData(prev => ({ ...prev, lots: lots.map(lot => lot.id) }))}
                                 className={`text-blue-600 hover:underline ${darkMode ? 'text-blue-400' : ''}`}
                             >
                                 Select All
@@ -240,6 +241,8 @@ const ManagePermitTypes = ({ darkMode, isAuthenticated }) => {
     const [currentPermitType, setCurrentPermitType] = useState(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState(null);
     const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
+    const [lots, setLots] = useState([]);
+    const [lotsLoading, setLotsLoading] = useState(false);
 
     // Function to show toast messages
     const showToast = (message, type = 'info') => {
@@ -255,93 +258,109 @@ const ManagePermitTypes = ({ darkMode, isAuthenticated }) => {
         navigate('/');
     }
 
-    // Fetch permit types
+    // Fetch permit types using real data
     useEffect(() => {
-        setIsLoading(true);
-        const result = getPermitTypes(
-            { search: searchTerm },
-            currentPage,
-            10
-        );
-        setPermitTypeData(result);
-        setIsLoading(false);
+        async function fetchPermitTypes() {
+          setIsLoading(true);
+          const result = await PermitTypeService.getPermitTypes({ search: searchTerm, page: currentPage, limit: 10 });
+          if (result.success) {
+            setPermitTypeData(result.data);
+          } else {
+            console.error("Failed to fetch permit types:", result.error);
+          }
+          setIsLoading(false);
+        }
+        fetchPermitTypes();
     }, [searchTerm, currentPage]);
 
+    // Fetch real lot data from API
+    useEffect(() => {
+        const fetchLots = async () => {
+        setLotsLoading(true);
+        const result = await LotService.getLots();
+        if (result.success) {
+            setLots(result.data);
+        } else {
+            console.error("Error fetching lots:", result.error);
+        }
+        setLotsLoading(false);
+        };
+        fetchLots();
+    }, []);
+
     // Handle add permit type
-    const handleAddPermitType = (formData) => {
+    const handleAddPermitType = async (formData) => {
         try {
-            const newPermitType = createPermitType(formData);
+          const result = await PermitTypeService.createPermitType(formData);
+          if (result.success) {
+            const newPermitType = result.data;
             console.log('New permit type created:', newPermitType);
-
-            // Update list with new permit type
+            // Prepend the new permit type to the current list
             setPermitTypeData(prevData => ({
-                permitTypes: [newPermitType, ...prevData.permitTypes],
-                pagination: prevData.pagination
+              permitTypes: [newPermitType, ...prevData.permitTypes],
+              pagination: prevData.pagination
             }));
-
-            // Close dialog and show success message
             setShowAddModal(false);
             showToast('Permit type created successfully', 'success');
-        } catch (error) {
-            console.error('Error creating permit type:', error);
+          } else {
+            console.error('Error creating permit type:', result.error);
             showToast('Failed to create permit type', 'error');
+          }
+        } catch (error) {
+          console.error('Unexpected error:', error);
+          showToast('Failed to create permit type', 'error');
         }
     };
 
-    // Handle edit permit type
-    const handleEditPermitType = (formData) => {
+    const handleEditPermitType = async (formData) => {
         if (!currentPermitType) return;
-
+      
         try {
-            const success = updatePermitType(currentPermitType.id, formData);
-            if (success) {
-                // Refetch the data to get the updated permit types
-                const result = getPermitTypes(
-                    { search: searchTerm },
-                    currentPage,
-                    10
-                );
-                setPermitTypeData(result);
-
-                // Close dialog and show success message
-                setShowEditModal(false);
-                setCurrentPermitType(null);
-                showToast('Permit type updated successfully', 'success');
-            } else {
-                throw new Error('Failed to update permit type');
+          const result = await PermitTypeService.updatePermitType(currentPermitType.id, formData);
+          if (result.success) {
+            // Optionally, refetch the permit types list to refresh the UI.
+            const fetchResult = await PermitTypeService.getPermitTypes({ search: searchTerm, page: currentPage, limit: 10 });
+            if (fetchResult.success) {
+              setPermitTypeData(fetchResult.data);
             }
+            setShowEditModal(false);
+            setCurrentPermitType(null);
+            showToast('Permit type updated successfully', 'success');
+          } else {
+            throw new Error(result.error);
+          }
         } catch (error) {
-            console.error('Error updating permit type:', error);
-            showToast('Failed to update permit type', 'error');
+          console.error('Error updating permit type:', error);
+          showToast('Failed to update permit type', 'error');
         }
     };
 
     // Handle delete permit type
-    const handleDelete = (typeId) => {
+    const handleDelete = async (typeId) => {
         if (typeId) {
-            try {
-                const success = deletePermitType(typeId);
-                if (success) {
-                    // Update UI by removing the deleted permit type
-                    setPermitTypeData(prevData => ({
-                        permitTypes: prevData.permitTypes.filter(type => type.id !== typeId),
-                        pagination: {
-                            ...prevData.pagination,
-                            total: prevData.pagination.total - 1
-                        }
-                    }));
-
-                    setConfirmDeleteId(null);
-                    showToast('Permit type deleted successfully', 'success');
-                } else {
-                    throw new Error('Failed to delete permit type');
+          try {
+            const result = await PermitTypeService.deletePermitType(typeId);
+            if (result.success) {
+              // Update UI by removing the deleted permit type from state
+              setPermitTypeData(prevData => ({
+                permitTypes: prevData.permitTypes.filter(type => type.id !== typeId),
+                pagination: {
+                  ...prevData.pagination,
+                  total: prevData.pagination.total - 1
                 }
-            } catch (error) {
-                console.error('Error deleting permit type:', error);
-                showToast('Failed to delete permit type', 'error');
+              }));
+              setConfirmDeleteId(null);
+              showToast('Permit type deleted successfully', 'success');
+            } else {
+              throw new Error(result.error);
             }
+          } catch (error) {
+            console.error('Error deleting permit type:', error);
+            showToast('Failed to delete permit type', 'error');
+          }
         }
     };
+      
 
     // Handle search input change
     const handleSearchChange = (e) => {
@@ -361,9 +380,10 @@ const ManagePermitTypes = ({ darkMode, isAuthenticated }) => {
         const formatDate = (dateString) => {
             const date = new Date(dateString);
             return date.toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric'
+              timeZone: 'UTC',
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric'
             });
         };
 
@@ -419,7 +439,7 @@ const ManagePermitTypes = ({ darkMode, isAuthenticated }) => {
             {/* Header with back button */}
             <div className="flex items-center mb-8">
                 <button
-                    onClick={() => navigate('/admin-dashboard')}
+                    onClick={() => navigate('/manage-permits')}
                     className={`mr-4 flex items-center justify-center p-2 rounded-full 
                              ${darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-200'}`}
                 >
@@ -569,26 +589,22 @@ const ManagePermitTypes = ({ darkMode, isAuthenticated }) => {
                                         {/* Lots */}
                                         <td className="px-4 py-3">
                                             <div className="flex flex-wrap gap-1">
-                                                {type.lots.map(lot => {
-                                                    // Check if it's an object with lotId or a string
-                                                    const lotId = typeof lot === 'object' ? lot.lotId : lot;
-                                                    const lotName = typeof lot === 'object' ? lot.lotName : null;
+                                            {type.lots.map(lot => {
+  const lotId = typeof lot === 'object' ? lot.lotId : lot;
+  const lotName = typeof lot === 'object' ? lot.lotName : null;
+  // Use the real lot data instead of mockLots
+  const displayName = lotName || (lots.find(l => l.id === lotId)?.name || lotId);
+  return (
+    <span
+      key={lotId}
+      className={`inline-block px-2 py-1 text-xs font-medium rounded-full 
+        ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'}`}
+    >
+      {displayName}
+    </span>
+  );
+})}
 
-                                                    // If it's an object with lotName, use that, otherwise look it up
-                                                    const displayName = lotName || (mockLots.find(l => l.id === lotId)?.name || lotId);
-
-                                                    return (
-                                                        <span
-                                                            key={lotId}
-                                                            className={`inline-block px-2 py-1 text-xs font-medium rounded-full 
-                                                                ${darkMode
-                                                                    ? 'bg-gray-700 text-gray-300'
-                                                                    : 'bg-gray-200 text-gray-700'}`}
-                                                        >
-                                                            {displayName}
-                                                        </span>
-                                                    );
-                                                })}
                                             </div>
                                         </td>
 
@@ -658,6 +674,7 @@ const ManagePermitTypes = ({ darkMode, isAuthenticated }) => {
                             onSubmit={handleAddPermitType}
                             onCancel={() => setShowAddModal(false)}
                             darkMode={darkMode}
+                            lots={lots}
                         />
                     </div>
                 </div>
@@ -676,6 +693,7 @@ const ManagePermitTypes = ({ darkMode, isAuthenticated }) => {
                                 setCurrentPermitType(null);
                             }}
                             darkMode={darkMode}
+                            lots={lots}
                         />
                     </div>
                 </div>
