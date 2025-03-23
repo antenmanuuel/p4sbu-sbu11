@@ -1,47 +1,42 @@
 const mongoose = require('mongoose');
 
 const LotSchema = new mongoose.Schema({
-    location: {
-        x: { type: Number, required: true },
-        y: { type: Number, required: true },
-        required: true
+    lotId: {
+        type: String,
+        required: true,
+        unique: true,
     },
-    isReserved: {
-        type: Boolean,
-        required:true
+    name: {
+        type: String,
+        required: true,
     },
-    reservedBy: {
-        type: Schema._id,
-        required: function () {
-            return isReserved;
-        }
+    latitude: {
+        type: Number,
+        required: false,
+        default: null
     },
-    reservationStart: {
+    longitude: {
+        type: Number,
+        required: false,
+        default: null
+    },
+    availableSpaces: {
+        type: Number,
+        required: false,
+        default: 0,
+        min: 0
+    },
+    totalSpaces: {
+        type: Number,
+        required: false,
+        default: 0,
+        min: 0
+    },
+    createdAt: {
         type: Date,
-        required: function () {
-            return isReserved;
-        }
-    },
-    reservationEnd: {
-        type: Date,
-        required: function () {
-            return isReserved;
-        }
-    },
-    isMetered:{
-        type: Boolean,
-        required: true
-    },
-    isEV: {
-        type: Boolean,
-        required: true
+        default: Date.now
     }
 });
-
-LotSchema.virtual('url').get(function () {
-    return `/lot/${this._id}`;
-});
-
 
 const LotModel = mongoose.model('Lot', LotSchema);
 
