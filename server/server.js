@@ -13,6 +13,8 @@ try {
     const adminRoutes = require('./routes/admin');
     const ticketRoutes = require('./routes/tickets');
     const statisticsRoutes = require('./routes/statistics');
+    const lotRoutes = require('./routes/lot');
+    const permitTypeRoutes = require('./routes/permit_types');
 
     const app = express();
     const PORT = process.env.PORT || 5000;
@@ -70,6 +72,8 @@ try {
     app.use('/api/admin', adminRoutes);
     app.use('/api', ticketRoutes);
     app.use('/api/admin/statistics', statisticsRoutes);
+    app.use('/api/lot', lotRoutes);
+    app.use('/api/permit-types', permitTypeRoutes);
 
     // Health check endpoint
     app.get('/health', (req, res) => {

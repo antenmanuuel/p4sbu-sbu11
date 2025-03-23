@@ -407,4 +407,70 @@ export const TicketService = {
     }
 };
 
+export const LotService = {
+    getLots: async () => {
+      try {
+        const response = await API.get('/lot');
+        return { success: true, data: response.data };
+      } catch (error) {
+        return {
+          success: false,
+          error: error.response?.data?.message || 'Failed to fetch lots',
+        };
+      }
+    },
+};
+
+export const PermitTypeService = {
+    getPermitTypes: async (queryParams = {}) => {
+      try {
+        const response = await API.get('/permit-types', { params: queryParams });
+        return { success: true, data: response.data };
+      } catch (error) {
+        return {
+          success: false,
+          error: error.response?.data?.message || 'Failed to fetch permit types',
+        };
+      }
+    },
+  
+    createPermitType: async (permitData) => {
+      try {
+        const response = await API.post('/permit-types', permitData);
+        return { success: true, data: response.data.permitType };
+      } catch (error) {
+        return {
+          success: false,
+          error: error.response?.data?.message || 'Failed to create permit type',
+        };
+      }
+    },
+  
+    updatePermitType: async (permitId, permitData) => {
+      try {
+        const response = await API.put(`/permit-types/${permitId}`, permitData);
+        return { success: true, data: response.data.permitType };
+      } catch (error) {
+        return {
+          success: false,
+          error: error.response?.data?.message || 'Failed to update permit type',
+        };
+      }
+    },
+  
+    deletePermitType: async (permitId) => {
+      try {
+        await API.delete(`/permit-types/${permitId}`);
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error.response?.data?.message || 'Failed to delete permit type',
+        };
+      }
+    },
+};
+  
+  
+
 export default API; 
