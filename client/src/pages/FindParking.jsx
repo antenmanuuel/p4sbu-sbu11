@@ -1,22 +1,40 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import ParkingMap from '../components/ParkingMap';
 import ResultsView from '../components/ResultsView';
 import LotDetailsView from '../components/LotDetailsView';
 import CarInfoForm from '../components/CarInfoForm';
 import PaymentPage from '../components/PaymentPage';
-import { getMockSuggestions, getNearbyParkingLots, getLotById, mockParkingLots } from '../utils/fakeData';
+import { mockParkingLots } from '../utils/fakeData';
+import { LotService } from '../utils/api';
+// Import Mapbox components
+import { AddressAutofill, useConfirmAddress } from '@mapbox/search-js-react';
+import ReactMapGL, { Marker, NavigationControl, GeolocateControl } from 'react-map-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+// Import environment variables from our utility
+import { MAPBOX_TOKEN } from '../utils/env';
+import { calculatePathDistances } from '../utils/pathFinding';
 
+// Verify token is available - developers will see this error in console
+if (!MAPBOX_TOKEN) {
+    console.error(
+        "Mapbox token not found! Please add your token to the .env file as REACT_APP_MAPBOX_TOKEN"
+    );
+}
 
 const FindParking = ({ darkMode, isAuthenticated }) => {
     // Add useNavigate hook
     const navigate = useNavigate();
 
+    // Add formRef for address confirmation
+    const { formRef, showConfirm } = useConfirmAddress({
+        minimap: true,
+        skipConfirmModal: false,
+    });
+
     // View states: 'search', 'results', 'details', 'car-info', 'payment', 'confirmation'
     const [currentView, setCurrentView] = useState('search');
 
     // Search states
-    const [suggestions, setSuggestions] = useState([]);
     const [searching, setSearching] = useState(false);
 
     // Form states
@@ -26,9 +44,13 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
     const [endTime, setEndTime] = useState('');
     const [duration, setDuration] = useState('');
 
-    // Location states
+    // Location states - Default to Stony Brook University
     const [selectedLocation, setSelectedLocation] = useState(null);
-    const [mapCenter, setMapCenter] = useState([40.9148, -73.1259]); // Default to SBU
+    const [mapCenter, setMapCenter] = useState({
+        longitude: -73.1259,
+        latitude: 40.9148,
+        zoom: 14
+    });
 
     // Parking spots
     const [nearbyParking, setNearbyParking] = useState([]);
@@ -38,6 +60,19 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
     const [vehicleInfo, setVehicleInfo] = useState(null);
     const [paymentInfo, setPaymentInfo] = useState(null);
     const [reservationId, setReservationId] = useState(null);
+
+    // Add error state
+    const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Add error states
+    const [formErrors, setFormErrors] = useState({
+        address: '',
+        date: '',
+        startTime: '',
+        endTime: '',
+        duration: ''
+    });
 
     // Effect to restore reservation data from sessionStorage if present
     useEffect(() => {
@@ -59,11 +94,10 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
                 // If we have a selected lot, also get the nearby parking
                 if (reservationData.selectedLocation) {
-                    const lots = getNearbyParkingLots(
+                    fetchParkingLots(
                         reservationData.selectedLocation.coordinates[0],
                         reservationData.selectedLocation.coordinates[1]
                     );
-                    setNearbyParking(lots);
                 }
 
                 // Clear the pending reservation from session storage
@@ -78,53 +112,28 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         }
     }, [isAuthenticated]);
 
-    // Custom hook to handle search suggestions
-    const fetchSuggestions = useCallback((searchValue) => {
-        if (searchValue.trim().length < 1) {
-            setSuggestions([]);
-            return;
-        }
-
-        setSearching(true);
-        try {
-            // Get suggestions from mock data
-            const results = getMockSuggestions(searchValue);
-            setSuggestions(results);
-        } catch {
-            setSuggestions([]);
-        } finally {
-            setSearching(false);
-        }
-    }, []);
-
-    // Handle search input changes
-    useEffect(() => {
-        // Debounce search to avoid too many requests
-        const timeoutId = setTimeout(() => fetchSuggestions(address), 300);
-        return () => clearTimeout(timeoutId);
-    }, [address, fetchSuggestions]);
-
-    // Handle suggestion selection
-    const handleSuggestionSelect = (suggestion) => {
-        try {
-            // Set selected location from the suggestion
+    // Handle address selection event from Mapbox
+    const handleAddressSelect = (event) => {
+        // The event contains the selected address
+        const feature = event.feature;
+        if (feature) {
+            const coordinates = feature.geometry.coordinates;
+            // Create location object from selected address
             const location = {
-                name: suggestion.place_name.split(',')[0],
-                address: suggestion.place_name,
-                coordinates: suggestion.center
+                name: feature.properties.name || feature.properties.place_name,
+                address: feature.properties.full_address || feature.properties.place_name,
+                // Convert [long, lat] from Mapbox to [lat, long] for our app
+                coordinates: [coordinates[1], coordinates[0]]
             };
 
             // Update state
             setSelectedLocation(location);
-            setMapCenter(location.coordinates);
-            setAddress(suggestion.place_name);
-
-            // Clear suggestions after selection
-            setTimeout(() => {
-                setSuggestions([]);
-            }, 100);
-        } catch {
-            // Silent error handling
+            setMapCenter({
+                longitude: coordinates[0],
+                latitude: coordinates[1],
+                zoom: 14
+            });
+            setAddress(location.address);
         }
     };
 
@@ -153,64 +162,202 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
             if (end > start) {
                 const diff = (end - start) / (1000 * 60 * 60); // Duration in hours
                 setDuration(`${diff.toFixed(1)} hours`);
+                // Clear any duration errors when valid
+                setFormErrors(prev => ({ ...prev, duration: '', endTime: '' }));
             } else {
-                // Handle case where end time is before start time (next day)
+                // Handle case where end time is before start time
                 setDuration('');
+                setFormErrors(prev => ({
+                    ...prev,
+                    endTime: 'End time must be after start time',
+                    duration: 'Invalid time range'
+                }));
             }
+        } else {
+            setDuration('');
         }
     }, [startTime, endTime]);
+
+    // Fetch parking lots based on center coordinates
+    const fetchParkingLots = async (lat, lng) => {
+        setIsLoading(true);
+        setError('');
+
+        try {
+            const result = await LotService.getAll({ status: 'Active' });
+
+            if (result.success) {
+                const activeLots = result.data.lots.filter(lot => lot.status === 'Active');
+
+                // Transform the data to match the expected format
+                const lots = activeLots.map(lot => {
+                    // Transform features to array for compatibility with UI
+                    const featuresArray = [];
+                    if (lot.features) {
+                        if (lot.features.isEV) featuresArray.push('EV Charging');
+                        if (lot.features.isMetered) featuresArray.push('Metered Parking');
+                        if (lot.features.isAccessible) featuresArray.push('Accessible Parking');
+                    }
+
+                    return {
+                        id: lot._id,
+                        name: lot.name,
+                        address: lot.address,
+                        description: lot.description || '',
+                        coordinates: [lot.location.latitude, lot.location.longitude],
+                        availableSpaces: lot.availableSpaces,
+                        totalSpaces: lot.totalSpaces,
+                        availableSpots: lot.availableSpaces, // For compatibility with ResultsView
+                        permitTypes: lot.permitTypes,
+                        features: featuresArray, // Use the array of features instead of the object
+                        rateType: lot.rateType,
+                        hourlyRate: lot.hourlyRate || 0,
+                        semesterRate: lot.semesterRate || 0,
+                        price: lot.rateType === 'Hourly'
+                            ? `$${lot.hourlyRate}/hr`
+                            : `$${lot.semesterRate}/semester with permit`,
+                        status: lot.status
+                    };
+                });
+
+                // Use Dijkstra's algorithm to calculate path distances
+                const lotsWithDistances = calculatePathDistances([lat, lng], lots);
+
+                // Sort by calculated distance
+                const sortedLots = lotsWithDistances.sort((a, b) =>
+                    a.calculatedDistance - b.calculatedDistance
+                );
+
+                setNearbyParking(sortedLots);
+            } else {
+                setError(result.error || 'Failed to fetch parking lots');
+                // Fall back to mock data
+                setNearbyParking(mockParkingLots);
+            }
+        } catch (err) {
+            console.error('Error fetching parking lots:', err);
+            setError('An unexpected error occurred while fetching parking lots');
+            // Fall back to mock data
+            setNearbyParking(mockParkingLots);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Validate form before submission
+    const validateForm = () => {
+        let isValid = true;
+        const errors = {
+            address: '',
+            date: '',
+            startTime: '',
+            endTime: '',
+            duration: ''
+        };
+
+        // Check for required fields
+        if (!address.trim()) {
+            errors.address = 'Address is required';
+            isValid = false;
+        }
+
+        if (!date) {
+            errors.date = 'Date is required';
+            isValid = false;
+        } else {
+            // Validate date is not in the past
+            const selectedDate = new Date(date);
+            selectedDate.setHours(0, 0, 0, 0);
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            if (selectedDate < today) {
+                errors.date = 'Date cannot be in the past';
+                isValid = false;
+            }
+        }
+
+        if (!startTime) {
+            errors.startTime = 'Start time is required';
+            isValid = false;
+        }
+
+        if (!endTime) {
+            errors.endTime = 'End time is required';
+            isValid = false;
+        }
+
+        // Check time range validity
+        if (startTime && endTime) {
+            const start = new Date(`2000-01-01T${startTime}`);
+            const end = new Date(`2000-01-01T${endTime}`);
+
+            if (end <= start) {
+                errors.endTime = 'End time must be after start time';
+                isValid = false;
+            }
+        }
+
+        setFormErrors(errors);
+        return isValid;
+    };
 
     // Handle search submission
     const handleSearch = async (e) => {
         e.preventDefault();
-        if (!address) return;
+
+        // Validate form first
+        if (!validateForm()) {
+            return;
+        }
+
+        // If address confirmation is needed, show confirmation dialog
+        try {
+            if (formRef.current) {
+                const result = await showConfirm();
+
+                if (result.type === 'cancel') {
+                    return; // User canceled
+                }
+
+                // If user selected a suggested address
+                if (result.type === 'change') {
+                    const coordinates = result.feature.geometry.coordinates;
+                    // Create location object from confirmed address
+                    const locationToUse = {
+                        name: result.feature.properties.name || result.feature.properties.place_name,
+                        address: result.feature.properties.full_address || result.feature.properties.place_name,
+                        // Convert [long, lat] from Mapbox to [lat, long] for our app
+                        coordinates: [coordinates[1], coordinates[0]]
+                    };
+
+                    setSelectedLocation(locationToUse);
+                    setMapCenter({
+                        longitude: coordinates[0],
+                        latitude: coordinates[1],
+                        zoom: 14
+                    });
+                    setAddress(locationToUse.address);
+                }
+            }
+        } catch (error) {
+            console.error("Error confirming address:", error);
+        }
 
         const locationToUse = selectedLocation || {
             name: address,
             address: address,
-            coordinates: mapCenter
+            coordinates: [mapCenter.latitude, mapCenter.longitude]
         };
 
+        setSelectedLocation(locationToUse);
         setSearching(true);
-        try {
-            // In a real app, this would be an API call to fetch nearby parking
-            const results = getNearbyParkingLots(locationToUse.coordinates);
+        setCurrentView('results');
 
-            // Ensure all results have the correct coordinate format
-            const processedResults = results.map(lot => ({
-                ...lot,
-                // Make sure coordinates are always in [lat, lng] format for map display
-                coordinates: [
-                    parseFloat(lot.coordinates[0]),
-                    parseFloat(lot.coordinates[1])
-                ]
-            }));
-
-            setNearbyParking(processedResults);
-            setSelectedLocation(locationToUse);
-            setCurrentView('results');
-        } catch (error) {
-            console.error("Error fetching parking lots:", error);
-            // Fallback to showing all lots if there's an error
-            try {
-                const allLots = mockParkingLots.map(lot => ({
-                    ...lot,
-                    coordinates: [
-                        parseFloat(lot.coordinates[0]),
-                        parseFloat(lot.coordinates[1])
-                    ],
-                    distance: "Unknown",
-                    walkingDistance: "Unknown"
-                }));
-                setNearbyParking(allLots);
-                setSelectedLocation(locationToUse);
-                setCurrentView('results');
-            } catch {
-                // Silent error handling
-            }
-        } finally {
-            setSearching(false);
-        }
+        // Fetch real parking lot data from the API
+        await fetchParkingLots(locationToUse.coordinates[0], locationToUse.coordinates[1]);
+        setSearching(false);
     };
 
     // Handle clicking back button
@@ -229,29 +376,88 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
     };
 
     // Handle clicking "View Details" on a lot
-    const handleViewDetails = (lotId) => {
-        const lot = getLotById(lotId);
-        if (lot) {
-            setSelectedLot(lot);
-            setMapCenter(lot.coordinates);
-            setCurrentView('details');
+    const handleViewDetails = async (lotId) => {
+        setIsLoading(true);
+        setError('');
+
+        try {
+            console.log(`Fetching details for lot ID: ${lotId}`);
+            const result = await LotService.getById(lotId);
+
+            if (result.success) {
+                const lot = result.data.lot;
+                console.log("Lot data from backend:", lot);
+
+                // Convert features object to array for compatibility with the UI
+                const featuresArray = [];
+                if (lot.features) {
+                    if (lot.features.isEV) featuresArray.push('EV Charging');
+                    if (lot.features.isMetered) featuresArray.push('Metered Parking');
+                    if (lot.features.isAccessible) featuresArray.push('Accessible Parking');
+                }
+
+                // Transform the data to match the expected format in the component
+                const formattedLot = {
+                    id: lot._id,
+                    name: lot.name,
+                    address: lot.address,
+                    description: lot.description || '',
+                    coordinates: [lot.location.latitude, lot.location.longitude],
+                    availableSpaces: lot.availableSpaces,
+                    totalSpaces: lot.totalSpaces,
+                    availableSpots: lot.availableSpaces, // For compatibility
+                    permitTypes: lot.permitTypes || [],
+                    features: featuresArray, // Use the array version of features
+                    rateType: lot.rateType,
+                    hourlyRate: lot.hourlyRate || 0,
+                    semesterRate: lot.semesterRate || 0,
+                    price: lot.rateType === 'Hourly'
+                        ? `$${lot.hourlyRate}/hr`
+                        : `$${lot.semesterRate}/semester with permit`,
+                    status: lot.status,
+                    // Include any additional fields from the backend that might be useful
+                    lastUpdated: new Date(lot.updatedAt || Date.now()).toLocaleString() // Use real update date
+                };
+
+                setSelectedLot(formattedLot);
+                setMapCenter({
+                    longitude: formattedLot.coordinates[1],
+                    latitude: formattedLot.coordinates[0],
+                    zoom: 16
+                });
+                setCurrentView('details');
+            } else {
+                setError(result.error || 'Failed to fetch lot details');
+                console.error('Error fetching lot details:', result.error);
+            }
+        } catch (err) {
+            console.error('Error fetching lot details:', err);
+            setError('An unexpected error occurred while fetching lot details');
+        } finally {
+            setIsLoading(false);
         }
     };
 
     // Handle map click for location selection
-    const handleMapClick = (latlng) => {
+    const handleMapClick = (event) => {
         if (currentView !== 'search') return;
 
+        const { lngLat } = event;
+
         // In a real app, you would use reverse geocoding here
-        const mockLocation = {
+        const clickedLocation = {
             name: "Selected Location",
-            address: `${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`,
-            coordinates: [latlng.lat, latlng.lng]
+            address: `${lngLat.lat.toFixed(4)}, ${lngLat.lng.toFixed(4)}`,
+            coordinates: [lngLat.lat, lngLat.lng]
         };
 
-        setSelectedLocation(mockLocation);
-        setMapCenter([latlng.lat, latlng.lng]);
-        setAddress(mockLocation.address);
+        setSelectedLocation(clickedLocation);
+        setMapCenter({
+            longitude: lngLat.lng,
+            latitude: lngLat.lat,
+            zoom: 14
+        });
+        setAddress(clickedLocation.address);
     };
 
     // Handle reservation request
@@ -313,6 +519,28 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         }
     };
 
+    // Add a function to render the error message
+    const renderError = () => {
+        if (!error) return null;
+
+        return (
+            <div className={`p-4 rounded-lg ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-50 text-red-800'} mb-4`}>
+                <p>{error}</p>
+            </div>
+        );
+    };
+
+    // Add a function to render the loading indicator
+    const renderLoadingIndicator = () => {
+        if (!isLoading) return null;
+
+        return (
+            <div className="flex justify-center items-center my-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-600"></div>
+            </div>
+        );
+    };
+
     // Render appropriate view based on state
     const renderContent = () => {
         switch (currentView) {
@@ -330,53 +558,37 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             {/* Search Form */}
                             <div className={`p-6 rounded-lg ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-md`}>
-                                <form onSubmit={handleSearch} className="space-y-5">
+                                <form ref={formRef} onSubmit={handleSearch} className="space-y-5">
                                     <div>
                                         <label htmlFor="address" className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                                             Address
                                         </label>
-                                        <div className="relative">
+                                        <AddressAutofill
+                                            accessToken={MAPBOX_TOKEN}
+                                            onRetrieve={handleAddressSelect}
+                                        >
                                             <input
                                                 type="text"
                                                 id="address"
+                                                name="address"
                                                 placeholder="Enter your address"
                                                 value={address}
-                                                onChange={(e) => setAddress(e.target.value)}
+                                                onChange={(e) => {
+                                                    setAddress(e.target.value);
+                                                    if (e.target.value.trim()) {
+                                                        setFormErrors(prev => ({ ...prev, address: '' }));
+                                                    }
+                                                }}
                                                 className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
                                                     ? 'bg-gray-800 text-white border-gray-700 focus:ring-red-600'
                                                     : 'bg-gray-100 text-gray-900 border-gray-300 focus:ring-red-500'
-                                                    } border focus:outline-none focus:ring-2`}
-                                                autoComplete="off"
+                                                    } border focus:outline-none focus:ring-2 ${formErrors.address ? 'border-red-500' : ''}`}
+                                                autoComplete="address-line1"
                                             />
-
-                                            {/* Suggestions dropdown - Update with Tailwind classes */}
-                                            {suggestions.length > 0 && (
-                                                <div
-                                                    className={`absolute left-0 right-0 mt-1 shadow-lg overflow-hidden z-50 w-full rounded-md border ${darkMode
-                                                        ? 'bg-gray-800 border-gray-700'
-                                                        : 'bg-white border-gray-300'
-                                                        }`}
-                                                >
-                                                    <ul className="list-none p-0 m-0">
-                                                        {suggestions.map((suggestion, index) => (
-                                                            <li
-                                                                key={index}
-                                                                onClick={() => handleSuggestionSelect(suggestion)}
-                                                                className={`px-3 py-2.5 cursor-pointer transition-all duration-200 ${darkMode
-                                                                    ? 'text-gray-100 hover:bg-gray-700 hover:font-medium'
-                                                                    : 'text-gray-900 hover:bg-gray-100 hover:font-medium'
-                                                                    }`}
-                                                                dangerouslySetInnerHTML={{
-                                                                    __html: suggestion.highlighted_name
-                                                                        ? suggestion.highlighted_name.replace(/<strong>/g, `<strong class="${darkMode ? 'text-red-400' : 'text-red-500'} font-semibold">`)
-                                                                        : suggestion.place_name
-                                                                }}
-                                                            />
-                                                        ))}
-                                                    </ul>
-                                                </div>
-                                            )}
-                                        </div>
+                                        </AddressAutofill>
+                                        {formErrors.address && (
+                                            <p className={`mt-1 text-sm text-red-500`}>{formErrors.address}</p>
+                                        )}
                                     </div>
 
                                     <div>
@@ -388,12 +600,21 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                             id="date"
                                             placeholder="Select date"
                                             value={date}
-                                            onChange={(e) => setDate(e.target.value)}
+                                            onChange={(e) => {
+                                                setDate(e.target.value);
+                                                if (e.target.value) {
+                                                    setFormErrors(prev => ({ ...prev, date: '' }));
+                                                }
+                                            }}
+                                            min={new Date().toISOString().split('T')[0]} // Set min date to today
                                             className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
                                                 ? 'bg-gray-800 text-white border-gray-700 focus:ring-red-600 [color-scheme:dark]'
                                                 : 'bg-gray-100 text-gray-900 border-gray-300 focus:ring-red-500 [color-scheme:light]'
-                                                } border focus:outline-none focus:ring-2`}
+                                                } border focus:outline-none focus:ring-2 ${formErrors.date ? 'border-red-500' : ''}`}
                                         />
+                                        {formErrors.date && (
+                                            <p className={`mt-1 text-sm text-red-500`}>{formErrors.date}</p>
+                                        )}
                                     </div>
 
                                     <div>
@@ -405,12 +626,20 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                             id="startTime"
                                             placeholder="Select start time"
                                             value={startTime}
-                                            onChange={(e) => setStartTime(e.target.value)}
+                                            onChange={(e) => {
+                                                setStartTime(e.target.value);
+                                                if (e.target.value) {
+                                                    setFormErrors(prev => ({ ...prev, startTime: '' }));
+                                                }
+                                            }}
                                             className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
                                                 ? 'bg-gray-800 text-white border-gray-700 focus:ring-red-600 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:invert'
                                                 : 'bg-gray-100 text-gray-900 border-gray-300 focus:ring-red-500 [color-scheme:light]'
-                                                } border focus:outline-none focus:ring-2`}
+                                                } border focus:outline-none focus:ring-2 ${formErrors.startTime ? 'border-red-500' : ''}`}
                                         />
+                                        {formErrors.startTime && (
+                                            <p className={`mt-1 text-sm text-red-500`}>{formErrors.startTime}</p>
+                                        )}
                                     </div>
 
                                     <div>
@@ -422,12 +651,20 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                             id="endTime"
                                             placeholder="Select end time"
                                             value={endTime}
-                                            onChange={(e) => setEndTime(e.target.value)}
+                                            onChange={(e) => {
+                                                setEndTime(e.target.value);
+                                                if (e.target.value) {
+                                                    setFormErrors(prev => ({ ...prev, endTime: '' }));
+                                                }
+                                            }}
                                             className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
                                                 ? 'bg-gray-800 text-white border-gray-700 focus:ring-red-600 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:invert'
                                                 : 'bg-gray-100 text-gray-900 border-gray-300 focus:ring-red-500 [color-scheme:light]'
-                                                } border focus:outline-none focus:ring-2`}
+                                                } border focus:outline-none focus:ring-2 ${formErrors.endTime ? 'border-red-500' : ''}`}
                                         />
+                                        {formErrors.endTime && (
+                                            <p className={`mt-1 text-sm text-red-500`}>{formErrors.endTime}</p>
+                                        )}
                                     </div>
 
                                     <div>
@@ -443,8 +680,11 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                             className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
                                                 ? 'bg-gray-800 text-white border-gray-700'
                                                 : 'bg-gray-100 text-gray-900 border-gray-300'
-                                                } border`}
+                                                } border ${formErrors.duration ? 'border-red-500' : ''}`}
                                         />
+                                        {formErrors.duration && (
+                                            <p className={`mt-1 text-sm text-red-500`}>{formErrors.duration}</p>
+                                        )}
                                     </div>
 
                                     <button
@@ -462,18 +702,24 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                 <div className={`absolute top-2 left-2 z-10 ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'} rounded-md shadow-md p-2 text-sm`}>
                                     <p className="font-medium">Click on the map to select a location</p>
                                 </div>
-                                <ParkingMap
-                                    darkMode={darkMode}
-                                    mapCenter={mapCenter}
-                                    markers={selectedLocation ? [{
-                                        id: 'selected',
-                                        name: selectedLocation.name,
-                                        coordinates: selectedLocation.coordinates,
-                                        availableSpaces: 0,
-                                        totalSpaces: 0
-                                    }] : []}
-                                    onMapClick={handleMapClick}
-                                />
+                                <ReactMapGL
+                                    mapboxAccessToken={MAPBOX_TOKEN}
+                                    initialViewState={mapCenter}
+                                    style={{ width: '100%', height: '100%' }}
+                                    mapStyle="mapbox://styles/mapbox/outdoors-v12" // Terrain view
+                                    onClick={handleMapClick}
+                                >
+                                    <GeolocateControl position="top-right" />
+                                    <NavigationControl position="top-right" />
+
+                                    {selectedLocation && (
+                                        <Marker
+                                            longitude={selectedLocation.coordinates[1]}
+                                            latitude={selectedLocation.coordinates[0]}
+                                            color="#dc2626" // Red color to match theme
+                                        />
+                                    )}
+                                </ReactMapGL>
                             </div>
                         </div>
                     </div>
@@ -481,25 +727,21 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
             case 'results':
                 return (
-                    <div className="w-full max-w-6xl mx-auto px-4">
+                    <div className="w-full max-w-6xl mx-auto px-4 py-8">
+                        {renderError()}
+                        {renderLoadingIndicator()}
+
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                             {/* Left sidebar with results list */}
                             <div className="md:col-span-1">
                                 <ResultsView
                                     darkMode={darkMode}
-                                    locationName={selectedLocation?.name || 'Selected Location'}
+                                    locationName={selectedLocation ? selectedLocation.name : 'Selected Location'}
                                     formattedStartDateTime={formatDateTime(date, startTime)}
                                     formattedEndDateTime={formatDateTime(date, endTime)}
-                                    nearbyParking={nearbyParking.map(lot => ({
-                                        id: lot.id,
-                                        name: lot.name,
-                                        address: lot.address,
-                                        availableSpots: lot.availableSpaces,
-                                        price: lot.hourlyRate,
-                                        distance: lot.distance
-                                    }))}
-                                    selectedParkingSpot={selectedLot?.id}
-                                    setSelectedParkingSpot={lotId => setSelectedLot(getLotById(lotId))}
+                                    nearbyParking={nearbyParking}
+                                    selectedParkingSpot={selectedLot ? selectedLot.id : null}
+                                    setSelectedParkingSpot={handleMarkerClick}
                                     onViewDetails={handleViewDetails}
                                     onBackClick={handleBackClick}
                                 />
@@ -507,22 +749,37 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
                             {/* Map view */}
                             <div className="md:col-span-2 h-[700px] rounded-lg overflow-hidden shadow-lg">
-                                <ParkingMap
-                                    darkMode={darkMode}
-                                    mapCenter={selectedLot ? selectedLot.coordinates : (selectedLocation?.coordinates || mapCenter)}
-                                    markers={nearbyParking.map(lot => ({
-                                        id: lot.id,
-                                        name: lot.name,
-                                        coordinates: [
-                                            parseFloat(lot.coordinates[0]),
-                                            parseFloat(lot.coordinates[1])
-                                        ],
-                                        availableSpaces: lot.availableSpaces,
-                                        totalSpaces: lot.totalSpaces
-                                    }))}
-                                    selectedLot={selectedLot}
-                                    onMarkerClick={handleMarkerClick}
-                                />
+                                <ReactMapGL
+                                    mapboxAccessToken={MAPBOX_TOKEN}
+                                    initialViewState={{
+                                        longitude: selectedLot ? selectedLot.coordinates[1] : (selectedLocation?.coordinates[1] || mapCenter.longitude),
+                                        latitude: selectedLot ? selectedLot.coordinates[0] : (selectedLocation?.coordinates[0] || mapCenter.latitude),
+                                        zoom: 14
+                                    }}
+                                    style={{ width: '100%', height: '100%' }}
+                                    mapStyle="mapbox://styles/mapbox/outdoors-v12" // Terrain view
+                                >
+                                    <GeolocateControl position="top-right" />
+                                    <NavigationControl position="top-right" />
+
+                                    {nearbyParking.map(lot => (
+                                        <Marker
+                                            key={lot.id}
+                                            longitude={parseFloat(lot.coordinates[1])}
+                                            latitude={parseFloat(lot.coordinates[0])}
+                                            color={selectedLot?.id === lot.id ? "#dc2626" : "#3b82f6"} // Red for selected, blue for others
+                                            onClick={() => handleMarkerClick(lot)}
+                                        />
+                                    ))}
+
+                                    {selectedLocation && (
+                                        <Marker
+                                            longitude={selectedLocation.coordinates[1]}
+                                            latitude={selectedLocation.coordinates[0]}
+                                            color="#16a34a" // Green for destination
+                                        />
+                                    )}
+                                </ReactMapGL>
                             </div>
                         </div>
                     </div>
@@ -530,22 +787,21 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
             case 'details':
                 return (
-                    <div className="w-full max-w-6xl mx-auto px-4">
-                        <LotDetailsView
-                            darkMode={darkMode}
-                            lot={{
-                                ...selectedLot,
-                                // Ensure coordinates are properly formatted
-                                coordinates: selectedLot ? [
-                                    parseFloat(selectedLot.coordinates[0]),
-                                    parseFloat(selectedLot.coordinates[1])
-                                ] : mapCenter
-                            }}
-                            onBackClick={handleBackClick}
-                            formattedStartDateTime={formatDateTime(date, startTime)}
-                            formattedEndDateTime={formatDateTime(date, endTime)}
-                            handleReserve={handleReserve}
-                        />
+                    <div className="w-full max-w-6xl mx-auto px-4 py-8">
+                        {renderError()}
+                        {renderLoadingIndicator()}
+
+                        {selectedLot && (
+                            <LotDetailsView
+                                darkMode={darkMode}
+                                lot={selectedLot}
+                                onBackClick={handleBackClick}
+                                onReserve={() => handleReserve(selectedLot.id)}
+                                startDateTime={formatDateTime(date, startTime)}
+                                endDateTime={formatDateTime(date, endTime)}
+                                duration={duration}
+                            />
+                        )}
                     </div>
                 );
 
