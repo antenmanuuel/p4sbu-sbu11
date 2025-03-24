@@ -21,6 +21,11 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     const [isCountLoading, setIsCountLoading] = useState(true);
     const [countError, setCountError] = useState('');
 
+    // State for lots count
+    const [lotsCount, setLotsCount] = useState(0);
+    const [isLotsCountLoading, setIsLotsCountLoading] = useState(true);
+    const [lotsCountError, setLotsCountError] = useState('');
+
     // State for revenue data
     const [revenueData, setRevenueData] = useState([]);
     const [isRevenueLoading, setIsRevenueLoading] = useState(true);
@@ -35,6 +40,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     useEffect(() => {
         fetchPendingUsers();
         fetchUsersCount();
+        fetchLotsCount();
         fetchRevenueStats();
 
         // Set up event listener for ticket payment events
@@ -102,6 +108,32 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
         }
     };
 
+    // Fetch total lots count from backend
+    const fetchLotsCount = async () => {
+        setIsLotsCountLoading(true);
+        setLotsCountError('');
+
+        try {
+            // Call the LotService to get the lots count
+            const result = await AdminService.getLots({}, 1, 1);
+
+            if (result.success) {
+                setLotsCount(result.data.pagination?.total || 0);
+            } else {
+                setLotsCountError(result.error || 'Failed to fetch lots count');
+                // Fall back to mock data if API fails
+                setLotsCount(getLotsWithActivePermitsCount());
+            }
+        } catch (err) {
+            console.error('Error fetching lots count:', err);
+            setLotsCountError('An unexpected error occurred while fetching lots count');
+            // Fall back to mock data if API fails
+            setLotsCount(getLotsWithActivePermitsCount());
+        } finally {
+            setIsLotsCountLoading(false);
+        }
+    };
+
     // Fetch revenue statistics from backend
     const fetchRevenueStats = async () => {
         setIsRevenueLoading(true);
@@ -143,7 +175,6 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
 
     // Get counts from mock data
     const activePermitsCount = getActivePermitsCount();
-    const lotsWithPermitsCount = getLotsWithActivePermitsCount();
 
     // Data for line chart showing growth trend
     const growthData = revenueData.length > 1 ? revenueData.map((item, index) => {
@@ -386,7 +417,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                     <div className="flex justify-between items-start">
                         <div>
                             <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Total Lots</p>
-                            <p className="text-2xl font-bold mt-1">{lotsWithPermitsCount}</p>
+                            <p className="text-2xl font-bold mt-1">{isLotsCountLoading ? "..." : lotsCount}</p>
                             <p className="text-xs text-blue-600 mt-1">Click to manage lots</p>
                         </div>
                         <div className={`rounded-full p-2 ${darkMode ? 'bg-red-900' : 'bg-red-50'}`}>
