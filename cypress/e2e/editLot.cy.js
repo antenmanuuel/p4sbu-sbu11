@@ -9,7 +9,8 @@ describe('Edit Lot Information', ()=>{
         const changed = this.lots.changedLot;
         cy.login(admin.email, admin.password);
         cy.editLot(changed);
-        const row = cy.url({timeout:10000}).get('tbody tr', {timeout:2000}).eq(0);
+        cy.wait(5000);
+        const row = cy.url().get('tbody tr', {timeout:2000}).eq(0);
         row.get('td').eq(0).contains(changed.name);
         row.get('td').eq(1).contains(changed.address);
         row.get('td').eq(2).contains(changed.totalSpaces).contains(changed.availableSpaces);
@@ -18,7 +19,8 @@ describe('Edit Lot Information', ()=>{
     it('toggled lot successfully', function() {
         const admin = this.users.admin;
         cy.login(admin.email, admin.password);
-        cy.url({timeout:10000}).get('tbody tr').eq(0).get('td').eq(4).invoke('text').then((oldStatus)=>{
+        cy.wait(5000);
+        cy.url().get('tbody tr').eq(0).get('td').eq(4).invoke('text').then((oldStatus)=>{
             cy.toggleLot();
             cy.get('tbody tr').eq(0).get('td').eq(4).invoke('text').should('not.equal', oldStatus);
         });

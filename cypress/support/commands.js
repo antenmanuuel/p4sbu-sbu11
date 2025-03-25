@@ -44,7 +44,8 @@ Cypress.Commands.add('login', (email, password) => {
     cy.visit('http://localhost:5173/login');
     cy.get('#email-address').type(email);
     cy.get('#password').type(password);
-    cy.get('button[id="login button"]', {timeout:2000}).click();
+    cy.get('button[id="login button"]').click();
+    cy.wait(5000);
 });
 
 // login and edit a lot based on given "visible" changes
@@ -56,7 +57,8 @@ Cypress.Commands.add('editLot', (changedLot)=>{
     cy.get('input[name="address"]').invoke('value', '').type(changedLot.address); //change address
     cy.get('input[name="latitude"]').invoke('value', '').type(changedLot.location.latitude).get('input[name="longitude"]').invoke('value', '').type(changedLot.location.longitude); //change longitude and latitude
     cy.get('input[name="totalSpaces"]').invoke('value', '').type(changedLot.totalSpaces).get('input[name="availableSpaces"]').invoke('value', '').type(changedLot.availableSpaces); //change total spaces and available spaces
-    cy.get('button[id="save changes"]', {timeout:2000}).click();
+    cy.get('button[id="save changes"]').click();
+    cy.wait(5000);
 });
 
 // toggle active and inactive
@@ -65,6 +67,7 @@ Cypress.Commands.add('toggleLot', ()=>{
 
     cy.get('tbody tr').eq(0).get('td').eq(5).get('button[id="active button"]').click();
     cy.get('button[id="active button"]').click(); // click toggle button
+    cy.wait(1000);
 });
 
 // login and delete lot
@@ -76,6 +79,7 @@ Cypress.Commands.add('togglePaidStatus', ()=>{
     cy.get('div[id="manage permits"]').click();
 
     cy.get('tbody tr').eq(0).get('td').eq(9).get('button[id="toggle status button"]').click();
+    cy.wait(1000);
 });
 
 // toggle active/inactive
@@ -83,6 +87,7 @@ Cypress.Commands.add('toggleActive', ()=>{
     cy.get('div[id="manage permits"]').click();
 
     cy.get('tbody tr').eq(0).get('td').eq(9).get('button[id="toggle payment button"]').click();
+    cy.wait(1000);
 });
 
 // delete permit
