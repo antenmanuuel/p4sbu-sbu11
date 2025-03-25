@@ -358,6 +358,7 @@ const Login = ({ darkMode, login }) => {
 
           <div>
             <button
+              id="login button"
               type="submit"
               disabled={isLoading}
               className={`group relative w-full flex justify-center py-2 px-4 border border-transparent rounded-md font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 ${isLoading ? 'cursor-not-allowed opacity-75' : ''}`}
