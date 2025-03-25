@@ -6,7 +6,7 @@ describe('Edit Permit Status', ()=>{
     it('toggled status successfully', function(){
         const admin = this.users.admin;
         cy.login(admin.email, admin.password);
-        cy.get('tbody tr').eq(0).get('td').eq(7).invoke('text').then((oldStatus)=>{
+        cy.url({timeout:10000}).get('tbody tr').eq(0).get('td').eq(7).invoke('text').then((oldStatus)=>{
             cy.togglePaidStatus();
             cy.get('tbody tr').eq(0).get('td').eq(7).invoke('text').should('not.equal', oldStatus);
         });
@@ -15,7 +15,7 @@ describe('Edit Permit Status', ()=>{
     it('toggled payment successfully', function(){
         const admin = this.users.admin;
         cy.login(admin.email, admin.password);
-        cy.get('tbody tr').eq(0).get('td').eq(8).invoke('text').then((oldStatus)=>{
+        cy.url({timeout:10000}).get('tbody tr').eq(0).get('td').eq(8).invoke('text').then((oldStatus)=>{
             cy.togglePaidStatus();
             cy.get('tbody tr').eq(0).get('td').eq(8).invoke('text').should('not.equal', oldStatus);
         });
