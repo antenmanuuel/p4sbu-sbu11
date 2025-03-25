@@ -7,7 +7,8 @@ describe('Edit Lot Information', ()=>{
     it('edited lot successfully', function() {
         const admin = this.users.admin;
         const changed = this.lots.changedLot;
-        cy.editLot(admin.email, admin.password, changed);
+        cy.login(admin.email, admin.password);
+        cy.editLot(changed);
         cy.contains.should();
     });
 
