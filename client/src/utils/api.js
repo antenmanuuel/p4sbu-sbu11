@@ -118,6 +118,32 @@ export const AuthService = {
         }
     },
 
+    // Request a password reset (forgot password)
+    requestPasswordReset: async (email) => {
+        try {
+            const response = await API.post('/forgot-password', { email });
+            return { success: true, data: response.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to request password reset'
+            };
+        }
+    },
+
+    // Reset password using token from email
+    resetPassword: async (token, newPassword) => {
+        try {
+            const response = await API.post('/reset-password', { token, password: newPassword });
+            return { success: true, data: response.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to reset password'
+            };
+        }
+    },
+
     // Logout user
     logout: () => {
         localStorage.removeItem('auth_token');

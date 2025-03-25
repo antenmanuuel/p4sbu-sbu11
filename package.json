@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "crypto": "^1.0.1",
+    "nodemailer": "^6.10.0",
+    "nodemailer-mailgun-transport": "^2.1.5",
+    "uuid": "^11.1.0"
+  }
+}
