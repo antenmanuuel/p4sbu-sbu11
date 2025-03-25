@@ -204,7 +204,7 @@ const Login = ({ darkMode, login }) => {
         {loginError && (
           <div className={`p-4 mb-4 text-sm rounded-lg flex items-center ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-100 text-red-800'}`}>
             <FaExclamationCircle className="mr-2 flex-shrink-0" />
-            <span><span className="font-medium">Error:</span> {loginError}</span>
+            <span><span id='error-msg' className="font-medium">Error:</span> {loginError}</span>
           </div>
         )}
 
@@ -358,6 +358,7 @@ const Login = ({ darkMode, login }) => {
 
           <div>
             <button
+              id="login button"
               type="submit"
               disabled={isLoading}
               className={`group relative w-full flex justify-center py-2 px-4 border border-transparent rounded-md font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 ${isLoading ? 'cursor-not-allowed opacity-75' : ''}`}
