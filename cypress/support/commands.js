@@ -42,18 +42,13 @@ Cypress.Commands.add('register', (firstName, lastName, email, password, sbuId, u
 // login command
 Cypress.Commands.add('login', (email, password) => {
     cy.visit('http://localhost:5173/login');
-    cy.get('#email').type(email);
+    cy.get('#email-address').type(email);
     cy.get('#password').type(password);
     cy.get('button[type="submit"]').click();
 });
 
 // login and edit a lot based on given "visible" changes
-Cypress.Commands.add('editLot', (email, password, changedLot)=>{
-    cy.visit('http://localhost:5173/login');
-    cy.get('#email').type(email);
-    cy.get('#password').type(password);
-    cy.get('button[type="submit"]').click();
-
+Cypress.Commands.add('editLot', (changedLot)=>{
     cy.get('div[id="manage lots"]').click();
 
     cy.get('button[title="Edit Lot"]').click();
