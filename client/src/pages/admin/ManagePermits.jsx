@@ -1033,6 +1033,7 @@ const ManagePermits = ({ darkMode, isAuthenticated }) => {
                                                         ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300'
                                                         : 'text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300'}`}
                                                     title={permit.status === 'active' ? 'Deactivate permit' : 'Activate permit'}
+                                                    id="toggle status button"
                                                 >
                                                     {permit.status === 'active' ? <FaLock /> : <FaLockOpen />}
                                                 </button>
@@ -1044,6 +1045,7 @@ const ManagePermits = ({ darkMode, isAuthenticated }) => {
                                                         ? 'text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300'
                                                         : 'text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300'}`}
                                                     title={permit.paymentStatus === 'paid' ? 'Mark as unpaid' : 'Mark as paid'}
+                                                    id="toggle payment button"
                                                 >
                                                     {permit.paymentStatus === 'paid' ? <FaTimesCircle /> : <FaCheckCircle />}
                                                 </button>
