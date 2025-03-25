@@ -1,14 +1,13 @@
 {
     "changedLot": {
         "name": "Dreiser Lot",
-        "address": "",
+        "address": "123 Circle Rd., Stony Brook, NY",
         "location": {
             "latitude": 40.908417,
             "longitude": -73.127135
         },
         "totalSpaces": 150,
-        "availableSpaces": 100,
-        "rateType": "Hourly"
+        "availableSpaces": 100
     },
     "currentLot": {
         "name": "Lot 13",

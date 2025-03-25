@@ -204,7 +204,7 @@ const Login = ({ darkMode, login }) => {
         {loginError && (
           <div className={`p-4 mb-4 text-sm rounded-lg flex items-center ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-100 text-red-800'}`}>
             <FaExclamationCircle className="mr-2 flex-shrink-0" />
-            <span><span className="font-medium">Error:</span> {loginError}</span>
+            <span><span id='error-msg' className="font-medium">Error:</span> {loginError}</span>
           </div>
         )}
 

@@ -8,7 +8,7 @@ describe('User Registration', () => {
     it('register new user successfully', function() {
         const currentUser = this.users.validUser;
         cy.register(currentUser.firstName, currentUser.lastName, currentUser.email, currentUser.password, currentUser.sbuId, currentUser.userType);
-        cy.contains().should(); //Anything visible after successful user registration?
+        cy.url({timeout:2000}).should('eq', 'http://localhost:5173/login');
     });
 
     // throw error when a duplicate user tries to register

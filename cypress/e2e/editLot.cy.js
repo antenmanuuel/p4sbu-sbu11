@@ -9,7 +9,10 @@ describe('Edit Lot Information', ()=>{
         const changed = this.lots.changedLot;
         cy.login(admin.email, admin.password);
         cy.editLot(changed);
-        cy.contains.should();
+        const row = cy.get('tbody tr', {timeout:2000}).eq(0);
+        row.get('td').eq(0).contains(changed.name);
+        row.get('td').eq(1).contains(changed.address);
+        row.get('td').eq(2).contains(changed.totalSpaces).contains(changed.availableSpaces);
     });
 
     it('toggled lot successfully', function() {
