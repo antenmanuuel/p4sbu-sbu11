@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps */
+
 // NOTE: format taken from Login.jsx, 
 // TP: this .jsx file's code was manipulated, optimized, and contributed to by ChatGPT (after the initial was written by Student) to provide clarity on bugs, modularize, and provide solutions during the coding process. 
 // Additionally, ChatGPT modified the code to be maximized for code readability and understanding as well as descriptive comments. 
@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { FaEnvelope, FaExclamationCircle, FaCheckCircle } from 'react-icons/fa';
+import { AuthService } from '../utils/api';
 
 const ForgotPassword = ({ darkMode }) => {
   const [email, setEmail] = useState('');
@@ -20,7 +21,7 @@ const ForgotPassword = ({ darkMode }) => {
   const validateField = (value) => {
     if (!value) {
       return 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(value)) { 
+    } else if (!/\S+@\S+\.\S+/.test(value)) {
       return 'Email is invalid';
     }
     return '';
@@ -50,10 +51,10 @@ const ForgotPassword = ({ darkMode }) => {
     }
   }, [email, touched.email]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setFormSubmitted(true);
-  
+
     if (!validateForm()) {
       const firstErrorField = document.querySelector('.error-border');
       if (firstErrorField) {
@@ -62,23 +63,43 @@ const ForgotPassword = ({ darkMode }) => {
       }
       return;
     }
-  
+
     setIsLoading(true);
     setMessage('');
-  
-    // Simulate sending a reset email
-    setTimeout(() => {
-      setIsLoading(false);
+
+    try {
+      // Use the real API call instead of simulating
+      const result = await AuthService.requestPasswordReset(email);
+
+      if (result.success) {
+        setMessage('If an account with that email exists, a reset link has been sent.');
+
+        // Redirect back to login after 3 seconds
+        setTimeout(() => {
+          navigate('/login');
+        }, 3000);
+      } else {
+        // Still show the same message even on error to prevent user enumeration
+        setMessage('If an account with that email exists, a reset link has been sent.');
+
+        // Still redirect back after 3 seconds
+        setTimeout(() => {
+          navigate('/login');
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('Password reset request error:', error);
+      // Still show success message to prevent user enumeration
       setMessage('If an account with that email exists, a reset link has been sent.');
-      
-      // Redirect back to login after 3 seconds
+
       setTimeout(() => {
         navigate('/login');
       }, 3000);
-      
-    }, 1000);
+    } finally {
+      setIsLoading(false);
+    }
   };
-  
+
 
   const isFieldValid = () => touched.email && !errors.email;
 
@@ -197,11 +218,10 @@ const ForgotPassword = ({ darkMode }) => {
           <div className="text-center mt-4">
             <Link
               to="/login"
-              className={`inline-flex items-center px-4 py-2 border rounded-md shadow-sm text-sm font-medium ${
-                darkMode
-                  ? 'border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600'
-                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-              }`}
+              className={`inline-flex items-center px-4 py-2 border rounded-md shadow-sm text-sm font-medium ${darkMode
+                ? 'border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
             >
               Back to Login
             </Link>

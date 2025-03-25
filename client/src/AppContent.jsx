@@ -7,6 +7,7 @@ import Login from './pages/Login.jsx';
 import Footer from './components/Footer.jsx';
 import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
 import AboutUs from './pages/AboutUs.jsx';
 import ContactUs from './pages/ContactUs.jsx';
 import UnderConstruction from './pages/UnderConstruction.jsx';
@@ -205,6 +206,60 @@ const AppContent = () => {
                   login={login}
                   setIsAuthenticated={setIsAuthenticated}
                 />
+              </main>
+              <Footer darkMode={darkMode} />
+            </>
+          }
+        />
+        <Route
+          path="/forgot-password"
+          element={
+            <>
+              <Navbar
+                darkMode={darkMode}
+                setDarkMode={setDarkMode}
+                isAuthenticated={isAuthenticated}
+                user={user}
+                logout={logout}
+              />
+              <main className="flex-grow">
+                <ForgotPassword darkMode={darkMode} />
+              </main>
+              <Footer darkMode={darkMode} />
+            </>
+          }
+        />
+        <Route
+          path="/reset-password/:token"
+          element={
+            <>
+              <Navbar
+                darkMode={darkMode}
+                setDarkMode={setDarkMode}
+                isAuthenticated={isAuthenticated}
+                user={user}
+                logout={logout}
+              />
+              <main className="flex-grow">
+                <ResetPassword darkMode={darkMode} />
+              </main>
+              <Footer darkMode={darkMode} />
+            </>
+          }
+        />
+        <Route
+          path="/reset-password"
+          element={
+            <>
+              <Navbar
+                darkMode={darkMode}
+                setDarkMode={setDarkMode}
+                isAuthenticated={isAuthenticated}
+                user={user}
+                logout={logout}
+              />
+              <main className="flex-grow">
+                <ResetPassword darkMode={darkMode} />
               </main>
               <Footer darkMode={darkMode} />
             </>
