@@ -2,6 +2,8 @@
 // NOTE: format taken from Login.jsx, 
 // TP: this .jsx file's code was manipulated, optimized, and contributed to by ChatGPT (after the initial was written by Student) to provide clarity on bugs, modularize, and provide solutions during the coding process. 
 // Additionally, ChatGPT modified the code to be maximized for code readability and understanding as well as descriptive comments. 
+// It can be assumed that AI played a crucial role in heavily contributing/completing/modifying/optimizing this entire file's code (after the initial was written by Student). 
+// Thus, We can properly credit ChatGPT with the final version for this code file. 
 
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';

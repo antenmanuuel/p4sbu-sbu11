@@ -800,6 +800,7 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                 <button
                                     onClick={handleSubmitForm}
                                     className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
+                                    id="save changes"
                                 >
                                     {modalMode === 'edit' ? 'Save Changes' : 'Create Lot'}
                                 </button>
@@ -1069,6 +1070,7 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                                     onClick={() => handleToggleStatus(lot._id, lot.status)}
                                                     className={`p-1.5 rounded-full ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                                                     title={lot.status === 'Active' ? 'Set Inactive' : 'Set Active'}
+                                                    id="active button"
                                                 >
                                                     {lot.status === 'Active' ? (
                                                         <FaTimesCircle className="text-yellow-500" />
