@@ -800,6 +800,7 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                 <button
                                     onClick={handleSubmitForm}
                                     className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
+                                    id="save changes"
                                 >
                                     {modalMode === 'edit' ? 'Save Changes' : 'Create Lot'}
                                 </button>

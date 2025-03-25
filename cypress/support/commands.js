@@ -52,11 +52,11 @@ Cypress.Commands.add('editLot', (changedLot)=>{
     cy.get('div[id="manage lots"]').click();
 
     cy.get('button[title="Edit Lot"]').click();
-    cy.get().type(changedLot.name); //change name
-    cy.get().type(changedLot.address); //change address
-    cy.get().type(changedLot.location.latitude).get().type(changedLot.location.longitude); //change longitude and latitude
-    cy.get().type(changedLot.totalSpaces).get().type(changedLot.availableSpaces); //change total spaces and available spaces
-    cy.get().click().get().click(changedLot.rateType); //change rate
+    cy.get('input[name="name"]').invoke('value', '').type(changedLot.name); //change name
+    cy.get('input[name="address"]').invoke('value', '').type(changedLot.address); //change address
+    cy.get('input[name="latitude"]').invoke('value', '').type(changedLot.location.latitude).get('input[name="longitude"]').invoke('value', '').type(changedLot.location.longitude); //change longitude and latitude
+    cy.get('input[name="totalSpaces"]').invoke('value', '').type(changedLot.totalSpaces).get('input[name="availableSpaces"]').invoke('value', '').type(changedLot.availableSpaces); //change total spaces and available spaces
+    cy.get('button[id="save changes"]', {timeout:2000}).click();
 });
 
 // toggle active and inactive
