@@ -36,7 +36,7 @@ Cypress.Commands.add('register', (firstName, lastName, email, password, sbuId, u
     cy.get('#sbuId').type(sbuId);
     cy.get('#userType').type(userType);
 
-    cy.get('button[type="submit]').click();
+    cy.get('button[id="create account"]', {timeout: 2000}).click();
 });
 
 // login command
@@ -44,7 +44,7 @@ Cypress.Commands.add('login', (email, password) => {
     cy.visit('http://localhost:5173/login');
     cy.get('#email-address').type(email);
     cy.get('#password').type(password);
-    cy.get('button[type="submit"]').click();
+    cy.get('button[id="login button"]', {timeout:2000}).click();
 });
 
 // login and edit a lot based on given "visible" changes
