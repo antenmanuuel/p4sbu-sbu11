@@ -54,6 +54,12 @@ The project follows a client-server architecture:
 - JWT for authentication
 - Bcrypt for password hashing
 
+### Testing
+
+- Cypress for end-to-end testing
+- Jest for unit testing
+- React Testing Library for component testing
+
 ## Installation and Setup
 
 ### Prerequisites
@@ -118,6 +124,63 @@ npm run dev
 
 3. Open your browser and navigate to `http://localhost:5173` to view the application.
 
+## Testing
+
+### End-to-End Testing with Cypress
+
+The project uses Cypress for end-to-end testing to ensure the application works correctly from a user's perspective.
+
+#### Running Cypress Tests
+
+To run Cypress tests:
+
+1. Make sure the application is running (both server and client)
+2. Open a new terminal and run:
+
+```
+# Run tests in headless mode
+npm run cy:run
+
+# Or open the Cypress Test Runner UI
+npm run cy:open
+```
+
+#### Existing Test Suites
+
+- **Authentication Tests**: Tests for user login and registration functionality
+  - `login.cy.js`: Tests valid and invalid login scenarios
+  - `register.cy.js`: Tests user registration process
+
+- **Admin Functionality Tests**: Tests for administrative capabilities
+  - `editLot.cy.js`: Tests editing parking lot information
+  - `editPermit.cy.js`: Tests permit management functions
+
+#### Adding New Tests
+
+To add new Cypress tests:
+
+1. Create a new test file in the `cypress/e2e` directory with a `.cy.js` extension
+2. Use the Cypress API to interact with your application
+3. Write assertions to verify expected behavior
+
+Example:
+```javascript
+describe('Feature Test', () => {
+  it('should perform some action', () => {
+    cy.visit('/some-page');
+    cy.get('[data-testid="element"]').click();
+    cy.url().should('include', '/expected-path');
+  });
+});
+```
+
+### Fixtures
+
+Test fixtures are located in the `cypress/fixtures` directory:
+
+- `users.json`: Contains test user credentials
+- `lots.json`: Contains parking lot test data
+
 ## API Documentation
 
 ### Authentication Endpoints
@@ -170,6 +233,12 @@ p4sbu-sbu11/
 │   ├── routes/              # API routes
 │   └── server.js            # Server entry point
 │
+├── cypress/                 # Cypress E2E tests
+│   ├── e2e/                 # Test files
+│   ├── fixtures/            # Test data
+│   └── support/             # Helper functions and commands
+│
+├── cypress.config.js        # Cypress configuration
 └── README.md                # Project documentation
 ```
 

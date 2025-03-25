@@ -1,17 +1,25 @@
 {
     "validUser": {
-        "firstName": "John",
-        "lastName": "Doe",
-        "email": "john.doe@stonybrook.edu",
-        "password": "sampleuser1",
+        "firstName": "Test",
+        "lastName": "Test",
+        "email": "test@example.com",
+        "password": "test1234",
         "sbuId": 123456789,
+        "userType": "student"
+    },
+    "newUser": {
+        "firstName": "New",
+        "lastName": "User",
+        "email": "new.user@example.com",
+        "password": "password123",
+        "sbuId": 987654321,
         "userType": "student"
     },
     "invalidUser": {
         "email": "definitely.spam@sbu.com",
         "password": "youJustGotHackedBruh"
     },
-    "admin":{
+    "admin": {
         "email": "admin@stonybrook.edu",
         "password": "admin123"
     }

@@ -222,7 +222,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
             coordinates: [location.coordinates[1], location.coordinates[0]]
         });
 
-        setMapCenter({
+            setMapCenter({
             longitude: location.coordinates[0],
             latitude: location.coordinates[1],
             zoom: 16
@@ -422,16 +422,16 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 address: matchingSBULocation.name,
                 coordinates: [matchingSBULocation.coordinates[1], matchingSBULocation.coordinates[0]]
             };
-            setSelectedLocation(locationToUse);
+                    setSelectedLocation(locationToUse);
         }
         // If no valid location has been set yet, use the entered address with map center
         else if (!locationToUse) {
             locationToUse = {
                 name: address || "Selected Location",
                 address: address || "Stony Brook University",
-                coordinates: [mapCenter.latitude, mapCenter.longitude]
-            };
-            setSelectedLocation(locationToUse);
+            coordinates: [mapCenter.latitude, mapCenter.longitude]
+        };
+        setSelectedLocation(locationToUse);
         }
 
         setSearching(true);
@@ -461,7 +461,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 setSelectedLot(foundLot);
             }
         } else {
-            setSelectedLot(lot);
+        setSelectedLot(lot);
         }
     };
 

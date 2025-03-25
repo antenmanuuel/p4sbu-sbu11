@@ -122,7 +122,7 @@ const ResultsView = ({
                         <div className="w-full">
                             <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Destination</p>
                             <p className="font-medium truncate text-sm">{locationName}</p>
-                        </div>
+                </div>
                     </div>
 
                     {/* Selected parking lot information - only shown when a lot is selected */}
@@ -149,8 +149,8 @@ const ResultsView = ({
                             <div>
                                 <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>From</p>
                                 <p className="font-medium text-sm truncate">{formattedStartDateTime || '-'}</p>
-                            </div>
-                            <div>
+                    </div>
+                    <div>
                                 <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>To</p>
                                 <p className="font-medium text-sm truncate">{formattedEndDateTime || '-'}</p>
                             </div>
@@ -249,7 +249,7 @@ const ResultsView = ({
             </div>
 
             {/* Filter Section */}
-            {showFilters && (
+                {showFilters && (
                 <div id="filter-panel" className={`mb-4 p-4 rounded-lg shadow-sm transition-all ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
                     <div className="space-y-4">
                         {/* Price Filter */}
@@ -301,20 +301,20 @@ const ResultsView = ({
                         {/* Reset Filters */}
                         {(priceFilter !== 'all' || permitFilter.length > 0) && (
                             <div className="text-right">
-                                <button
-                                    onClick={() => {
-                                        setPriceFilter('all');
-                                        setPermitFilter([]);
-                                    }}
+                            <button
+                                onClick={() => {
+                                    setPriceFilter('all');
+                                    setPermitFilter([]);
+                                }}
                                     className="text-sm text-red-600 hover:text-red-700 font-medium"
-                                >
-                                    Reset Filters
-                                </button>
+                            >
+                                Reset Filters
+                            </button>
                             </div>
                         )}
                     </div>
-                </div>
-            )}
+                    </div>
+                )}
 
             {/* Available Spots */}
             <div className="mb-3 flex justify-between items-center">
@@ -326,7 +326,7 @@ const ResultsView = ({
                 </span>
             </div>
 
-            {filteredParking.length === 0 ? (
+                {filteredParking.length === 0 ? (
                 <div className={`p-4 text-center rounded-lg ${darkMode ? 'bg-gray-800 text-gray-300' : 'bg-white text-gray-600'} shadow-sm`}>
                     <p>No parking spots match your filters.</p>
                     <button
@@ -338,29 +338,29 @@ const ResultsView = ({
                     >
                         Reset Filters
                     </button>
-                </div>
-            ) : (
+                    </div>
+                ) : (
                 <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 pb-1">
-                    {filteredParking.map((spot) => (
-                        <div
-                            key={spot.id}
+                        {filteredParking.map((spot) => (
+                            <div
+                                key={spot.id}
                             className={`rounded-lg transition-all duration-200 cursor-pointer overflow-hidden ${selectedParkingSpot === spot.id
-                                    ? `${darkMode ? 'ring-2 ring-red-500' : 'ring-2 ring-red-500'} shadow-md`
-                                    : `shadow-sm`
+                                ? `${darkMode ? 'ring-2 ring-red-500' : 'ring-2 ring-red-500'} shadow-md`
+                                : `shadow-sm`
                                 }`}
                         >
                             {/* Card header with spots availability */}
                             <div
                                 className={`p-3 ${selectedParkingSpot === spot.id
-                                        ? darkMode ? 'bg-gray-700' : 'bg-white'
-                                        : darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'
+                                    ? darkMode ? 'bg-gray-700' : 'bg-white'
+                                    : darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'
                                     }`}
                                 onClick={() => setSelectedParkingSpot(spot.id)}
                             >
                                 <div className="flex justify-between items-start">
                                     <div className="flex-grow">
                                         <div className="flex items-start">
-                                            <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{spot.name}</h3>
+                                        <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{spot.name}</h3>
                                             {selectedParkingSpot === spot.id && (
                                                 <span className={`ml-2 px-1.5 py-0.5 text-xs rounded-sm ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-50 text-red-700'}`}>
                                                     Selected
@@ -433,22 +433,22 @@ const ResultsView = ({
                             </div>
 
                             {/* View details button */}
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onViewDetails(spot.id);
-                                }}
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onViewDetails(spot.id);
+                                    }}
                                 className={`w-full py-2 text-white font-medium text-sm flex items-center justify-center transition-colors shadow-sm ${selectedParkingSpot === spot.id
                                         ? 'bg-red-700 hover:bg-red-800'
                                         : 'bg-red-600 hover:bg-red-700'
-                                    }`}
-                            >
-                                <FaParking className="mr-2" /> View Details
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            )}
+                                        }`}
+                                >
+                                    <FaParking className="mr-2" /> View Details
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
         </div>
     );
 };
