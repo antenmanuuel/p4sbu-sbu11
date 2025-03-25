@@ -10,5 +10,9 @@
     "invalidUser": {
         "email": "definitely.spam@sbu.com",
         "password": "youJustGotHackedBruh"
+    },
+    "admin":{
+        "email": "admin@stonybrook.edu",
+        "password": "admin123"
     }
 }

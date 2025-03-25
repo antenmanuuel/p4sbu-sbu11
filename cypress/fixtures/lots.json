@@ -1,0 +1,17 @@
+{
+    "changedLot": {
+        "name": "Dreiser Lot",
+        "address": "",
+        "location": {
+            "latitude": 40.908417,
+            "longitude": -73.127135
+        },
+        "totalSpaces": 150,
+        "availableSpaces": 100,
+        "rateType": "Hourly"
+    },
+    "currentLot": {
+        "name": "Lot 13",
+        "status": "Active"
+    }
+}
