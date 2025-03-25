@@ -195,22 +195,41 @@ export const calculatePathDistances = (sourceCoords, destinations) => {
                     destination.coordinates[0], destination.coordinates[1]
                 );
                 const distanceMiles = directDistance * 0.621371;
+                const distanceInFeet = Math.round(distanceMiles * 5280);
+
+                // Format distance to use feet or miles based on length
+                let distanceString;
+                if (distanceInFeet < 1000) {
+                    distanceString = `${distanceInFeet} ft`;
+                } else {
+                    distanceString = `${distanceMiles.toFixed(2)} miles`;
+                }
 
                 return {
                     ...destination,
                     calculatedDistance: directDistance,
-                    distance: `${distanceMiles.toFixed(1)} miles (direct)`
+                    distanceInFeet: distanceInFeet, // distance in feet for sorting
+                    distance: distanceString // formatted distance string
                 };
             }
 
             // Convert km to miles and format the distance string
             const distanceMiles = distance * 0.621371;
-            const distanceString = `${distanceMiles.toFixed(1)} miles`;
+            const distanceInFeet = Math.round(distanceMiles * 5280);
+
+            // Format distance to use feet or miles based on length
+            let distanceString;
+            if (distanceInFeet < 1000) {
+                distanceString = `${distanceInFeet} ft`;
+            } else {
+                distanceString = `${distanceMiles.toFixed(2)} miles`;
+            }
 
             // Return the destination with the calculated distance
             return {
                 ...destination,
                 calculatedDistance: distance, // the raw distance in km
+                distanceInFeet: distanceInFeet, // distance in feet for sorting
                 distance: distanceString // formatted distance string
             };
         } catch (error) {
@@ -222,11 +241,21 @@ export const calculatePathDistances = (sourceCoords, destinations) => {
                 destination.coordinates[0], destination.coordinates[1]
             );
             const distanceMiles = directDistance * 0.621371;
+            const distanceInFeet = Math.round(distanceMiles * 5280);
+
+            // Format distance to use feet or miles based on length
+            let distanceString;
+            if (distanceInFeet < 1000) {
+                distanceString = `${distanceInFeet} ft`;
+            } else {
+                distanceString = `${distanceMiles.toFixed(2)} miles`;
+            }
 
             return {
                 ...destination,
                 calculatedDistance: directDistance,
-                distance: `${distanceMiles.toFixed(1)} miles (direct)`
+                distanceInFeet: distanceInFeet, // distance in feet for sorting
+                distance: distanceString // formatted distance string
             };
         }
     });

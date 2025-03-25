@@ -7,12 +7,13 @@ import PaymentPage from '../components/PaymentPage';
 import { mockParkingLots } from '../utils/fakeData';
 import { LotService } from '../utils/api';
 // Import Mapbox components
-import { AddressAutofill, useConfirmAddress } from '@mapbox/search-js-react';
-import ReactMapGL, { Marker, NavigationControl, GeolocateControl } from 'react-map-gl';
+import ReactMapGL, { Marker, NavigationControl, GeolocateControl, Source, Layer } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 // Import environment variables from our utility
 import { MAPBOX_TOKEN } from '../utils/env';
 import { calculatePathDistances } from '../utils/pathFinding';
+// Import SBU locations data
+import { sbuLocations, searchSbuLocations } from '../utils/sbuLocations';
 
 // Verify token is available - developers will see this error in console
 if (!MAPBOX_TOKEN) {
@@ -24,12 +25,6 @@ if (!MAPBOX_TOKEN) {
 const FindParking = ({ darkMode, isAuthenticated }) => {
     // Add useNavigate hook
     const navigate = useNavigate();
-
-    // Add formRef for address confirmation
-    const { formRef, showConfirm } = useConfirmAddress({
-        minimap: true,
-        skipConfirmModal: false,
-    });
 
     // View states: 'search', 'results', 'details', 'car-info', 'payment', 'confirmation'
     const [currentView, setCurrentView] = useState('search');
@@ -74,6 +69,13 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         duration: ''
     });
 
+    // Add state for custom SBU location suggestions
+    const [sbuSuggestions, setSbuSuggestions] = useState([]);
+    const [showSbuSuggestions, setShowSbuSuggestions] = useState(false);
+
+    // State for storing walking routes
+    const [selectedLotRoute, setSelectedLotRoute] = useState(null);
+
     // Effect to restore reservation data from sessionStorage if present
     useEffect(() => {
         const pendingReservation = sessionStorage.getItem('pendingReservation');
@@ -112,29 +114,122 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         }
     }, [isAuthenticated]);
 
-    // Handle address selection event from Mapbox
-    const handleAddressSelect = (event) => {
-        // The event contains the selected address
-        const feature = event.feature;
-        if (feature) {
-            const coordinates = feature.geometry.coordinates;
-            // Create location object from selected address
-            const location = {
-                name: feature.properties.name || feature.properties.place_name,
-                address: feature.properties.full_address || feature.properties.place_name,
-                // Convert [long, lat] from Mapbox to [lat, long] for our app
-                coordinates: [coordinates[1], coordinates[0]]
-            };
+    // Fetch walking route when a lot is selected
+    useEffect(() => {
+        const fetchWalkingRoute = async () => {
+            if (!selectedLot || !selectedLocation) {
+                setSelectedLotRoute(null);
+                return;
+            }
 
-            // Update state
-            setSelectedLocation(location);
-            setMapCenter({
-                longitude: coordinates[0],
-                latitude: coordinates[1],
-                zoom: 14
-            });
-            setAddress(location.address);
+            // Skip the API call if the token is missing or empty
+            if (!MAPBOX_TOKEN) {
+                console.warn("Mapbox token is missing - using fallback straight line");
+                // Fallback to simple line
+                const fallbackRoute = {
+                    type: 'Feature',
+                    properties: {},
+                    geometry: {
+                        type: 'LineString',
+                        coordinates: [
+                            [selectedLot.coordinates[1], selectedLot.coordinates[0]],
+                            [selectedLocation.coordinates[1], selectedLocation.coordinates[0]]
+                        ]
+                    }
+                };
+                setSelectedLotRoute(fallbackRoute);
+                return;
+            }
+
+            try {
+                // Format coordinates as "lng,lat" strings
+                const start = `${selectedLot.coordinates[1]},${selectedLot.coordinates[0]}`;
+                const end = `${selectedLocation.coordinates[1]},${selectedLocation.coordinates[0]}`;
+
+                // Call the MapBox Directions API
+                const response = await fetch(
+                    `https://api.mapbox.com/directions/v5/mapbox/walking/${start};${end}?` +
+                    `alternatives=false&geometries=geojson&overview=full&steps=false&` +
+                    `access_token=${MAPBOX_TOKEN}`
+                );
+
+                // Check if the response is ok
+                if (!response.ok) {
+                    throw new Error(`Mapbox API error: ${response.status} - ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                if (data.routes && data.routes.length > 0) {
+                    const route = data.routes[0];
+
+                    // Create GeoJSON from the route geometry
+                    const routeGeoJson = {
+                        type: 'Feature',
+                        properties: {},
+                        geometry: route.geometry
+                    };
+
+                    setSelectedLotRoute(routeGeoJson);
+                } else {
+                    throw new Error("No routes returned from Mapbox API");
+                }
+            } catch (error) {
+                console.error("Error fetching walking route:", error);
+                // Fallback to simple line
+                const fallbackRoute = {
+                    type: 'Feature',
+                    properties: {},
+                    geometry: {
+                        type: 'LineString',
+                        coordinates: [
+                            [selectedLot.coordinates[1], selectedLot.coordinates[0]],
+                            [selectedLocation.coordinates[1], selectedLocation.coordinates[0]]
+                        ]
+                    }
+                };
+                setSelectedLotRoute(fallbackRoute);
+            }
+        };
+
+        fetchWalkingRoute();
+    }, [selectedLot, selectedLocation, MAPBOX_TOKEN]);
+
+    // Handle custom SBU location search
+    const handleAddressChange = (e) => {
+        const query = e.target.value;
+        setAddress(query);
+
+        if (query.trim()) {
+            // Clear address errors
+            setFormErrors(prev => ({ ...prev, address: '' }));
+
+            // Search for SBU locations matching the query
+            const matches = searchSbuLocations(query);
+            setSbuSuggestions(matches);
+            setShowSbuSuggestions(matches.length > 0);
+        } else {
+            setSbuSuggestions([]);
+            setShowSbuSuggestions(false);
         }
+    };
+
+    // Handle selection of an SBU location from suggestions
+    const handleSbuLocationSelect = (location) => {
+        setSelectedLocation({
+            name: location.name,
+            address: location.name,
+            coordinates: [location.coordinates[1], location.coordinates[0]]
+        });
+
+        setMapCenter({
+            longitude: location.coordinates[0],
+            latitude: location.coordinates[1],
+            zoom: 16
+        });
+
+        setAddress(location.name);
+        setShowSbuSuggestions(false);
     };
 
     // Format date for display
@@ -312,46 +407,33 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
             return;
         }
 
-        // If address confirmation is needed, show confirmation dialog
-        try {
-            if (formRef.current) {
-                const result = await showConfirm();
+        // Check if we have a matching SBU location
+        const matchingSBULocation = sbuSuggestions.find(loc =>
+            loc.name.toLowerCase() === address.toLowerCase() ||
+            address.toLowerCase().includes(loc.name.toLowerCase())
+        );
 
-                if (result.type === 'cancel') {
-                    return; // User canceled
-                }
+        let locationToUse = selectedLocation;
 
-                // If user selected a suggested address
-                if (result.type === 'change') {
-                    const coordinates = result.feature.geometry.coordinates;
-                    // Create location object from confirmed address
-                    const locationToUse = {
-                        name: result.feature.properties.name || result.feature.properties.place_name,
-                        address: result.feature.properties.full_address || result.feature.properties.place_name,
-                        // Convert [long, lat] from Mapbox to [lat, long] for our app
-                        coordinates: [coordinates[1], coordinates[0]]
-                    };
-
-                    setSelectedLocation(locationToUse);
-                    setMapCenter({
-                        longitude: coordinates[0],
-                        latitude: coordinates[1],
-                        zoom: 14
-                    });
-                    setAddress(locationToUse.address);
-                }
-            }
-        } catch (error) {
-            console.error("Error confirming address:", error);
+        // If we found a matching SBU location, use it directly
+        if (matchingSBULocation) {
+            locationToUse = {
+                name: matchingSBULocation.name,
+                address: matchingSBULocation.name,
+                coordinates: [matchingSBULocation.coordinates[1], matchingSBULocation.coordinates[0]]
+            };
+            setSelectedLocation(locationToUse);
+        }
+        // If no valid location has been set yet, use the entered address with map center
+        else if (!locationToUse) {
+            locationToUse = {
+                name: address || "Selected Location",
+                address: address || "Stony Brook University",
+                coordinates: [mapCenter.latitude, mapCenter.longitude]
+            };
+            setSelectedLocation(locationToUse);
         }
 
-        const locationToUse = selectedLocation || {
-            name: address,
-            address: address,
-            coordinates: [mapCenter.latitude, mapCenter.longitude]
-        };
-
-        setSelectedLocation(locationToUse);
         setSearching(true);
         setCurrentView('results');
 
@@ -372,7 +454,15 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
     // Handle clicking on a map marker
     const handleMarkerClick = (lot) => {
-        setSelectedLot(lot);
+        // If we receive an ID instead of a lot object, find the corresponding lot
+        if (typeof lot === 'string' || typeof lot === 'number') {
+            const foundLot = nearbyParking.find(item => item.id === lot);
+            if (foundLot) {
+                setSelectedLot(foundLot);
+            }
+        } else {
+            setSelectedLot(lot);
+        }
     };
 
     // Handle clicking "View Details" on a lot
@@ -558,34 +648,52 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             {/* Search Form */}
                             <div className={`p-6 rounded-lg ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-md`}>
-                                <form ref={formRef} onSubmit={handleSearch} className="space-y-5">
+                                <form onSubmit={handleSearch} className="space-y-5">
                                     <div>
                                         <label htmlFor="address" className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                                             Address
                                         </label>
-                                        <AddressAutofill
-                                            accessToken={MAPBOX_TOKEN}
-                                            onRetrieve={handleAddressSelect}
-                                        >
+                                        <div className="relative">
+                                            {/* Replace Mapbox AddressAutofill with a simple input for SBU locations */}
                                             <input
                                                 type="text"
                                                 id="address"
                                                 name="address"
-                                                placeholder="Enter your address"
+                                                placeholder="Enter Stony Brook location"
                                                 value={address}
-                                                onChange={(e) => {
-                                                    setAddress(e.target.value);
-                                                    if (e.target.value.trim()) {
-                                                        setFormErrors(prev => ({ ...prev, address: '' }));
-                                                    }
-                                                }}
+                                                onChange={handleAddressChange}
                                                 className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
                                                     ? 'bg-gray-800 text-white border-gray-700 focus:ring-red-600'
                                                     : 'bg-gray-100 text-gray-900 border-gray-300 focus:ring-red-500'
                                                     } border focus:outline-none focus:ring-2 ${formErrors.address ? 'border-red-500' : ''}`}
-                                                autoComplete="address-line1"
+                                                autoComplete="off"
                                             />
-                                        </AddressAutofill>
+
+                                            {/* SBU Location Suggestions */}
+                                            {showSbuSuggestions && sbuSuggestions.length > 0 && (
+                                                <div className={`mt-1 absolute z-50 w-full max-h-40 overflow-y-auto rounded-md shadow-lg ${darkMode ? 'bg-gray-700 text-white' : 'bg-white text-gray-900'
+                                                    }`}>
+                                                    <ul className="text-sm">
+                                                        {sbuSuggestions.slice(0, 5).map((location, index) => (
+                                                            <li
+                                                                key={`sbu-${index}`}
+                                                                className={`px-2 py-1 cursor-pointer hover:${darkMode ? 'bg-gray-600' : 'bg-gray-100'
+                                                                    } transition-colors border-b ${darkMode ? 'border-gray-600' : 'border-gray-100'
+                                                                    }`}
+                                                                onClick={() => handleSbuLocationSelect(location)}
+                                                            >
+                                                                <div className="font-medium">{location.name}</div>
+                                                            </li>
+                                                        ))}
+                                                        {sbuSuggestions.length > 5 && (
+                                                            <li className="px-2 py-1 text-xs text-gray-500 italic">
+                                                                {sbuSuggestions.length - 5} more results...
+                                                            </li>
+                                                        )}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                        </div>
                                         {formErrors.address && (
                                             <p className={`mt-1 text-sm text-red-500`}>{formErrors.address}</p>
                                         )}
@@ -712,6 +820,21 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                     <GeolocateControl position="top-right" />
                                     <NavigationControl position="top-right" />
 
+                                    {/* Add SBU location markers - show all locations */}
+                                    {sbuLocations.map((location, index) => (
+                                        <Marker
+                                            key={`marker-${index}`}
+                                            longitude={location.coordinates[0]}
+                                            latitude={location.coordinates[1]}
+                                            color="#dc2626"
+                                            scale={0.7}
+                                            onClick={(e) => {
+                                                e.originalEvent.stopPropagation();
+                                                handleSbuLocationSelect(location);
+                                            }}
+                                        />
+                                    ))}
+
                                     {selectedLocation && (
                                         <Marker
                                             longitude={selectedLocation.coordinates[1]}
@@ -762,6 +885,35 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                     <GeolocateControl position="top-right" />
                                     <NavigationControl position="top-right" />
 
+                                    {/* Create path from selected lot to destination */}
+                                    {selectedLot && selectedLocation && (
+                                        <Source
+                                            id="route"
+                                            type="geojson"
+                                            data={selectedLotRoute || {
+                                                type: 'Feature',
+                                                properties: {},
+                                                geometry: {
+                                                    type: 'LineString',
+                                                    coordinates: [
+                                                        [selectedLot.coordinates[1], selectedLot.coordinates[0]],
+                                                        [selectedLocation.coordinates[1], selectedLocation.coordinates[0]]
+                                                    ]
+                                                }
+                                            }}
+                                        >
+                                            <Layer
+                                                id="route-line"
+                                                type="line"
+                                                paint={{
+                                                    'line-color': '#3b82f6',
+                                                    'line-width': 3,
+                                                    'line-opacity': 0.8
+                                                }}
+                                            />
+                                        </Source>
+                                    )}
+
                                     {nearbyParking.map(lot => (
                                         <Marker
                                             key={lot.id}
@@ -800,6 +952,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                 startDateTime={formatDateTime(date, startTime)}
                                 endDateTime={formatDateTime(date, endTime)}
                                 duration={duration}
+                                destination={selectedLocation}
                             />
                         )}
                     </div>
