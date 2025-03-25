@@ -22,8 +22,16 @@ const getEnv = (key, defaultValue = '') => {
 };
 
 // Export common environment variables used in the app
-export const MAPBOX_TOKEN = getEnv('REACT_APP_MAPBOX_TOKEN');
+// Using direct access to Vite environment variables to ensure we have the token
+export const MAPBOX_TOKEN = import.meta.env.VITE_REACT_APP_MAPBOX_TOKEN || '';
 export const API_URL = getEnv('REACT_APP_API_URL', 'http://localhost:5000/api');
+
+// Log token for debugging (truncated for security)
+if (MAPBOX_TOKEN) {
+    console.log(`Mapbox token available: ${MAPBOX_TOKEN.substring(0, 8)}...`);
+} else {
+    console.warn('Mapbox token is missing or empty');
+}
 
 // Export utility function
 export default getEnv; 
