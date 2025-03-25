@@ -53,6 +53,9 @@ Cypress.Commands.add('editLot', (email, password, changedLot)=>{
     cy.get('#email').type(email);
     cy.get('#password').type(password);
     cy.get('button[type="submit"]').click();
+
+    cy.get('div[id="manage lots"]').click();
+
     cy.get('button[title="Edit Lot"]').click();
     cy.get().type(changedLot.name); //change name
     cy.get().type(changedLot.address); //change address
@@ -62,12 +65,29 @@ Cypress.Commands.add('editLot', (email, password, changedLot)=>{
 });
 
 // toggle active and inactive
-Cypress.Commands.add('toggleLot', (email, password, currentLot)=>{
-    cy.visit('http://localhost:5173/login');
-    cy.get('#email').type(email);
-    cy.get('#password').type(password);
-    cy.get('button[type="submit"]').click();
-    cy.get().click(); // click toggle button
+Cypress.Commands.add('toggleLot', ()=>{
+    cy.get('div[id="manage lots"]').click();
+
+    cy.get('tbody tr').eq(0).get('td').eq(5).get('button[id="active button"]').click();
+    cy.get('button[id="active button"]').click(); // click toggle button
 });
 
 // login and delete lot
+
+// edit permit
+
+// toggle paid, refunded, and unpaid
+Cypress.Commands.add('togglePaidStatus', ()=>{
+    cy.get('div[id="manage permits"]').click();
+
+    cy.get('tbody tr').eq(0).get('td').eq(9).get('button[id="toggle status button"]').click();
+});
+
+// toggle active/inactive
+Cypress.Commands.add('toggleActive', ()=>{
+    cy.get('div[id="manage permits"]').click();
+
+    cy.get('tbody tr').eq(0).get('td').eq(9).get('button[id="toggle payment button"]').click();
+});
+
+// delete permit

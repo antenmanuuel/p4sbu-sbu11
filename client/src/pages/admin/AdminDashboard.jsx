@@ -397,6 +397,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                     onClick={goToManagePermits}
                     className={`p-6 shadow-sm rounded-lg border hover:shadow-md transition-shadow cursor-pointer
                               ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}
+                    id="manage permits"
                 >
                     <div className="flex justify-between items-start">
                         <div>
@@ -413,6 +414,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                     onClick={goToManageLots}
                     className={`p-6 shadow-sm rounded-lg border hover:shadow-md transition-shadow cursor-pointer
                               ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}
+                    id="manage lots"
                 >
                     <div className="flex justify-between items-start">
                         <div>

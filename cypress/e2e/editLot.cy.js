@@ -13,8 +13,10 @@ describe('Edit Lot Information', ()=>{
 
     it('toggled lot successfully', function() {
         const admin = this.users.admin;
-        const current = this.lots.currentLot;
-        cy.editLot(admin.email, admin.password, current);
-        cy.contains.should();
+        cy.login(admin.email, admin.password);
+        cy.get('tbody tr').eq(0).get('td').eq(4).invoke('text').then((oldStatus)=>{
+            cy.toggleLot();
+            cy.get('tbody tr').eq(0).get('td').eq(4).invoke('text').should('not.equal', oldStatus);
+        });
     });
 });

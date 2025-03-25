@@ -1069,6 +1069,7 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                                     onClick={() => handleToggleStatus(lot._id, lot.status)}
                                                     className={`p-1.5 rounded-full ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                                                     title={lot.status === 'Active' ? 'Set Inactive' : 'Set Active'}
+                                                    id="active button"
                                                 >
                                                     {lot.status === 'Active' ? (
                                                         <FaTimesCircle className="text-yellow-500" />
