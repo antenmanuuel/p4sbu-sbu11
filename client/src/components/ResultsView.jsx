@@ -235,8 +235,8 @@ const ResultsView = ({
                                         onViewDetails(spot.id);
                                     }}
                                     className={`w-full py-2 text-white rounded-md font-medium text-sm flex items-center justify-center transition-colors shadow-sm ${selectedParkingSpot === spot.id
-                                            ? 'bg-red-700 hover:bg-red-800'
-                                            : 'bg-red-600 hover:bg-red-700'
+                                        ? 'bg-red-700 hover:bg-red-800'
+                                        : 'bg-red-600 hover:bg-red-700'
                                         }`}
                                 >
                                     <FaParking className="mr-2" /> View Details
