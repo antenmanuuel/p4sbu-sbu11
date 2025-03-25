@@ -1,0 +1,18 @@
+{
+    "validUser": {
+        "firstName": "John",
+        "lastName": "Doe",
+        "email": "john.doe@stonybrook.edu",
+        "password": "sampleuser1",
+        "sbuId": 123456789,
+        "userType": "student"
+    },
+    "invalidUser": {
+        "email": "definitely.spam@sbu.com",
+        "password": "youJustGotHackedBruh"
+    },
+    "admin":{
+        "email": "admin@stonybrook.edu",
+        "password": "admin123"
+    }
+}
