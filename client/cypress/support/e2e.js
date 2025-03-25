@@ -13,5 +13,5 @@
 // https://on.cypress.io/configuration
 // ***********************************************************
 
-// Commands file has been removed
-// No custom commands used - all test functionality is self-contained
+// Import commands.js using ES2015 syntax:
+import './commands'
