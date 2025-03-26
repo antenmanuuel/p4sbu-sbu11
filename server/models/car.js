@@ -2,29 +2,29 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
 const CarSchema = new mongoose.Schema({
-    plateNumber:{
-        type:String,
-        required:true,
+    plateNumber: {
+        type: String,
+        required: true,
     },
-    stateProv:{
-        type:String,
-        required:true
+    stateProv: {
+        type: String,
+        required: true
     },
-    make:{
-        type:String,
-        required:true
+    make: {
+        type: String,
+        required: true
     },
-    model:{
-        type:String,
-        required:true
+    model: {
+        type: String,
+        required: true
     },
-    color:{
-        type:String,
-        required:true
+    color: {
+        type: String,
+        required: true
     },
-    bodyType:{
-        type:String,
-        required:true
+    bodyType: {
+        type: String,
+        required: true
     }
 });
 
