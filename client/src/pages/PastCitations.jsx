@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaArrowLeft, FaSearch } from "react-icons/fa";
+import { TicketService, AuthService } from "../utils/api";
 
 const PastCitations = ({ darkMode }) => {
     const navigate = useNavigate();
@@ -8,15 +9,35 @@ const PastCitations = ({ darkMode }) => {
     const [filter, setFilter] = useState("all");
     const [sortBy, setSortBy] = useState("date");
     const [sortOrder, setSortOrder] = useState("desc");
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [tickets, setTickets] = useState([]);
 
-    // Sample past citations data - in a real app, this would come from an API
-    const [pastCitations, setPastCitations] = useState([
-        { id: "C1001", date: "2024-03-15", violation: "No Valid Permit", amount: "$50", status: "Unpaid", location: "North P Lot" },
-        { id: "C1002", date: "2024-02-26", violation: "Incorrect Spot", amount: "$75", status: "Unpaid", location: "Administration Garage" },
-        { id: "C1003", date: "2024-01-18", violation: "Overtime Parking", amount: "$40", status: "Paid", location: "South P Lot" },
-        { id: "C1004", date: "2023-12-05", violation: "Fire Lane Violation", amount: "$100", status: "Paid", location: "Health Sciences Drive" },
-        { id: "C1005", date: "2023-11-22", violation: "Expired Meter", amount: "$30", status: "Paid", location: "Engineering Quad" }
-    ]);
+    // Check authentication and fetch tickets on component mount
+    useEffect(() => {
+        const fetchTickets = async () => {
+            if (!AuthService.isAuthenticated()) {
+                navigate('/login', { state: { from: '/past-citations' } });
+                return;
+            }
+
+            try {
+                setLoading(true);
+                const response = await TicketService.getUserTickets();
+                if (response.success) {
+                    setTickets(response.data);
+                } else {
+                    setError(response.error);
+                }
+            } catch {
+                setError('Failed to fetch tickets');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchTickets();
+    }, [navigate]);
 
     // Function to format date
     const formatDate = (dateString) => {
@@ -44,21 +65,31 @@ const PastCitations = ({ darkMode }) => {
         }
     };
 
-    // Filter and sort citations
-    const filteredCitations = pastCitations
-        .filter(citation => {
+    // Format amount as currency
+    const formatAmount = (amount) => {
+        return `$${amount}`;
+    };
+
+    // Filter and sort tickets
+    const filteredTickets = tickets
+        .filter(ticket => {
             // Filter by status
-            if (filter !== "all" && citation.status.toLowerCase() !== filter.toLowerCase()) {
-                return false;
+            if (filter !== "all") {
+                const isPaid = ticket.isPaid;
+                if (
+                    (filter === "paid" && !isPaid) ||
+                    (filter === "unpaid" && isPaid)
+                ) {
+                    return false;
+                }
             }
 
             // Filter by search term
             if (searchTerm) {
                 const searchLower = searchTerm.toLowerCase();
                 return (
-                    citation.violation.toLowerCase().includes(searchLower) ||
-                    citation.location.toLowerCase().includes(searchLower) ||
-                    citation.id.toLowerCase().includes(searchLower)
+                    ticket.name.toLowerCase().includes(searchLower) ||
+                    ticket._id.toLowerCase().includes(searchLower)
                 );
             }
 
@@ -70,16 +101,16 @@ const PastCitations = ({ darkMode }) => {
 
             switch (sortBy) {
                 case "date":
-                    valueA = new Date(a.date);
-                    valueB = new Date(b.date);
+                    valueA = new Date(a.date_posted);
+                    valueB = new Date(b.date_posted);
                     break;
                 case "amount":
-                    valueA = parseFloat(a.amount.replace(/[^0-9.-]+/g, ""));
-                    valueB = parseFloat(b.amount.replace(/[^0-9.-]+/g, ""));
+                    valueA = a.amount;
+                    valueB = b.amount;
                     break;
                 default:
-                    valueA = a[sortBy];
-                    valueB = b[sortBy];
+                    valueA = a[sortBy] || "";
+                    valueB = b[sortBy] || "";
             }
 
             // Apply sort order
@@ -114,12 +145,12 @@ const PastCitations = ({ darkMode }) => {
                             </div>
                             <input
                                 type="text"
-                                placeholder="Search by violation, location, or ID"
+                                placeholder="Search by violation or ID"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 className={`w-full pl-10 pr-4 py-2 rounded-lg border ${darkMode
-                                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
                                     }`}
                             />
                         </div>
@@ -131,15 +162,13 @@ const PastCitations = ({ darkMode }) => {
                             value={filter}
                             onChange={(e) => setFilter(e.target.value)}
                             className={`w-full px-3 py-2 rounded-lg border appearance-none ${darkMode
-                                    ? 'bg-gray-700 border-gray-600 text-white'
-                                    : 'bg-white border-gray-300 text-gray-900'
+                                ? 'bg-gray-700 border-gray-600 text-white'
+                                : 'bg-white border-gray-300 text-gray-900'
                                 }`}
                         >
                             <option value="all">All Statuses</option>
                             <option value="paid">Paid</option>
                             <option value="unpaid">Unpaid</option>
-                            <option value="appealed">Appealed</option>
-                            <option value="dismissed">Dismissed</option>
                         </select>
                     </div>
 
@@ -149,13 +178,13 @@ const PastCitations = ({ darkMode }) => {
                             value={sortBy}
                             onChange={(e) => setSortBy(e.target.value)}
                             className={`w-full px-3 py-2 rounded-lg border appearance-none ${darkMode
-                                    ? 'bg-gray-700 border-gray-600 text-white'
-                                    : 'bg-white border-gray-300 text-gray-900'
+                                ? 'bg-gray-700 border-gray-600 text-white'
+                                : 'bg-white border-gray-300 text-gray-900'
                                 }`}
                         >
                             <option value="date">Date</option>
                             <option value="amount">Amount</option>
-                            <option value="violation">Violation Type</option>
+                            <option value="name">Violation Type</option>
                         </select>
                     </div>
 
@@ -165,8 +194,8 @@ const PastCitations = ({ darkMode }) => {
                             value={sortOrder}
                             onChange={(e) => setSortOrder(e.target.value)}
                             className={`w-full px-3 py-2 rounded-lg border appearance-none ${darkMode
-                                    ? 'bg-gray-700 border-gray-600 text-white'
-                                    : 'bg-white border-gray-300 text-gray-900'
+                                ? 'bg-gray-700 border-gray-600 text-white'
+                                : 'bg-white border-gray-300 text-gray-900'
                                 }`}
                         >
                             <option value="desc">Newest First</option>
@@ -178,7 +207,15 @@ const PastCitations = ({ darkMode }) => {
 
             {/* Citations List */}
             <div className={`rounded-lg shadow-md ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                {filteredCitations.length === 0 ? (
+                {loading ? (
+                    <div className="p-6 text-center">
+                        <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Loading citations...</p>
+                    </div>
+                ) : error ? (
+                    <div className="p-6 text-center">
+                        <p className="text-red-500">Error: {error}</p>
+                    </div>
+                ) : filteredTickets.length === 0 ? (
                     <div className="p-6 text-center">
                         <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No citations found matching your criteria.</p>
                     </div>
@@ -190,22 +227,20 @@ const PastCitations = ({ darkMode }) => {
                                     <th className="px-4 py-3 text-left text-sm font-medium">ID</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium">Date</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium">Violation</th>
-                                    <th className="px-4 py-3 text-left text-sm font-medium">Location</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium">Amount</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium">Status</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">
-                                {filteredCitations.map((citation) => (
-                                    <tr key={citation.id} className={darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'}>
-                                        <td className="px-4 py-4 text-sm">{citation.id}</td>
-                                        <td className="px-4 py-4 text-sm">{formatDate(citation.date)}</td>
-                                        <td className="px-4 py-4 text-sm font-medium">{citation.violation}</td>
-                                        <td className="px-4 py-4 text-sm">{citation.location}</td>
-                                        <td className="px-4 py-4 text-sm font-medium">{citation.amount}</td>
+                                {filteredTickets.map((ticket) => (
+                                    <tr key={ticket._id} className={darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'}>
+                                        <td className="px-4 py-4 text-sm">{ticket._id.substring(0, 8)}...</td>
+                                        <td className="px-4 py-4 text-sm">{formatDate(ticket.date_posted)}</td>
+                                        <td className="px-4 py-4 text-sm font-medium">{ticket.name}</td>
+                                        <td className="px-4 py-4 text-sm font-medium">{formatAmount(ticket.amount)}</td>
                                         <td className="px-4 py-4 text-sm">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(citation.status)}`}>
-                                                {citation.status}
+                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(ticket.isPaid ? 'paid' : 'unpaid')}`}>
+                                                {ticket.isPaid ? 'Paid' : 'Unpaid'}
                                             </span>
                                         </td>
                                     </tr>

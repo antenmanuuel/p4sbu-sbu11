@@ -1,42 +1,185 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { UserService, AuthService } from '../utils/api';
 
-const Profile = ({ darkMode, user }) => {
-    // Mock data for user permits
-    const [userPermits] = useState([
-        {
-            id: 'P-2024-001',
-            type: 'Commuter Core',
-            validFrom: '2024-01-01',
-            validUntil: '2024-12-31',
-            status: 'Active',
-            vehicle: {
-                make: 'Toyota',
-                model: 'Camry',
-                year: '2020',
-                color: 'Blue',
-                licensePlate: 'NY-ABC-123'
-            }
-        }
-    ]);
-
-    // Admin statistics
-    const [adminStats] = useState({
-        totalUsersManaged: 2456,
-        totalPermitsManaged: 1879,
-        actionsThisMonth: 138,
-        lastLogin: 'Today, 8:45 AM',
-        accountCreated: 'January 2, 2024',
-        role: 'System Administrator',
-        permissions: ['User Management', 'Permit Management', 'Lot Management', 'System Configuration', 'Report Generation']
+const Profile = ({ darkMode }) => {
+    const navigate = useNavigate();
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [profileData, setProfileData] = useState({
+        user: null,
+        permits: [],
+        adminStats: null
     });
+    const [activityHistory, setActivityHistory] = useState([]);
+    const [activityLoading, setActivityLoading] = useState(true);
+    const [activityError, setActivityError] = useState('');
+    const [editingPhone, setEditingPhone] = useState(false);
+    const [phoneNumber, setPhoneNumber] = useState('');
+    const [phoneUpdateLoading, setPhoneUpdateLoading] = useState(false);
+    const [phoneUpdateSuccess, setPhoneUpdateSuccess] = useState(false);
+    const [phoneUpdateError, setPhoneUpdateError] = useState('');
+
+    // Check auth and load profile data
+    useEffect(() => {
+        const fetchProfileData = async () => {
+            // Check if user is authenticated
+            if (!AuthService.isAuthenticated()) {
+                navigate('/login', { state: { from: '/profile' } });
+                return;
+            }
+
+            try {
+                setLoading(true);
+                setError('');
+                const result = await UserService.getProfile();
+
+                if (result.success) {
+                    setProfileData({
+                        user: result.data.user,
+                        permits: result.data.permits || [],
+                        adminStats: result.data.adminStats
+                    });
+                } else {
+                    setError(result.error || 'Failed to load profile data');
+                }
+            } catch (err) {
+                console.error('Error fetching profile:', err);
+                setError('An unexpected error occurred');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchProfileData();
+    }, [navigate]);
+
+    // Fetch user activity history
+    useEffect(() => {
+        const fetchActivityHistory = async () => {
+            if (!AuthService.isAuthenticated()) {
+                return;
+            }
+
+            try {
+                setActivityLoading(true);
+                setActivityError('');
+                const result = await UserService.getActivityHistory();
+
+                if (result.success) {
+                    setActivityHistory(result.data);
+                } else {
+                    setActivityError(result.error || 'Failed to load activity history');
+                }
+            } catch (err) {
+                console.error('Error fetching activity history:', err);
+                setActivityError('An unexpected error occurred');
+            } finally {
+                setActivityLoading(false);
+            }
+        };
+
+        fetchActivityHistory();
+    }, []);
+
+    // Set phone number from profile data when it's loaded
+    useEffect(() => {
+        if (profileData.user?.phone) {
+            setPhoneNumber(profileData.user.phone);
+        }
+    }, [profileData.user]);
+
+    // Handle phone number update
+    const handlePhoneUpdate = async () => {
+        try {
+            setPhoneUpdateLoading(true);
+            setPhoneUpdateError('');
+            setPhoneUpdateSuccess(false);
+
+            const result = await UserService.updateProfile({ phone: phoneNumber });
+
+            if (result.success) {
+                setPhoneUpdateSuccess(true);
+                setEditingPhone(false);
+
+                // Update the profile data with the new phone number
+                setProfileData(prev => ({
+                    ...prev,
+                    user: {
+                        ...prev.user,
+                        phone: phoneNumber
+                    }
+                }));
+
+                // Hide success message after 3 seconds
+                setTimeout(() => {
+                    setPhoneUpdateSuccess(false);
+                }, 3000);
+            } else {
+                setPhoneUpdateError(result.error || 'Failed to update phone number');
+            }
+        } catch (err) {
+            console.error('Error updating phone:', err);
+            setPhoneUpdateError('An unexpected error occurred');
+        } finally {
+            setPhoneUpdateLoading(false);
+        }
+    };
+
+    // Handle starting and canceling phone editing
+    const startEditingPhone = () => {
+        setPhoneNumber(profileData.user?.phone || '');
+        setEditingPhone(true);
+        setPhoneUpdateError('');
+    };
+
+    const cancelEditingPhone = () => {
+        setEditingPhone(false);
+        setPhoneUpdateError('');
+    };
 
     // Check if user is admin
-    const isAdmin = user?.userType === 'admin';
+    const isAdmin = profileData.user?.userType === 'admin';
+    const { user, permits, adminStats } = profileData;
+
+    // Format activity date
+    const formatActivityDate = (dateString) => {
+        const date = new Date(dateString);
+        const now = new Date();
+
+        // If today, show time
+        if (date.toDateString() === now.toDateString()) {
+            return `Today, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        }
+
+        // If within last week, show day of week
+        const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+        if (diffDays < 7) {
+            return date.toLocaleDateString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Otherwise show the date
+        return date.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
+    };
+
+    if (loading) {
+        return (
+            <div className={`flex-1 flex items-center justify-center ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-600"></div>
+            </div>
+        );
+    }
 
     return (
         <div className={`flex-1 ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
             <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
                 <h1 className="text-3xl font-bold mb-6">My Profile</h1>
+
+                {error && (
+                    <div className={`mb-6 p-4 rounded-md ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-100 text-red-800'}`}>
+                        {error}
+                    </div>
+                )}
 
                 {/* User Information Card */}
                 <div className={`rounded-lg shadow-md overflow-hidden mb-8 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
@@ -56,19 +199,69 @@ const Profile = ({ darkMode, user }) => {
                                             <dt className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Email Address</dt>
                                             <dd className="mt-1 text-sm">{user?.email || 'email@example.com'}</dd>
                                         </div>
+
                                         <div className="sm:col-span-1">
-                                            <dt className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Phone Number</dt>
-                                            <dd className="mt-1 text-sm">{user?.phone || '(555) 123-4567'}</dd>
+                                            <div className="flex justify-between items-center">
+                                                <dt className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Phone Number</dt>
+                                                {!editingPhone && (
+                                                    <button
+                                                        onClick={startEditingPhone}
+                                                        className={`text-xs font-medium ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-500'}`}
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {editingPhone ? (
+                                                <div className="mt-1">
+                                                    <div className="flex items-center">
+                                                        <input
+                                                            type="text"
+                                                            value={phoneNumber}
+                                                            onChange={(e) => setPhoneNumber(e.target.value)}
+                                                            className={`block w-full rounded-md px-3 py-1.5 text-sm ${darkMode
+                                                                ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500'
+                                                                : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500'
+                                                                } border`}
+                                                            placeholder="(123) 456-7890"
+                                                        />
+                                                        <button
+                                                            onClick={handlePhoneUpdate}
+                                                            disabled={phoneUpdateLoading}
+                                                            className="ml-2 inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                                        >
+                                                            {phoneUpdateLoading ? 'Saving...' : 'Save'}
+                                                        </button>
+                                                        <button
+                                                            onClick={cancelEditingPhone}
+                                                            className="ml-2 inline-flex items-center px-2.5 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                    {phoneUpdateError && (
+                                                        <p className="mt-1 text-xs text-red-500">{phoneUpdateError}</p>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <dd className="mt-1 text-sm">
+                                                    {user?.phone || 'Not provided'}
+                                                    {phoneUpdateSuccess && (
+                                                        <span className="ml-2 text-xs text-green-500">Updated successfully!</span>
+                                                    )}
+                                                </dd>
+                                            )}
                                         </div>
                                         {isAdmin ? (
                                             <div className="sm:col-span-1">
                                                 <dt className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Role</dt>
-                                                <dd className="mt-1 text-sm">{adminStats.role}</dd>
+                                                <dd className="mt-1 text-sm">{adminStats?.role || 'System Administrator'}</dd>
                                             </div>
                                         ) : (
                                             <div className="sm:col-span-1">
                                                 <dt className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>SBU ID</dt>
-                                                <dd className="mt-1 text-sm">{user?.id || '12345678'}</dd>
+                                                <dd className="mt-1 text-sm">{user?.sbuId || '12345678'}</dd>
                                             </div>
                                         )}
                                         <div className="sm:col-span-1">
@@ -87,7 +280,7 @@ const Profile = ({ darkMode, user }) => {
                 </div>
 
                 {/* Admin stats section - only show for admins */}
-                {isAdmin ? (
+                {isAdmin && adminStats ? (
                     <>
                         <h2 className="text-xl font-bold mb-4">Administration Information</h2>
                         <div className={`rounded-lg shadow-md overflow-hidden mb-8 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
@@ -108,20 +301,7 @@ const Profile = ({ darkMode, user }) => {
                                     </div>
                                 </div>
 
-                                <div className="mt-6">
-                                    <h3 className="text-lg font-bold mb-4">Administrative Permissions</h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        {adminStats.permissions.map((permission, index) => (
-                                            <span
-                                                key={index}
-                                                className={`px-3 py-1 rounded-full text-xs font-medium ${darkMode ? 'bg-blue-900 text-blue-300' : 'bg-blue-100 text-blue-800'
-                                                    }`}
-                                            >
-                                                {permission}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
+
                             </div>
                         </div>
                     </>
@@ -129,9 +309,9 @@ const Profile = ({ darkMode, user }) => {
                     <>
                         {/* Permits Section - only show for non-admins */}
                         <h2 className="text-xl font-bold mb-4">My Parking Permits</h2>
-                        {userPermits.length > 0 ? (
+                        {permits.length > 0 ? (
                             <div className={`rounded-lg shadow-md overflow-hidden mb-8 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                                {userPermits.map((permit) => (
+                                {permits.map((permit) => (
                                     <div key={permit.id} className="p-6">
                                         <div className="flex items-start justify-between flex-wrap gap-4">
                                             <div>
@@ -200,35 +380,42 @@ const Profile = ({ darkMode, user }) => {
                 {/* Account Activity */}
                 <h2 className="text-xl font-bold mb-4">Recent Account Activity</h2>
                 <div className={`rounded-lg shadow-md overflow-hidden ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                    <ul>
-                        <li className={`px-6 py-4 ${darkMode ? 'border-b border-gray-700' : 'border-b border-gray-200'}`}>
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="font-medium">Logged in from new device</p>
-                                    <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Windows PC - Chrome Browser</p>
-                                </div>
-                                <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{isAdmin ? adminStats.lastLogin : 'Today, 10:30 AM'}</span>
-                            </div>
-                        </li>
-                        <li className={`px-6 py-4 ${darkMode ? 'border-b border-gray-700' : 'border-b border-gray-200'}`}>
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="font-medium">Password changed</p>
-                                    <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Security update</p>
-                                </div>
-                                <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>March 15, 2024</span>
-                            </div>
-                        </li>
-                        <li className="px-6 py-4">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="font-medium">Account created</p>
-                                    <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Welcome to P4SBU</p>
-                                </div>
-                                <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{isAdmin ? adminStats.accountCreated : 'January 5, 2024'}</span>
-                            </div>
-                        </li>
-                    </ul>
+                    {activityLoading ? (
+                        <div className="p-6 text-center">
+                            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-red-600 mx-auto"></div>
+                            <p className={`mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Loading activity history...</p>
+                        </div>
+                    ) : activityError ? (
+                        <div className="p-6 text-center">
+                            <p className="text-red-500">{activityError}</p>
+                        </div>
+                    ) : activityHistory.length === 0 ? (
+                        <div className="p-6 text-center">
+                            <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No activity history found.</p>
+                        </div>
+                    ) : (
+                        <ul>
+                            {activityHistory.map((activity, index) => (
+                                <li
+                                    key={activity._id}
+                                    className={`px-6 py-4 ${index < activityHistory.length - 1
+                                        ? darkMode ? 'border-b border-gray-700' : 'border-b border-gray-200'
+                                        : ''
+                                        }`}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="font-medium">{activity.description}</p>
+                                            <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{activity.details}</p>
+                                        </div>
+                                        <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            {formatActivityDate(activity.created_at)}
+                                        </span>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
                 </div>
             </div>
         </div>
