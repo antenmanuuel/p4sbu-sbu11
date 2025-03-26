@@ -6,6 +6,8 @@ describe('User Login', () => {
     it('should login with valid student credentials', function () {
         const currentUser = this.users.validUser;
 
+        cy.intercept('GET', '/dashboard').as('dashboardLoad');
+
         // Visit login page
         cy.visit('/login');
 
@@ -17,7 +19,7 @@ describe('User Login', () => {
         cy.get('button[id="login button"]').click();
 
         // Wait for loading state or API response
-        cy.wait(2000);
+        cy.wait('@dashboardLoad');
 
         // Check redirect to dashboard with a longer timeout
         cy.url({ timeout: 10000 }).should('include', '/dashboard');
@@ -25,6 +27,8 @@ describe('User Login', () => {
 
     it('should login with valid admin credentials', function () {
         const admin = this.users.admin;
+
+        cy.intercept('GET', '/admin-dashboard').as('adminDashboard');
 
         // Visit login page
         cy.visit('/login');
@@ -37,7 +41,7 @@ describe('User Login', () => {
         cy.get('button[id="login button"]').click();
 
         // Wait for loading state or API response
-        cy.wait(2000);
+        cy.wait('@adminDashboard');
 
         // Check redirect to admin-dashboard with a longer timeout
         cy.url({ timeout: 10000 }).should('include', '/admin-dashboard');
