@@ -40,62 +40,152 @@ const createDefaultLots = async () => {
                 {
                     lotId: 'LOT001',
                     name: 'North P Lot',
-                    latitude: 40.9181,
-                    longitude: -73.1259
+                    address: 'im an address 1',
+                    description: 'im a description 1',
+                    location: {latitude: 40.922, longitude: -72.124},
+                    totalSpaces: 100,
+                    availableSpaces: 42,
+                    permitTypes: ['Faculty', 'Commuter Student'],
+                    hourlyRate: 2.5, 
+                    semesterRate: 150,
+                    rateType: 'Permit-based',
+                    status: 'Active',
+                    features: { isEV: false, isMetered: true, isAccessible: true }
                 },
                 {
                     lotId: 'LOT002',
                     name: 'South P Lot',
-                    latitude: 40.9048,
-                    longitude: -73.1278
+                    address: 'im an address 2',
+                    description: 'im a description 2',
+                    location: {latitude: 40.922, longitude: -72.124},
+                    totalSpaces: 100,
+                    availableSpaces: 42,
+                    permitTypes: ['Faculty', 'Commuter Student'],
+                    hourlyRate: 2.5, 
+                    semesterRate: 150,
+                    rateType: 'Permit-based',
+                    status: 'Active',
+                    features: { isEV: false, isMetered: true, isAccessible: true }
                 },
                 {
                     lotId: 'LOT003',
                     name: 'Administration Garage',
-                    latitude: 40.9158,
-                    longitude: -73.1243
+                    address: 'im an address 3',
+                    description: 'im a description 3',
+                    location: {latitude: 40.922, longitude: -72.124},
+                    totalSpaces: 100,
+                    availableSpaces: 42,
+                    permitTypes: ['Faculty', 'Commuter Student'],
+                    hourlyRate: 2.5, 
+                    semesterRate: 150,
+                    rateType: 'Permit-based',
+                    status: 'Active',
+                    features: { isEV: false, isMetered: true, isAccessible: true }
                 },
                 {
                     lotId: 'LOT004',
                     name: 'Health Sciences Garage',
-                    latitude: 40.9085,
-                    longitude: -73.1161
+                    address: 'im an address 4',
+                    description: 'im a description 4',
+                    location: {latitude: 40.922, longitude: -72.124},
+                    totalSpaces: 100,
+                    availableSpaces: 42,
+                    permitTypes: ['Faculty', 'Commuter Student'],
+                    hourlyRate: 2.5, 
+                    semesterRate: 150,
+                    rateType: 'Permit-based',
+                    status: 'Active',
+                    features: { isEV: false, isMetered: true, isAccessible: true }
                 },
                 {
                     lotId: 'LOT005',
                     name: 'Chapin Apartments Lot',
-                    latitude: 40.9222,
-                    longitude: -73.1267
+                    address: 'im an address 5',
+                    description: 'im a description 5',
+                    location: {latitude: 40.922, longitude: -72.124},
+                    totalSpaces: 100,
+                    availableSpaces: 42,
+                    permitTypes: ['Faculty', 'Commuter Student'],
+                    hourlyRate: 2.5, 
+                    semesterRate: 150,
+                    rateType: 'Permit-based',
+                    status: 'Active',
+                    features: { isEV: false, isMetered: true, isAccessible: true }
                 },
                 {
                     lotId: 'LOT006',
                     name: 'Stadium Lot',
-                    latitude: 40.9218,
-                    longitude: -73.1225
+                    address: 'im an address 6',
+                    description: 'im a description 6',
+                    location: {latitude: 40.922, longitude: -72.124},
+                    totalSpaces: 100,
+                    availableSpaces: 42,
+                    permitTypes: ['Faculty', 'Commuter Student'],
+                    hourlyRate: 2.5, 
+                    semesterRate: 150,
+                    rateType: 'Permit-based',
+                    status: 'Active',
+                    features: { isEV: false, isMetered: true, isAccessible: true }
                 },
                 {
                     lotId: 'LOT007',
                     name: 'West Apartment Lot',
-                    latitude: 40.9154,
-                    longitude: -73.1310
+                    address: 'im an address 7',
+                    description: 'im a description 7',
+                    location: {latitude: 40.922, longitude: -72.124},
+                    totalSpaces: 100,
+                    availableSpaces: 42,
+                    permitTypes: ['Faculty', 'Commuter Student'],
+                    hourlyRate: 2.5, 
+                    semesterRate: 150,
+                    rateType: 'Permit-based',
+                    status: 'Active',
+                    features: { isEV: false, isMetered: true, isAccessible: true }
                 },
                 {
                     lotId: 'LOT008',
                     name: 'Engineering Lot',
-                    latitude: 40.9138,
-                    longitude: -73.1247
+                    address: 'im an address 8',
+                    description: 'im a description 8',
+                    location: {latitude: 40.922, longitude: -72.124},
+                    totalSpaces: 100,
+                    availableSpaces: 42,
+                    permitTypes: ['Faculty', 'Commuter Student'],
+                    hourlyRate: 2.5, 
+                    semesterRate: 150,
+                    rateType: 'Permit-based',
+                    status: 'Active',
+                    features: { isEV: false, isMetered: true, isAccessible: true }
                 },
                 {
                     lotId: 'LOT009',
                     name: 'East Campus Lot',
-                    latitude: 40.9110,
-                    longitude: -73.1180
+                    address: 'im an address 9',
+                    description: 'im a description 9',
+                    location: {latitude: 40.922, longitude: -72.124},
+                    totalSpaces: 100,
+                    availableSpaces: 42,
+                    permitTypes: ['Faculty', 'Commuter Student'],
+                    hourlyRate: 2.5, 
+                    semesterRate: 150,
+                    rateType: 'Permit-based',
+                    status: 'Active',
+                    features: { isEV: false, isMetered: true, isAccessible: true }
                 },
                 {
                     lotId: 'LOT010',
                     name: 'Visitor Parking Center',
-                    latitude: 40.9155,
-                    longitude: -73.1235
+                    address: 'im an address 10',
+                    description: 'im a description 10',
+                    location: {latitude: 40.922, longitude: -72.124},
+                    totalSpaces: 100,
+                    availableSpaces: 42,
+                    permitTypes: ['Faculty', 'Commuter Student'],
+                    hourlyRate: 2.5, 
+                    semesterRate: 150,
+                    rateType: 'Permit-based',
+                    status: 'Active',
+                    features: { isEV: false, isMetered: true, isAccessible: true }
                 }
             ];
 

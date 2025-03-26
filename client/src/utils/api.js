@@ -521,6 +521,54 @@ export const TicketService = {
 
 // Standalone Permit Type Service
 export const PermitTypeService = {
+    // used by ManagePermitTypes
+    getPermitTypes: async (queryParams = {}) => {
+        try {
+          const response = await API.get('/permit-types', { params: queryParams });
+          return { success: true, data: response.data };
+        } catch (error) {
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Failed to fetch permit types',
+          };
+        }
+    },
+    
+    createPermitType: async (permitData) => {
+        try {
+          const response = await API.post('/permit-types', permitData);
+          return { success: true, data: response.data.permitType };
+        } catch (error) {
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Failed to create permit type',
+          };
+        }
+    },
+    
+    updatePermitType: async (permitId, permitData) => {
+        try {
+          const response = await API.put(`/permit-types/${permitId}`, permitData);
+          return { success: true, data: response.data.permitType };
+        } catch (error) {
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Failed to update permit type',
+          };
+        }
+    },
+    
+    deletePermitType: async (permitId) => {
+        try {
+          await API.delete(`/permit-types/${permitId}`);
+          return { success: true };
+        } catch (error) {
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Failed to delete permit type',
+          };
+        }
+    },
     // Get all permit types with pagination and filtering
     getAll: async (filters = {}, page = 1, limit = 10) => {
         try {
@@ -594,6 +642,19 @@ export const PermitTypeService = {
 
 // Lot Service for managing parking lots
 export const LotService = {
+    // used by ManagePermitTypes
+    getLots: async () => {
+        try {
+          const response = await API.get('/lot');
+          return { success: true, data: response.data };
+        } catch (error) {
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Failed to fetch lots',
+          };
+        }
+    },
+
     // Get all lots with filtering and pagination
     getAll: async (filters = {}, page = 1, limit = 10) => {
         try {
