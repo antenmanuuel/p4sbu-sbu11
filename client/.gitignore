@@ -33,3 +33,4 @@ build/
 
 # Also add this pattern to catch any coverage folders anywhere in the project
 **/coverage/
+.env
