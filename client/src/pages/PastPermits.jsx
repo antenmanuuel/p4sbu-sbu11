@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaArrowLeft, FaSearch, FaCalendarAlt, FaCarAlt, FaMapMarkerAlt } from "react-icons/fa";

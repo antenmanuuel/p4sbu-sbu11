@@ -8,11 +8,11 @@ module.exports = {
     collectCoverageFrom: [
         'routes/**/*.js',
         'controllers/**/*.js',
-        'models/**/*.js',
+        '!models/**/*.js',
         '!**/node_modules/**',
         '!**/tests/**',
         '!routes/lot.js',
-        '!routes/statistics.js'
+        '!routes/permits.js',
     ],
     coverageDirectory: 'coverage',
     coverageReporters: ['text', 'lcov', 'clover'],

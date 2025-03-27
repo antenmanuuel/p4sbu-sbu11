@@ -399,7 +399,7 @@ const StudentDashboard = ({ darkMode }) => {
 
   return (
     <div className={`min-h-screen p-6 ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
-      <h1 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Student Dashboard</h1>
+      <h1 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Dashboard</h1>
 
       {/* Success Message Toast */}
       {showSuccessMessage && (

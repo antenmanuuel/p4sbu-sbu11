@@ -21,7 +21,7 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
     } else if (location.pathname === '/admin-dashboard') {
       setActiveLink('Admin Dashboard');
     } else if (location.pathname === '/faculty-dashboard') {
-      setActiveLink('Faculty Dashboard');
+      setActiveLink('Dashboard');
     } else if (location.pathname === '/about-us') {
       setActiveLink('About Us');
     } else if (location.pathname === '/contact-us') {
@@ -120,7 +120,7 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
         });
       } else if (user?.userType === 'faculty') {
         links.push({
-          name: 'Faculty Dashboard',
+          name: ' Dashboard',
           path: '/faculty-dashboard',
           icon: <MdDashboard className="mr-2" />
         });
