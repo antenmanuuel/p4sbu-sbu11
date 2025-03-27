@@ -2,25 +2,36 @@ const nodemailer = require('nodemailer');
 const mailgunTransport = require('nodemailer-mailgun-transport');
 require('dotenv').config();
 
-// Configure Mailgun transport
-const auth = {
-    auth: {
-        api_key: process.env.MAILGUN_API_KEY,
-        domain: process.env.MAILGUN_DOMAIN
-    }
-};
+let transporter;
+let mailgunConfigured = false;
 
-// Create transport
-const transporter = nodemailer.createTransport(mailgunTransport(auth));
+// Only configure Mailgun if API key and domain are provided
+if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN) {
+    // Configure Mailgun transport
+    const auth = {
+        auth: {
+            api_key: process.env.MAILGUN_API_KEY,
+            domain: process.env.MAILGUN_DOMAIN
+        }
+    };
 
-// Verify transport configuration
-transporter.verify((error, success) => {
-    if (error) {
-        console.error('Email service setup error:', error);
-    } else {
-        console.log('Email service is ready to send messages');
-    }
-});
+    // Create transport
+    transporter = nodemailer.createTransport(mailgunTransport(auth));
+
+    // Verify transport configuration
+    transporter.verify((error, success) => {
+        if (error) {
+            console.error('Email service setup error:', error);
+            mailgunConfigured = false;
+        } else {
+            console.log('Email service is ready to send messages');
+            mailgunConfigured = true;
+        }
+    });
+} else {
+    console.log('Mailgun API key or domain not provided. Email service will be disabled.');
+    mailgunConfigured = false;
+}
 
 const emailService = {
     /**
@@ -31,6 +42,14 @@ const emailService = {
      * @returns {Promise} - Promise resolving to the result of the email sending
      */
     sendPasswordResetEmail: async (to, token, baseUrl) => {
+        // If mailgun is not configured, just log the action and return success
+        if (!mailgunConfigured) {
+            console.log('Email service disabled. Would have sent reset email to:', to);
+            console.log('Reset token:', token);
+            console.log('Reset URL would be:', `${baseUrl}/reset-password/${token}`);
+            return { success: true, messageId: 'email-service-disabled' };
+        }
+
         try {
             // Log for debugging
             console.log('Reset email parameters:');
