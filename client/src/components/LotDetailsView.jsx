@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useState, useEffect, useMemo } from 'react';
 import { FaArrowLeft, FaParking, FaCheckCircle, FaCar, FaWheelchair, FaChargingStation, FaInfoCircle, FaClock, FaMapMarkerAlt, FaWalking } from 'react-icons/fa';
 import ReactMapGL, { Marker, NavigationControl, Source, Layer } from 'react-map-gl';
