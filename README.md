@@ -308,7 +308,6 @@ p4sbu-sbu11/
 │   │   ├── utils/           # Utility functions
 │   │   └── App.jsx          # Main App component
 │   ├── cypress.config.js    # Client-specific Cypress config
-│   ├── .env                 # Environment variables
 │   ├── index.html           # Main HTML entry
 │   ├── package.json         # Client dependencies
 │   ├── postcss.config.js    # PostCSS configuration
@@ -328,7 +327,6 @@ p4sbu-sbu11/
 │   ├── jest.config.js       # Jest configuration
 │   ├── server.js            # Server entry point
 │   ├── package.json         # Server dependencies
-│   └── .env                 # Server environment variables
 │
 ├── cypress/                 # Main Cypress E2E tests (at root level)
 │   ├── e2e/                 # Test files

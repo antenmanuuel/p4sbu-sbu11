@@ -37,6 +37,15 @@ const UserSchema = new mongoose.Schema({
         enum: ['student', 'faculty', 'admin'],
         required: true
     },
+    status: {
+        type: String,
+        enum: ['pending', 'active', 'inactive'],
+        default: 'pending'
+    },
+    dateJoined: {
+        type: Date,
+        default: Date.now
+    },
     isApproved: {
         type: Boolean,
         default: false
@@ -72,11 +81,30 @@ const UserSchema = new mongoose.Schema({
     resetPasswordExpires: {
         type: Date,
         default: null
+    },
+    studentId: {
+        type: String,
+        unique: true,
+        sparse: true
+    },
+    department: {
+        type: String,
+    },
+    // Stripe-related fields
+    stripeCustomerId: {
+        type: String
+    },
+    defaultPaymentMethodId: {
+        type: String
     }
 });
 
 UserSchema.virtual('url').get(function () {
     return `/users/${this._id}`;
+});
+
+UserSchema.virtual('fullName').get(function () {
+    return `${this.firstName} ${this.lastName}`;
 });
 
 //hash password before saving user

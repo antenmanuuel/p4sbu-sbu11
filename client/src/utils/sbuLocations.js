@@ -13,7 +13,7 @@ export const sbuLocations = [
     {
         name: "Stony Brook Union",
         description: "Student center with dining and activities",
-        coordinates: [-73.1218, 40.9163],
+        coordinates: [-73.1225, 40.9172],
     },
     {
         name: "Ammann College",
