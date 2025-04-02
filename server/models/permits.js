@@ -71,12 +71,38 @@ const PermitSchema = new mongoose.Schema(
     paymentId: {
       type: String
     },
-    // optional. might want to link to a Permit Type document if we build that later
+    // Reference to the permit type model
     permitTypeId: {
-      type: String
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PermitType',
+      required: false
     }
   },
   { timestamps: true }
 );
+
+// Static method to check if a permit is valid (active, paid, and not expired)
+PermitSchema.statics.isValidPermit = function (permit) {
+  if (!permit) return false;
+
+  // Check active status
+  const isActive = permit.status === 'active';
+
+  // Check payment status
+  const isPaid = permit.paymentStatus === 'paid' || permit.paymentStatus === 'completed';
+
+  // Check expiration - compare only the date part, ignoring time
+  // This makes permits valid until the end of their expiration day
+  const permitEndDate = new Date(permit.endDate);
+  const today = new Date();
+
+  // Reset time to compare only the date parts
+  permitEndDate.setHours(23, 59, 59, 999); // End of permit's expiration day
+  today.setHours(0, 0, 0, 0); // Start of today
+
+  const isNotExpired = permitEndDate >= today;
+
+  return isActive && isPaid && isNotExpired;
+};
 
 module.exports = mongoose.model('Permit', PermitSchema);

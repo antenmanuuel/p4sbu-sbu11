@@ -26,8 +26,19 @@ const TicketSchema = new mongoose.Schema({
         type: Boolean,
         required: true,
         default: true
+    },
+    // Payment related fields
+    paidAt: {
+        type: Date
+    },
+    paymentMethod: {
+        type: String,
+        enum: ['credit-card', 'student-account'],
+    },
+    stripePaymentIntentId: {
+        type: String
     }
-});
+}, { timestamps: true });
 
 TicketSchema.virtual('url').get(function () {
     return `/tickets/${this._id}`;
