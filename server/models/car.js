@@ -25,21 +25,25 @@ const CarSchema = new mongoose.Schema({
     bodyType: {
         type: String,
         required: true
+    },
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: false // Allow null for legacy cars
+    },
+    year: {
+        type: String,
+        required: false
     }
-});
+}, { timestamps: true }); // Add timestamps to track when cars are created/updated
 
-TicketSchema.virtual('url').get(function () {
+CarSchema.virtual('url').get(function () {
     return `/car/${this._id}`;
 });
 
-//hash license number before saving car
-UserSchema.pre('save', async function (next) {
-    if (this.isModified('plateNumber')) {
-        this.plateNumber = await bcrypt.hash(this.plateNumber, 10);
-    }
-    next();
-});
-
+// Remove the hashing pre-save hook
+// License plates don't need to be hashed as they're not sensitive data
+// and we need to display them in the UI
 
 const CarModel = mongoose.model('Car', CarSchema);
 
