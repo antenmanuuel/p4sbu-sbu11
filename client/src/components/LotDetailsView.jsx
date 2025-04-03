@@ -112,6 +112,17 @@ const LotDetailsView = ({
         };
     }, [lot, destination]);
 
+    // Handle the reservation with the selected permit type
+    const handleReserveClick = () => {
+        // Use either the first permitted type or a default one
+        const defaultPermitType = lot.permitTypes && lot.permitTypes.length > 0
+            ? lot.permitTypes[0]
+            : "Standard";
+
+        console.log(`Using permit type: ${defaultPermitType} for reservation`);
+        onReserve(lot.id, defaultPermitType);
+    };
+
     if (!lot) return null;
 
     return (
@@ -191,28 +202,6 @@ const LotDetailsView = ({
                         </p>
                     </div>
 
-                    <div className="mb-4">
-                        <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                            Allowed Permits
-                        </h3>
-                        <div className="flex flex-wrap gap-2">
-                            {lot.permitTypes?.length > 0 ? (
-                                lot.permitTypes.map((permit, index) => (
-                                    <span
-                                        key={index}
-                                        className={`text-xs py-1 px-2 rounded-full ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'}`}
-                                    >
-                                        {permit}
-                                    </span>
-                                ))
-                            ) : (
-                                <span className={`text-xs py-1 px-2 rounded-full ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
-                                    No specific permits required
-                                </span>
-                            )}
-                        </div>
-                    </div>
-
                     <div className="mb-6">
                         <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                             Features
@@ -263,16 +252,39 @@ const LotDetailsView = ({
                         </div>
                     </div>
 
+                    {/* Reservation Information */}
+                    <div className={`p-4 rounded-lg mb-4 ${darkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}>
+                        <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                            Reservation Details
+                        </h3>
+                        <div className="space-y-2">
+                            <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                <span className="font-medium">Start:</span> {startDateTime}
+                            </p>
+                            <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                <span className="font-medium">End:</span> {endDateTime}
+                            </p>
+                            <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                <span className="font-medium">Duration:</span> {duration}
+                            </p>
+                            <p className={`text-sm font-bold mt-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                Estimated Cost: {lot.rateType === 'Hourly'
+                                    ? `$${(parseFloat(duration) * lot.hourlyRate).toFixed(2)}`
+                                    : lot.price}
+                            </p>
+                        </div>
+                    </div>
+
                     <button
-                        onClick={onReserve}
-                        className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-md font-semibold transition-colors shadow-sm flex items-center justify-center"
+                        onClick={handleReserveClick}
+                        className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-md shadow-md transition-colors"
                     >
-                        <FaCar className="mr-2" /> Reserve Parking
+                        Reserve This Spot
                     </button>
                 </div>
 
-                {/* Map view */}
-                <div className="lg:col-span-2">
+                {/* Map section */}
+                <div className="lg:col-span-2 h-[600px] rounded-lg overflow-hidden shadow-lg">
                     <div className="h-[400px] rounded-lg overflow-hidden shadow-md mb-4">
                         <ReactMapGL
                             mapboxAccessToken={MAPBOX_TOKEN}
@@ -359,45 +371,18 @@ const LotDetailsView = ({
                             </div>
                         </div>
 
-                        <div className={`p-4 rounded-lg mb-4 ${darkMode ? 'bg-green-900/20 border border-green-800' : 'bg-green-50 border border-green-200'}`}>
-                            <div className="flex">
-                                <FaCheckCircle className={`mt-0.5 mr-2 flex-shrink-0 ${darkMode ? 'text-green-400' : 'text-green-500'}`} />
-                                <div>
-                                    <p className={`font-medium ${darkMode ? 'text-green-400' : 'text-green-700'}`}>Parking Available</p>
-                                    <p className={`text-sm ${darkMode ? 'text-green-500/80' : 'text-green-600'}`}>
-                                        This lot currently has {lot.availableSpaces} spaces available for parking.
-                                    </p>
-                                </div>
-                            </div>
+                        {/* Reserve Button */}
+                        <div className="mt-6">
+                            <button
+                                onClick={handleReserveClick}
+                                className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium shadow-md transition-colors"
+                            >
+                                Reserve Now
+                            </button>
+                            <p className={`text-xs mt-2 text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                Click to proceed with vehicle information and payment
+                            </p>
                         </div>
-
-                        {lot.rateType === 'Hourly' && (
-                            <div className={`p-4 rounded-lg mb-4 ${darkMode ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200'}`}>
-                                <div className="flex">
-                                    <FaInfoCircle className={`mt-0.5 mr-2 flex-shrink-0 ${darkMode ? 'text-blue-400' : 'text-blue-500'}`} />
-                                    <div>
-                                        <p className={`font-medium ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>Hourly Rate Information</p>
-                                        <p className={`text-sm ${darkMode ? 'text-blue-500/80' : 'text-blue-600'}`}>
-                                            This lot charges ${lot.hourlyRate}/hour. Payment is required upon entry.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {lot.rateType === 'Permit-based' && (
-                            <div className={`p-4 rounded-lg mb-4 ${darkMode ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200'}`}>
-                                <div className="flex">
-                                    <FaInfoCircle className={`mt-0.5 mr-2 flex-shrink-0 ${darkMode ? 'text-blue-400' : 'text-blue-500'}`} />
-                                    <div>
-                                        <p className={`font-medium ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>Permit Information</p>
-                                        <p className={`text-sm ${darkMode ? 'text-blue-500/80' : 'text-blue-600'}`}>
-                                            This lot requires a valid permit. Semester permits cost ${lot.semesterRate}.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>
@@ -405,4 +390,4 @@ const LotDetailsView = ({
     );
 };
 
-export default LotDetailsView; 
+export default LotDetailsView;

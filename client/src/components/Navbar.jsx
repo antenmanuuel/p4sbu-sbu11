@@ -1,14 +1,19 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { FaHome, FaEnvelope, FaUser, FaCog, FaSignOutAlt, FaUserShield, FaInfoCircle, FaParking } from 'react-icons/fa';
+import { FaHome, FaEnvelope, FaUser, FaCog, FaSignOutAlt, FaUserShield, FaInfoCircle, FaParking, FaBell, FaCheck, FaTrash, FaClock, FaExclamationTriangle } from 'react-icons/fa';
 import { MdDashboard } from 'react-icons/md';
+import { NotificationService } from '../utils/api';
 
 // Navbar Component
 const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
   const [activeLink, setActiveLink] = useState('Home');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -31,23 +36,132 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
     }
   }, [location.pathname]);
 
-  // Click event handler for outside clicks to close dropdown
+  // Fetch notifications when authenticated
+  useEffect(() => {
+    if (isAuthenticated && user && user.userType !== 'admin') {
+      fetchNotifications();
+    }
+  }, [isAuthenticated, user]);
+
+  // Fetch notifications 
+  const fetchNotifications = async () => {
+    setIsLoadingNotifications(true);
+    try {
+      const result = await NotificationService.getNotifications(5, false, 0);
+      if (result.success) {
+        setNotifications(result.data.notifications);
+        setUnreadCount(result.data.unreadCount);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    } finally {
+      setIsLoadingNotifications(false);
+    }
+  };
+
+  // Mark notification as read
+  const handleMarkAsRead = async (notificationId, e) => {
+    e.stopPropagation();
+    try {
+      const result = await NotificationService.markAsRead(notificationId);
+      if (result.success) {
+        // Update local state
+        setNotifications(notifications.map(note =>
+          note._id === notificationId ? { ...note, isRead: true } : note
+        ));
+        setUnreadCount(prevCount => Math.max(0, prevCount - 1));
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  // Mark all notifications as read
+  const handleMarkAllAsRead = async (e) => {
+    e.stopPropagation();
+    try {
+      const result = await NotificationService.markAllAsRead();
+      if (result.success) {
+        // Update local state
+        setNotifications(notifications.map(note => ({ ...note, isRead: true })));
+        setUnreadCount(0);
+      }
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+    }
+  };
+
+  // Delete notification
+  const handleDeleteNotification = async (notificationId, e) => {
+    e.stopPropagation();
+    try {
+      const result = await NotificationService.deleteNotification(notificationId);
+      if (result.success) {
+        // Remove from local state
+        const updatedNotifications = notifications.filter(note => note._id !== notificationId);
+        setNotifications(updatedNotifications);
+
+        // Update unread count if necessary
+        const deletedNote = notifications.find(note => note._id === notificationId);
+        if (deletedNote && !deletedNote.isRead) {
+          setUnreadCount(prevCount => Math.max(0, prevCount - 1));
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+    }
+  };
+
+  // Handle notification click
+  const handleNotificationClick = (notification) => {
+    // If the notification has an action URL, navigate to it
+    if (notification.actionUrl) {
+      navigate(notification.actionUrl);
+    }
+
+    // Mark as read if not already
+    if (!notification.isRead) {
+      NotificationService.markAsRead(notification._id);
+
+      // Update local state
+      setNotifications(notifications.map(note =>
+        note._id === notification._id ? { ...note, isRead: true } : note
+      ));
+      setUnreadCount(prevCount => Math.max(0, prevCount - 1));
+    }
+
+    // Close dropdown
+    setIsNotificationsOpen(false);
+  };
+
+  // Click event handler for outside clicks to close dropdowns
   useEffect(() => {
     const handleClickOutside = (event) => {
-      // Check if the click is outside the dropdown
-      const dropdown = document.getElementById('profile-dropdown');
-      const button = document.getElementById('profile-button');
+      // Check if the click is outside the profile dropdown
+      const profileDropdown = document.getElementById('profile-dropdown');
+      const profileButton = document.getElementById('profile-button');
       if (isProfileDropdownOpen &&
-        dropdown &&
-        button &&
-        !dropdown.contains(event.target) &&
-        !button.contains(event.target)) {
+        profileDropdown &&
+        profileButton &&
+        !profileDropdown.contains(event.target) &&
+        !profileButton.contains(event.target)) {
         setIsProfileDropdownOpen(false);
+      }
+
+      // Check if the click is outside the notifications dropdown
+      const notificationsDropdown = document.getElementById('notifications-dropdown');
+      const notificationsButton = document.getElementById('notifications-button');
+      if (isNotificationsOpen &&
+        notificationsDropdown &&
+        notificationsButton &&
+        !notificationsDropdown.contains(event.target) &&
+        !notificationsButton.contains(event.target)) {
+        setIsNotificationsOpen(false);
       }
     };
 
-    // Add event listener when dropdown is open
-    if (isProfileDropdownOpen) {
+    // Add event listener when dropdowns are open
+    if (isProfileDropdownOpen || isNotificationsOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
@@ -55,7 +169,7 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isProfileDropdownOpen]);
+  }, [isProfileDropdownOpen, isNotificationsOpen]);
 
   const handleLogout = () => {
     logout && logout();
@@ -218,6 +332,127 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
                 </div>
               </form>
             </div>
+
+            {/* Notifications */}
+            {isAuthenticated && user && user.userType !== 'admin' && (
+              <div className="relative">
+                <button
+                  id="notifications-button"
+                  className={`relative p-2 rounded-full ${darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}
+                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                  aria-expanded={isNotificationsOpen}
+                  aria-haspopup="true"
+                >
+                  <FaBell className={`size-5 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-0 right-0 flex items-center justify-center size-5 text-xs font-bold text-white bg-red-600 rounded-full">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {isNotificationsOpen && (
+                  <div
+                    id="notifications-dropdown"
+                    className={`absolute right-0 mt-2 w-80 origin-top-right rounded-md shadow-lg ring-1 ring-black ring-opacity-5 z-[1000] ${darkMode ? 'bg-gray-800' : 'bg-white'
+                      }`}
+                  >
+                    <div className="p-3 border-b border-gray-700 flex justify-between items-center">
+                      <h3 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                        Notifications
+                      </h3>
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={handleMarkAllAsRead}
+                          className="text-xs text-red-500 hover:text-red-600"
+                        >
+                          Mark all as read
+                        </button>
+                      )}
+                    </div>
+                    <div className="overflow-y-auto max-h-[350px]">
+                      {isLoadingNotifications ? (
+                        <div className="p-4 text-center text-gray-500">
+                          <FaClock className="mx-auto mb-2 animate-pulse" />
+                          Loading...
+                        </div>
+                      ) : notifications.length === 0 ? (
+                        <div className="p-4 text-center text-gray-500">
+                          <FaBell className="mx-auto mb-2" />
+                          No notifications
+                        </div>
+                      ) : (
+                        <div>
+                          {notifications.map(notification => (
+                            <div
+                              key={notification._id}
+                              onClick={() => handleNotificationClick(notification)}
+                              className={`p-3 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'} cursor-pointer
+                                ${!notification.isRead ? (darkMode ? 'bg-gray-700' : 'bg-blue-50') : ''} 
+                                hover:${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className={`flex-shrink-0 rounded-full p-2 ${notification.type === 'fine'
+                                  ? 'bg-red-100 text-red-600'
+                                  : notification.type === 'permit'
+                                    ? 'bg-yellow-100 text-yellow-600'
+                                    : notification.type === 'reservation'
+                                      ? 'bg-blue-100 text-blue-600'
+                                      : 'bg-gray-100 text-gray-600'
+                                  }`}>
+                                  {notification.type === 'fine' && <FaExclamationTriangle />}
+                                  {notification.type === 'permit' && <FaParking />}
+                                  {notification.type === 'reservation' && <FaClock />}
+                                  {notification.type === 'system' && <FaInfoCircle />}
+                                </div>
+                                <div className="flex-1">
+                                  <h4 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                    {notification.title}
+                                  </h4>
+                                  <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                                    {notification.message}
+                                  </p>
+                                  <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                    {new Date(notification.createdAt).toLocaleString()}
+                                  </p>
+                                </div>
+                                <div className="flex gap-1">
+                                  {!notification.isRead && (
+                                    <button
+                                      onClick={(e) => handleMarkAsRead(notification._id, e)}
+                                      className={`p-1 rounded-full hover:bg-${darkMode ? 'gray-600' : 'gray-200'}`}
+                                      title="Mark as read"
+                                    >
+                                      <FaCheck className="size-3 text-green-500" />
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={(e) => handleDeleteNotification(notification._id, e)}
+                                    className={`p-1 rounded-full hover:bg-${darkMode ? 'gray-600' : 'gray-200'}`}
+                                    title="Delete notification"
+                                  >
+                                    <FaTrash className="size-3 text-red-500" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-2 border-t border-gray-700 text-center">
+                      <Link
+                        to="/notifications"
+                        className={`text-sm ${darkMode ? 'text-blue-400' : 'text-blue-600'} hover:underline`}
+                        onClick={() => setIsNotificationsOpen(false)}
+                      >
+                        View all notifications
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Dark Mode Toggle */}
             <button
