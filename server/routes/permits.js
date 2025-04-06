@@ -47,6 +47,17 @@ router.get('/', verifyToken, async (req, res) => {
   }
 });
 
+// GET /api/permits/active-count - Get count of active permits
+router.get('/active-count', verifyToken, async (req, res) => {
+  try {
+    const count = await Permit.countDocuments({ status: 'active' });
+    res.status(200).json({ count });
+  } catch (error) {
+    console.error('Error fetching active permits count:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // GET /api/permits/:id - Retrieve a single permit by its ID
 router.get('/:id', verifyToken, async (req, res) => {
   try {
