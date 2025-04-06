@@ -17,6 +17,7 @@ try {
     const lotRoutes = require('./routes/lot');
     const permitTypeRoutes = require('./routes/permit_types');
     const permitRoutes = require('./routes/permits');
+    const reservationRoutes = require('./routes/reservations');
 
     const app = express();
     const PORT = process.env.PORT || 5000;
@@ -78,6 +79,7 @@ try {
     app.use('/api/lot', lotRoutes);
     app.use('/api/permit-types', permitTypeRoutes);
     app.use('/api/permits', permitRoutes);
+    app.use('/api/reservations', reservationRoutes);
 
     // Health check endpoint
     app.get('/health', (req, res) => {

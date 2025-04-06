@@ -4,6 +4,9 @@ const User = require('../models/users');
 const UserActivity = require('../models/user_activity');
 const { verifyToken } = require('../middleware/auth');
 const bcrypt = require('bcrypt');
+const mongoose = require('mongoose');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const Notification = require('../models/notification');
 
 // Get user profile
 router.get('/profile', verifyToken, async (req, res) => {
@@ -208,6 +211,360 @@ router.get('/activity', verifyToken, async (req, res) => {
         res.status(200).json(activities);
     } catch (error) {
         console.error('Error fetching user activity:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Get user's billing history
+router.get('/billing-history', verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+
+        // Find permits with payment status "paid" for this user
+        const permits = await User.aggregate([
+            { $match: { _id: new mongoose.Types.ObjectId(userId) } },
+            {
+                $lookup: {
+                    from: 'permits',
+                    localField: '_id',
+                    foreignField: 'userId',
+                    as: 'permits'
+                }
+            },
+            { $unwind: '$permits' },
+            { $match: { 'permits.paymentStatus': 'paid' } },
+            {
+                $project: {
+                    _id: '$permits._id',
+                    date: '$permits.createdAt',
+                    description: { $concat: ['$permits.permitName', ' Permit'] },
+                    amount: '$permits.price',
+                    status: '$permits.paymentStatus'
+                }
+            },
+            { $sort: { date: -1 } }
+        ]);
+
+        res.status(200).json({
+            success: true,
+            billingHistory: permits.map(item => ({
+                _id: item._id,
+                date: item.date,
+                description: item.description,
+                amount: item.amount,
+                status: item.status === 'paid' ? 'Paid' : item.status
+            }))
+        });
+    } catch (error) {
+        console.error('Error fetching billing history:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
+        });
+    }
+});
+
+// Get user's saved payment methods
+router.get('/payment-methods', verifyToken, async (req, res) => {
+    try {
+        // Get user to check for Stripe customer ID
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // If user doesn't have a Stripe customer ID yet, they have no payment methods
+        if (!user.stripeCustomerId) {
+            return res.json({ paymentMethods: [] });
+        }
+
+        // Retrieve customer's payment methods from Stripe
+        const paymentMethods = await stripe.paymentMethods.list({
+            customer: user.stripeCustomerId,
+            type: 'card',
+        });
+
+        // Transform the payment methods to only include the data we need
+        const formattedPaymentMethods = paymentMethods.data.map(pm => ({
+            id: pm.id,
+            brand: pm.card.brand,
+            last4: pm.card.last4,
+            exp_month: pm.card.exp_month,
+            exp_year: pm.card.exp_year,
+            isDefault: pm.id === user.defaultPaymentMethodId
+        }));
+
+        res.json({ paymentMethods: formattedPaymentMethods });
+    } catch (error) {
+        console.error('Error fetching payment methods:', error);
+        res.status(500).json({ message: 'Failed to fetch payment methods' });
+    }
+});
+
+// Save a payment method
+router.post('/payment-methods', verifyToken, async (req, res) => {
+    try {
+        const { paymentMethodId, isDefault } = req.body;
+
+        if (!paymentMethodId) {
+            return res.status(400).json({ message: 'Payment method ID is required' });
+        }
+
+        // Get user
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        let customerId = user.stripeCustomerId;
+
+        // If user doesn't have a Stripe customer ID yet, create one
+        if (!customerId) {
+            const customer = await stripe.customers.create({
+                email: user.email,
+                name: `${user.firstName} ${user.lastName}`,
+                metadata: {
+                    userId: user._id.toString()
+                }
+            });
+
+            customerId = customer.id;
+
+            // Update user with Stripe customer ID
+            user.stripeCustomerId = customerId;
+            await user.save();
+        }
+
+        // Attach payment method to customer
+        await stripe.paymentMethods.attach(paymentMethodId, {
+            customer: customerId,
+        });
+
+        // If this is the default payment method or the user has no default, set it as default
+        if (isDefault || !user.defaultPaymentMethodId) {
+            user.defaultPaymentMethodId = paymentMethodId;
+            await user.save();
+        }
+
+        // Get the payment method details to return
+        const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
+
+        res.json({
+            success: true,
+            paymentMethod: {
+                id: paymentMethod.id,
+                brand: paymentMethod.card.brand,
+                last4: paymentMethod.card.last4,
+                exp_month: paymentMethod.card.exp_month,
+                exp_year: paymentMethod.card.exp_year,
+                isDefault: paymentMethodId === user.defaultPaymentMethodId
+            }
+        });
+    } catch (error) {
+        console.error('Error saving payment method:', error);
+        res.status(500).json({ message: 'Failed to save payment method' });
+    }
+});
+
+// Delete a payment method
+router.delete('/payment-methods/:paymentMethodId', verifyToken, async (req, res) => {
+    try {
+        const { paymentMethodId } = req.params;
+
+        // Get user
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Make sure the user has a Stripe customer ID
+        if (!user.stripeCustomerId) {
+            return res.status(400).json({ message: 'No payment methods found for this user' });
+        }
+
+        // Detach the payment method from the customer
+        await stripe.paymentMethods.detach(paymentMethodId);
+
+        // If this was the default payment method, clear it
+        if (user.defaultPaymentMethodId === paymentMethodId) {
+            user.defaultPaymentMethodId = null;
+
+            // Try to find another payment method to set as default
+            const paymentMethods = await stripe.paymentMethods.list({
+                customer: user.stripeCustomerId,
+                type: 'card',
+            });
+
+            if (paymentMethods.data.length > 0) {
+                user.defaultPaymentMethodId = paymentMethods.data[0].id;
+            }
+
+            await user.save();
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting payment method:', error);
+        res.status(500).json({ message: 'Failed to delete payment method' });
+    }
+});
+
+// Set a payment method as default
+router.put('/payment-methods/:paymentMethodId/default', verifyToken, async (req, res) => {
+    try {
+        const { paymentMethodId } = req.params;
+
+        // Get user
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Make sure the user has a Stripe customer ID
+        if (!user.stripeCustomerId) {
+            return res.status(400).json({ message: 'No payment methods found for this user' });
+        }
+
+        // Set the payment method as default
+        user.defaultPaymentMethodId = paymentMethodId;
+        await user.save();
+
+        // Get the payment method details to return
+        const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
+
+        res.json({
+            success: true,
+            paymentMethod: {
+                id: paymentMethod.id,
+                brand: paymentMethod.card.brand,
+                last4: paymentMethod.card.last4,
+                exp_month: paymentMethod.card.exp_month,
+                exp_year: paymentMethod.card.exp_year,
+                isDefault: true
+            }
+        });
+    } catch (error) {
+        console.error('Error setting default payment method:', error);
+        res.status(500).json({ message: 'Failed to set default payment method' });
+    }
+});
+
+// Get user notifications
+router.get('/notifications', verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { limit = 10, unreadOnly = false, skip = 0 } = req.query;
+
+        // Build query
+        const query = { user: userId };
+
+        // Only get unread notifications if specified
+        if (unreadOnly === 'true') {
+            query.isRead = false;
+        }
+
+        // Get notifications with pagination
+        const notifications = await Notification.find(query)
+            .sort({ createdAt: -1 })
+            .skip(parseInt(skip))
+            .limit(parseInt(limit));
+
+        // Count total unread notifications
+        const unreadCount = await Notification.countDocuments({
+            user: userId,
+            isRead: false
+        });
+
+        // Count total notifications
+        const totalCount = await Notification.countDocuments({ user: userId });
+
+        res.status(200).json({
+            notifications,
+            unreadCount,
+            totalCount
+        });
+    } catch (error) {
+        console.error('Error fetching user notifications:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Mark notification as read
+router.put('/notifications/:notificationId/read', verifyToken, async (req, res) => {
+    try {
+        const { notificationId } = req.params;
+        const userId = req.user.userId;
+
+        // Verify notification belongs to user
+        const notification = await Notification.findOne({
+            _id: notificationId,
+            user: userId
+        });
+
+        if (!notification) {
+            return res.status(404).json({ message: 'Notification not found' });
+        }
+
+        // Update notification status
+        notification.isRead = true;
+        await notification.save();
+
+        res.status(200).json({
+            message: 'Notification marked as read',
+            notification
+        });
+    } catch (error) {
+        console.error('Error marking notification as read:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Mark all notifications as read
+router.put('/notifications/read-all', verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+
+        // Update all user's unread notifications
+        const result = await Notification.updateMany(
+            { user: userId, isRead: false },
+            { $set: { isRead: true } }
+        );
+
+        res.status(200).json({
+            message: 'All notifications marked as read',
+            count: result.modifiedCount
+        });
+    } catch (error) {
+        console.error('Error marking all notifications as read:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Delete a notification
+router.delete('/notifications/:notificationId', verifyToken, async (req, res) => {
+    try {
+        const { notificationId } = req.params;
+        const userId = req.user.userId;
+
+        // Verify notification belongs to user
+        const notification = await Notification.findOne({
+            _id: notificationId,
+            user: userId
+        });
+
+        if (!notification) {
+            return res.status(404).json({ message: 'Notification not found' });
+        }
+
+        // Delete the notification
+        await Notification.findByIdAndDelete(notificationId);
+
+        res.status(200).json({
+            message: 'Notification deleted successfully'
+        });
+    } catch (error) {
+        console.error('Error deleting notification:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
