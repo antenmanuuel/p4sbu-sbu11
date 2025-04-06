@@ -1,7 +1,8 @@
-/* eslint-disable no-unused-vars */
-import React, { useState } from "react";
+
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaArrowLeft, FaSearch, FaCalendarAlt, FaCarAlt, FaMapMarkerAlt } from "react-icons/fa";
+import { FaArrowLeft, FaSearch, FaCalendarAlt, FaCarAlt, FaMapMarkerAlt, FaExclamationTriangle } from "react-icons/fa";
+import { PermitService } from "../utils/api";
 
 const PastPermits = ({ darkMode }) => {
     const navigate = useNavigate();
@@ -9,15 +10,48 @@ const PastPermits = ({ darkMode }) => {
     const [filter, setFilter] = useState("all");
     const [sortBy, setSortBy] = useState("validUntil");
     const [sortOrder, setSortOrder] = useState("desc");
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [pastPermits, setPastPermits] = useState([]);
 
-    // Sample past permits data - in a real app, this would come from an API
-    const [pastPermits, setPastPermits] = useState([
-        { id: "P1001", type: "Student Permit", lot: "Lot 2", validFrom: "2023-08-01", validUntil: "2023-12-31", status: "Expired", price: "$125.00" },
-        { id: "P1002", type: "Temporary Permit", lot: "South P", validFrom: "2023-06-15", validUntil: "2023-06-20", status: "Expired", price: "$25.00" },
-        { id: "P1003", type: "Weekend Permit", lot: "Administration Garage", validFrom: "2023-09-05", validUntil: "2023-09-10", status: "Expired", price: "$40.00" },
-        { id: "P1004", type: "Student Permit", lot: "North P", validFrom: "2022-08-01", validUntil: "2022-12-31", status: "Expired", price: "$125.00" },
-        { id: "P1005", type: "Premium Permit", lot: "Health Sciences", validFrom: "2023-01-10", validUntil: "2023-05-20", status: "Expired", price: "$200.00" }
-    ]);
+    // Fetch past permits from backend
+    useEffect(() => {
+        const fetchPastPermits = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const response = await PermitService.getUserPastPermits();
+
+                if (response.success) {
+                    // Transform the permits data to match our component's format
+                    const formattedPermits = response.permits.map(permit => ({
+                        id: permit.permitNumber || permit._id,
+                        type: permit.permitName || permit.permitType,
+                        lot: Array.isArray(permit.lots) && permit.lots.length > 0
+                            ? permit.lots.map(lot => lot.lotName || lot.name).join(', ')
+                            : 'Unknown',
+                        validFrom: permit.startDate,
+                        validUntil: permit.endDate,
+                        status: new Date(permit.endDate) < new Date() ? "Expired" : permit.status,
+                        price: `$${permit.price.toFixed(2)}`
+                    }));
+
+                    setPastPermits(formattedPermits);
+                } else {
+                    throw new Error(response.error || 'Failed to fetch past permits');
+                }
+            } catch (error) {
+                console.error('Error fetching past permits:', error);
+                setError(error.message || 'An unexpected error occurred');
+                // Set empty array to avoid undefined errors
+                setPastPermits([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchPastPermits();
+    }, []);
 
     // Function to format date
     const formatDate = (dateString) => {
@@ -138,7 +172,6 @@ const PastPermits = ({ darkMode }) => {
                                 }`}
                         >
                             <option value="all">All Statuses</option>
-                            <option value="active">Active</option>
                             <option value="expired">Expired</option>
                             <option value="cancelled">Cancelled</option>
                             <option value="suspended">Suspended</option>
@@ -182,7 +215,18 @@ const PastPermits = ({ darkMode }) => {
 
             {/* Permits List */}
             <div className={`rounded-lg shadow-md ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                {filteredPermits.length === 0 ? (
+                {loading ? (
+                    <div className="flex justify-center items-center py-12">
+                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-700"></div>
+                    </div>
+                ) : error ? (
+                    <div className={`p-6 rounded-md ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-50 text-red-800'}`}>
+                        <p className="flex items-center">
+                            <FaExclamationTriangle className="mr-2 flex-shrink-0" />
+                            {error}
+                        </p>
+                    </div>
+                ) : filteredPermits.length === 0 ? (
                     <div className="p-6 text-center">
                         <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>No permits found matching your criteria.</p>
                     </div>
