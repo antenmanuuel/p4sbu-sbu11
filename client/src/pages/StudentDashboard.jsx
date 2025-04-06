@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaMapMarkerAlt, FaClock, FaPlug, FaMoneyBillWave, FaTimes, FaInfoCircle, FaExclamationTriangle, FaArrowLeft, FaCreditCard, FaPlus, FaCheck } from "react-icons/fa";
-import { AuthService, TicketService } from "../utils/api";
+import { FaMapMarkerAlt, FaClock, FaPlug, FaMoneyBillWave, FaTimes, FaInfoCircle, FaExclamationTriangle, FaArrowLeft, FaCreditCard, FaPlus, FaCheck, FaCar, FaTicketAlt, FaTrash } from "react-icons/fa";
+import { AuthService, TicketService, ReservationService, PermitService, UserService, CarService, PaymentMethodService } from "../utils/api";
+import CarForm from "../components/CarForm";
+import StripeProvider from "../components/StripeProvider";
+import StripeCardElement from "../components/StripeCardElement";
 
 const StudentDashboard = ({ darkMode }) => {
   const navigate = useNavigate();
@@ -26,19 +29,32 @@ const StudentDashboard = ({ darkMode }) => {
 
   // Modal state management
   const [selectedReservation, setSelectedReservation] = useState(null);
+  const [selectedCitation, setSelectedCitation] = useState(null);
+  const [selectedBill, setSelectedBill] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [showExtendModal, setShowExtendModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [additionalHours, setAdditionalHours] = useState(1);
-  const [cancelReason, setCancelReason] = useState('');
+  const [showBillingDetailsModal, setShowBillingDetailsModal] = useState(false);
+  const [showCitationPaymentModal, setShowCitationPaymentModal] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-  const [showBillingDetailsModal, setShowBillingDetailsModal] = useState(false);
-  const [selectedBill, setSelectedBill] = useState(null);
-  const [showCitationPaymentModal, setShowCitationPaymentModal] = useState(false);
-  const [selectedCitation, setSelectedCitation] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('credit-card');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
+  // Cars state management
+  const [cars, setCars] = useState([]);
+  const [loadingCars, setLoadingCars] = useState(true);
+  const [carsError, setCarsError] = useState(null);
+  const [selectedCar, setSelectedCar] = useState(null);
+  const [showAddCarModal, setShowAddCarModal] = useState(false);
+  const [showEditCarModal, setShowEditCarModal] = useState(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [carToDelete, setCarToDelete] = useState(null);
+
+  // Extend reservation state
+  const [showExtendModal, setShowExtendModal] = useState(false);
+  const [additionalHours, setAdditionalHours] = useState(1);
+  const [extendingError, setExtendingError] = useState(null);
 
   // Credit card states
   const [hasStoredCard, setHasStoredCard] = useState(false);
@@ -52,79 +68,312 @@ const StudentDashboard = ({ darkMode }) => {
   const [cardErrors, setCardErrors] = useState({});
   const [isAddingCard, setIsAddingCard] = useState(false);
 
-  // State for tickets
+  // State for data loading
+  const [loadingTickets, setLoadingTickets] = useState(true);
+  const [loadingReservations, setLoadingReservations] = useState(true);
+  const [loadingPermits, setLoadingPermits] = useState(true);
+  const [loadingBilling, setLoadingBilling] = useState(true);
+
+  // State for errors
+  const [ticketsError, setTicketsError] = useState(null);
+  const [reservationsError, setReservationsError] = useState(null);
+  const [permitsError, setPermitsError] = useState(null);
+  const [billingError, setBillingError] = useState(null);
+
+  // State for data
   const [tickets, setTickets] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [reservations, setReservations] = useState([]);
+  const [activePermits, setActivePermits] = useState([]);
+  const [billingHistory, setBillingHistory] = useState([]);
+
+  // Add saved payment methods state
+  const [savedPaymentMethods, setSavedPaymentMethods] = useState([]);
+  const [loadingSavedCards, setLoadingSavedCards] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
 
   // Fetch tickets on component mount
   useEffect(() => {
     const fetchTickets = async () => {
+      setLoadingTickets(true);
       try {
         const response = await TicketService.getUserTickets();
+        console.log('Tickets response:', response); // Debug log
         if (response.success) {
-          setTickets(response.data);
+          // The server returns an array directly, not wrapped in a tickets property
+          const ticketsData = Array.isArray(response.data) ? response.data : [];
+          console.log('Tickets data processed:', ticketsData);
+          setTickets(ticketsData);
         } else {
-          setError(response.error);
+          setTicketsError(response.error || 'Failed to fetch tickets');
         }
-      } catch {
-        setError('Failed to fetch tickets');
+      } catch (error) {
+        console.error('Error fetching tickets:', error);
+        setTicketsError('An unexpected error occurred while fetching tickets');
       } finally {
-        setLoading(false);
+        setLoadingTickets(false);
       }
     };
 
     fetchTickets();
   }, []);
 
-  const activePermits = [
-    { type: "Student Permit", lot: "Lot 2", validUntil: "2024-12-31", status: "Active" },
-  ];
+  // Fetch reservations on component mount
+  useEffect(() => {
+    const fetchReservations = async () => {
+      setLoadingReservations(true);
+      setReservationsError(null); // Reset error on each fetch
+      try {
+        const response = await ReservationService.getUserReservations();
+        console.log('Reservations response:', response);
 
-  const billingHistory = [
-    { date: "2024-01-10", description: "Semester Parking Permit", amount: "$125", status: "Paid" },
-  ];
+        if (response.success) {
+          // Check different possible data structures
+          const reservationsData = response.data?.data?.reservations || response.data?.reservations || [];
+          console.log('Extracted reservations data:', reservationsData);
 
-  // Mock reservations data based on the Lot schema
-  const [reservations, setReservations] = useState([
-    {
-      id: "R1001",
-      location: { x: 40.9148, y: -73.1259 },
-      lotName: "South P Lot",
-      spotNumber: "A-123",
-      isReserved: true,
-      reservationStart: "2024-04-10T09:00:00",
-      reservationEnd: "2024-04-10T17:00:00",
-      isMetered: false,
-      isEV: true,
-      status: "Active",
-      price: 15.00
-    },
-    {
-      id: "R1002",
-      location: { x: 40.9165, y: -73.1238 },
-      lotName: "Administration Garage",
-      spotNumber: "B-45",
-      isReserved: true,
-      reservationStart: "2024-04-15T08:30:00",
-      reservationEnd: "2024-04-15T14:30:00",
-      isMetered: true,
-      isEV: false,
-      status: "Upcoming",
-      price: 20.00
+          if (Array.isArray(reservationsData) && reservationsData.length > 0) {
+            // Transform API data to match our component's expected format
+            const formattedReservations = reservationsData.map(reservation => {
+              console.log('Processing reservation:', reservation);
+              return {
+                id: reservation.reservationId || reservation._id,
+                lotName: reservation.lotId?.name || 'Unknown Lot',
+                spotNumber: reservation.permitType || 'Standard', // Using permitType as spotNumber
+                isReserved: true,
+                reservationStart: reservation.startTime,
+                reservationEnd: reservation.endTime,
+                isMetered: false, // Default since not provided in the API
+                isEV: false, // Default since not provided in the API
+                status: reservation.status || 'Pending',
+                price: reservation.totalPrice || 0,
+                location: reservation.lotId?.location || { x: 0, y: 0 }
+              };
+            });
+
+            console.log('Formatted reservations:', formattedReservations);
+            setReservations(formattedReservations);
+          } else {
+            console.log('No reservations found in response');
+            setReservations([]);
+          }
+        } else {
+          console.error('Failed to fetch reservations:', response);
+          setReservationsError(response.error || 'Failed to fetch reservations');
+        }
+      } catch (error) {
+        console.error('Error fetching reservations:', error);
+        setReservationsError(error.message || 'An unexpected error occurred while fetching reservations');
+      } finally {
+        setLoadingReservations(false);
+      }
+    };
+
+    // Force refresh when component mounts to ensure we have the latest data
+    fetchReservations();
+
+    // Set an interval to refresh the reservations every 30 seconds
+    const intervalId = setInterval(() => {
+      fetchReservations();
+    }, 30000);
+
+    // Clean up interval on component unmount
+    return () => clearInterval(intervalId);
+  }, []);
+
+  // Fetch permits on component mount
+  useEffect(() => {
+    const fetchPermits = async () => {
+      setLoadingPermits(true);
+      setPermitsError(null); // Reset error on each fetch
+      try {
+        // Use the new getUserPermits method instead
+        const response = await PermitService.getUserPermits('active');
+        console.log('Permits response:', response);
+
+        if (response.success) {
+          // Check different possible data structures
+          const permitsData = response.permits || response.data?.permits || [];
+          console.log('Extracted permits data:', permitsData);
+
+          if (Array.isArray(permitsData) && permitsData.length > 0) {
+            // Additional client-side check for expired permits
+            const now = new Date();
+            const validPermits = permitsData.filter(permit => {
+              const endDate = new Date(permit.endDate);
+              return endDate >= now;
+            });
+
+            // Transform the data to match our UI format
+            const formattedPermits = validPermits.map(permit => ({
+              id: permit._id || permit.id,
+              type: permit.permitName || permit.permitType || 'Standard',
+              lot: Array.isArray(permit.lots)
+                ? permit.lots.map(lot => lot.lotName || lot.name).join(', ')
+                : 'Unknown',
+              validUntil: permit.endDate
+                ? new Date(permit.endDate).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric'
+                })
+                : 'N/A',
+              status: permit.status || 'Active'
+            }));
+            console.log('Formatted permits:', formattedPermits);
+            setActivePermits(formattedPermits);
+          } else {
+            console.log('No permits found in response');
+            setActivePermits([]);
+          }
+        } else {
+          console.error('Failed to fetch permits:', response);
+          setPermitsError(response.error || 'Failed to fetch permits');
+        }
+      } catch (error) {
+        console.error('Error fetching permits:', error);
+        setPermitsError(error.message || 'An unexpected error occurred while fetching permits');
+      } finally {
+        setLoadingPermits(false);
+      }
+    };
+
+    fetchPermits();
+  }, []);
+
+  // Fetch cars on component mount
+  useEffect(() => {
+    const fetchCars = async () => {
+      setLoadingCars(true);
+      setCarsError(null); // Reset error on each fetch
+      try {
+        const response = await CarService.getUserCars();
+        console.log('Cars response:', response);
+
+        if (response.success && response.cars) {
+          setCars(response.cars);
+        } else {
+          console.error('Failed to fetch cars:', response);
+          setCarsError(response.error || 'Failed to fetch vehicles');
+          setCars([]);
+        }
+      } catch (error) {
+        console.error('Error fetching cars:', error);
+        setCarsError(error.message || 'An unexpected error occurred while fetching vehicles');
+        setCars([]);
+      } finally {
+        setLoadingCars(false);
+      }
+    };
+
+    fetchCars();
+  }, []);
+
+  // Fetch billing history - We need to check how payment data is structured
+  useEffect(() => {
+    const fetchBillingHistory = async () => {
+      setLoadingBilling(true);
+      setBillingError(null);
+      try {
+        const response = await UserService.getBillingHistory();
+        console.log('Billing history response:', response);
+
+        if (response.success && response.data.billingHistory) {
+          const formattedBillingHistory = response.data.billingHistory.map(item => ({
+            id: item._id,
+            date: new Date(item.date).toISOString().split('T')[0], // Format as YYYY-MM-DD
+            description: item.description,
+            amount: `$${item.amount}`,
+            status: item.status
+          }));
+          setBillingHistory(formattedBillingHistory);
+        } else {
+          setBillingError(response.error || 'Failed to fetch billing history');
+          // Fallback to empty array if there's an error
+          setBillingHistory([]);
+        }
+      } catch (error) {
+        console.error('Error fetching billing history:', error);
+        setBillingError(error.message || 'An unexpected error occurred');
+        setBillingHistory([]);
+      } finally {
+        setLoadingBilling(false);
+      }
+    };
+
+    fetchBillingHistory();
+  }, []);
+
+  // Fetch saved payment methods
+  useEffect(() => {
+    const fetchSavedPaymentMethods = async () => {
+      setLoadingSavedCards(true);
+      try {
+        const response = await PaymentMethodService.getSavedPaymentMethods();
+        console.log('Saved payment methods response:', response);
+        if (response.success) {
+          setSavedPaymentMethods(response.paymentMethods || []);
+          // Set hasStoredCard to true if there are saved payment methods
+          setHasStoredCard(response.paymentMethods.length > 0);
+          // Select the default payment method if available
+          const defaultMethod = response.paymentMethods.find(pm => pm.isDefault);
+          if (defaultMethod) {
+            setSelectedPaymentMethod(defaultMethod);
+            setCardDetails({
+              ...cardDetails,
+              cardNumber: `**** **** **** ${defaultMethod.last4}`,
+              paymentMethodId: defaultMethod.id
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching saved payment methods:', error);
+      } finally {
+        setLoadingSavedCards(false);
+      }
+    };
+
+    if (AuthService.isAuthenticated()) {
+      fetchSavedPaymentMethods();
     }
-  ]);
+  }, []);
 
   // Handle View Details button click
-  const handleViewDetails = (reservation) => {
-    setSelectedReservation(reservation);
-    setShowDetailsModal(true);
-  };
+  const handleViewDetails = async (reservation) => {
+    try {
+      // Fetch reservation details from backend
+      const response = await ReservationService.getReservationById(reservation.id);
+      console.log('Fetched reservation details:', response);
 
-  // Handle Extend Time button click
-  const handleExtendTimeClick = (reservation) => {
-    setSelectedReservation(reservation);
-    setShowExtendModal(true);
+      if (response.success && response.data) {
+        // Use the detailed reservation data from backend
+        const detailedReservation = response.data.data?.reservation || response.data.reservation;
+
+        // Extract lot rate type and pricing information from the detailed data
+        const rateType = detailedReservation.lotId?.rateType || null;
+        const hourlyRate = detailedReservation.lotId?.hourlyRate || 0;
+        const semesterRate = detailedReservation.lotId?.semesterRate || 0;
+
+        // Merge current data with backend data to ensure we have all fields
+        setSelectedReservation({
+          ...reservation,
+          ...detailedReservation,
+          rateType,
+          hourlyRate,
+          semesterRate
+        });
+        setShowDetailsModal(true);
+      } else {
+        // If there's an error, just use the data we already have
+        console.error('Error fetching reservation details:', response.error);
+        setSelectedReservation(reservation);
+        setShowDetailsModal(true);
+      }
+    } catch (error) {
+      console.error('Error in handleViewDetails:', error);
+      // Fallback to using current data
+      setSelectedReservation(reservation);
+      setShowDetailsModal(true);
+    }
   };
 
   // Handle Cancel button click
@@ -133,71 +382,68 @@ const StudentDashboard = ({ darkMode }) => {
     setShowCancelModal(true);
   };
 
-  // Handle Extend Time submission
-  const handleExtendTime = () => {
-    // Calculate new end time
-    const currentEndTime = new Date(selectedReservation.reservationEnd);
-    const newEndTime = new Date(currentEndTime.getTime() + (additionalHours * 60 * 60 * 1000));
-
-    // Update the reservations array
-    const updatedReservations = reservations.map(res => {
-      if (res.id === selectedReservation.id) {
-        return {
-          ...res,
-          reservationEnd: newEndTime.toISOString(),
-          price: res.price + (additionalHours * (res.isMetered ? 2.50 : 1.50)) // Simple price calculation
-        };
-      }
-      return res;
-    });
-
-    setReservations(updatedReservations);
-    setShowExtendModal(false);
-
-    // Show success message
-    setSuccessMessage(`Your reservation has been extended by ${additionalHours} hour${additionalHours > 1 ? 's' : ''}.`);
-    setShowSuccessMessage(true);
-
-    // Hide success message after 3 seconds
-    setTimeout(() => {
-      setShowSuccessMessage(false);
-    }, 3000);
-  };
-
   // Handle Cancel Reservation submission
-  const handleCancelReservation = () => {
-    // Update the reservations array
-    const updatedReservations = reservations.map(res => {
-      if (res.id === selectedReservation.id) {
-        return {
-          ...res,
-          status: "Cancelled"
-        };
+  const handleCancelReservation = async () => {
+    try {
+      // Show proper loading state
+      setIsProcessingPayment(true); // Reusing this state for loading indication
+
+      console.log('Cancelling reservation:', selectedReservation.id, 'with reason:', cancelReason);
+      const response = await ReservationService.cancelReservation(selectedReservation.id, cancelReason);
+      console.log('Cancellation response:', response);
+
+      if (response.success) {
+        // Update the local state with the cancelled reservation
+        setReservations(prevReservations =>
+          prevReservations.map(res =>
+            res.id === selectedReservation.id ? { ...res, status: "cancelled" } : res
+          )
+        );
+
+        // Close the modal and clear the reason
+        setShowCancelModal(false);
+        setCancelReason('');
+
+        // Show appropriate success message with refund information if available
+        let message = "Your reservation has been cancelled successfully.";
+        if (response.data && response.data.refund) {
+          const refundAmount = response.data.refund.amount.toFixed(2);
+          message = `Your reservation has been cancelled successfully and a refund of $${refundAmount} has been processed.`;
+        }
+
+        setSuccessMessage(message);
+        setShowSuccessMessage(true);
+
+        // Hide success message after 5 seconds (longer for refund info)
+        setTimeout(() => {
+          setShowSuccessMessage(false);
+        }, 5000);
+      } else {
+        // Show specific error message
+        throw new Error(response.error || 'Failed to cancel reservation');
       }
-      return res;
-    });
+    } catch (error) {
+      console.error('Error cancelling reservation:', error);
+      // Show error message
+      setSuccessMessage(`Error: ${error.message || 'Failed to cancel reservation'}`);
+      setShowSuccessMessage(true);
 
-    setReservations(updatedReservations);
-    setShowCancelModal(false);
-    setCancelReason('');
-
-    // Show success message
-    setSuccessMessage("Your reservation has been cancelled successfully.");
-    setShowSuccessMessage(true);
-
-    // Hide success message after 3 seconds
-    setTimeout(() => {
-      setShowSuccessMessage(false);
-    }, 3000);
+      // Hide error message after 3 seconds
+      setTimeout(() => {
+        setShowSuccessMessage(false);
+      }, 3000);
+    } finally {
+      setIsProcessingPayment(false); // Stop loading state
+    }
   };
 
   // Close all modals
   const closeAllModals = () => {
     setShowDetailsModal(false);
-    setShowExtendModal(false);
     setShowCancelModal(false);
     setShowBillingDetailsModal(false);
     setShowCitationPaymentModal(false);
+    setShowExtendModal(false);
     setSelectedReservation(null);
     setSelectedBill(null);
     setSelectedCitation(null);
@@ -209,6 +455,8 @@ const StudentDashboard = ({ darkMode }) => {
       cvv: ''
     });
     setCardErrors({});
+    setAdditionalHours(1);
+    setExtendingError(null);
   };
 
   const getStatusClass = (status) => {
@@ -274,11 +522,91 @@ const StudentDashboard = ({ darkMode }) => {
     setShowCitationPaymentModal(true);
   };
 
-  // Process ticket payment
+  // Handle credit card form submission from Stripe with save option
+  const handlePaymentMethodCreated = async (paymentMethod, saveCard) => {
+    try {
+      // Store payment method details
+      setHasStoredCard(true);
+      setCardDetails({
+        ...cardDetails,
+        cardNumber: `**** **** **** ${paymentMethod.card.last4}`,
+        paymentMethodId: paymentMethod.id
+      });
+      setShowAddCardForm(false);
+
+      // If saveCard is true, save the payment method for future use
+      if (saveCard) {
+        const response = await PaymentMethodService.savePaymentMethod(paymentMethod.id, !savedPaymentMethods.length);
+        if (response.success) {
+          console.log('Payment method saved successfully');
+          // Refresh the list of saved payment methods
+          const pmResponse = await PaymentMethodService.getSavedPaymentMethods();
+          if (pmResponse.success) {
+            setSavedPaymentMethods(pmResponse.paymentMethods || []);
+          }
+        } else {
+          console.error('Failed to save payment method:', response.error);
+        }
+      }
+
+      // Process the payment with the new payment method
+      await processPaymentWithMethod(paymentMethod.id);
+    } catch (error) {
+      console.error('Error handling payment method:', error);
+      setBillingError('Failed to process payment method');
+    }
+  };
+
+  // Process payment with a payment method ID
+  const processPaymentWithMethod = async (paymentMethodId) => {
+    setIsProcessingPayment(true);
+    try {
+      const response = await TicketService.payTicket(selectedCitation._id, {
+        paymentMethodId
+      });
+
+      if (response.success) {
+        // Update local tickets state
+        setTickets(tickets.map(ticket =>
+          ticket._id === selectedCitation._id
+            ? { ...ticket, isPaid: true }
+            : ticket
+        ));
+
+        setShowCitationPaymentModal(false);
+
+        // If there's a receipt URL from Stripe, open it in a new tab
+        if (response.paymentIntent?.receiptUrl) {
+          window.open(response.paymentIntent.receiptUrl, '_blank');
+        }
+
+        setSuccessMessage("Ticket payment processed successfully!");
+        setShowSuccessMessage(true);
+        setTimeout(() => setShowSuccessMessage(false), 3000);
+      } else {
+        setBillingError(response.error);
+      }
+    } catch (error) {
+      console.error('Payment error:', error);
+      setBillingError('Failed to process payment');
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  // Process ticket payment (updated to delegate to processPaymentWithMethod if using card)
   const handleProcessTicketPayment = async () => {
     setIsProcessingPayment(true);
     try {
+      // If using credit card and a card is stored, use stored payment method ID
+      if (paymentMethod === 'credit-card' && hasStoredCard) {
+        await processPaymentWithMethod(cardDetails.paymentMethodId);
+        return;
+      }
+
+      // For student account payment
       const response = await TicketService.payTicket(selectedCitation._id);
+
       if (response.success) {
         // Update local tickets state
         setTickets(tickets.map(ticket =>
@@ -292,10 +620,11 @@ const StudentDashboard = ({ darkMode }) => {
         setShowSuccessMessage(true);
         setTimeout(() => setShowSuccessMessage(false), 3000);
       } else {
-        setError(response.error);
+        setBillingError(response.error);
       }
-    } catch {
-      setError('Failed to process payment');
+    } catch (error) {
+      console.error('Payment error:', error);
+      setBillingError('Failed to process payment');
     } finally {
       setIsProcessingPayment(false);
     }
@@ -397,6 +726,280 @@ const StudentDashboard = ({ darkMode }) => {
     }
   };
 
+  // Handle Extend Time button click
+  const handleExtendClick = (reservation) => {
+    setSelectedReservation(reservation);
+    setShowExtendModal(true);
+  };
+
+  // Handle Extend Reservation submission
+  const handleExtendReservation = async () => {
+    try {
+      // Show loading state
+      setIsProcessingPayment(true);
+      setExtendingError(null);
+
+      console.log(`Extending reservation ${selectedReservation.id} by ${additionalHours} hours`);
+      const response = await ReservationService.extendReservation(
+        selectedReservation.id,
+        additionalHours,
+        null, // No payment method
+        selectedReservation.isMetered // Pass the isMetered flag
+      );
+      console.log('Extension response:', response);
+
+      if (response.success) {
+        // Update the local state with the extended reservation
+        const updatedReservations = reservations.map(res => {
+          if (res.id === selectedReservation.id) {
+            const updatedReservation = { ...res };
+            // Update end time by adding hours
+            const currentEndTime = new Date(res.reservationEnd);
+            const newEndTime = new Date(currentEndTime.getTime() + (additionalHours * 60 * 60 * 1000));
+            updatedReservation.reservationEnd = newEndTime.toISOString();
+            return updatedReservation;
+          }
+          return res;
+        });
+
+        setReservations(updatedReservations);
+
+        // Close the modal and reset state
+        setShowExtendModal(false);
+        setAdditionalHours(1);
+
+        // Check if it's a semester rate (free extension)
+        const isSemesterRate = response.data?.data?.extension?.isSemesterRate;
+
+        // Check if it's a metered lot
+        const isMetered = selectedReservation.isMetered;
+
+        // Check if the new end time is after 7PM
+        const newEndTime = new Date(new Date(selectedReservation.reservationEnd).getTime() + (additionalHours * 60 * 60 * 1000));
+        const isAfter7PM = newEndTime.getHours() >= 19; // 7PM = 19:00
+
+        // Check if current time is after 4PM (for permit holders)
+        const currentTime = new Date();
+        const isAfter4PM = currentTime.getHours() >= 16; // 4PM = 16:00
+
+        // Check if the user has a valid permit for free after 4PM
+        const hasFreeAfter4PMWithPermit = activePermits.length > 0 && isAfter4PM;
+
+        // Check if the server indicated this was a free after 4PM extension
+        const isFreeAfter4PMFromServer = response.data?.data?.extension?.isFreeAfter4PMWithPermit;
+
+        // Show different success message based on rate type, metered status, and time
+        let successMsg;
+        if (isSemesterRate) {
+          successMsg = `Your reservation has been extended by ${additionalHours} hour(s) at no additional cost.`;
+        } else if (isFreeAfter4PMFromServer || hasFreeAfter4PMWithPermit) {
+          successMsg = `Your reservation has been extended by ${additionalHours} hour(s) at no additional cost (free after 4PM with permit).`;
+        } else if (isMetered && !isAfter7PM) {
+          successMsg = `Your reservation has been extended by ${additionalHours} hour(s) with a $2.50 extension fee.`;
+        } else if (isMetered && isAfter7PM) {
+          successMsg = `Your reservation has been extended by ${additionalHours} hour(s) at no additional cost (after 7PM).`;
+        } else {
+          successMsg = `Your reservation has been extended by ${additionalHours} hour(s).`;
+        }
+
+        setSuccessMessage(successMsg);
+        setShowSuccessMessage(true);
+
+        // Hide success message after 3 seconds
+        setTimeout(() => {
+          setShowSuccessMessage(false);
+        }, 3000);
+      } else {
+        throw new Error(response.error || 'Failed to extend reservation');
+      }
+    } catch (error) {
+      console.error('Error extending reservation:', error);
+      setExtendingError(error.message || 'Failed to extend reservation time');
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  // Handle editing a car
+  const handleEditCar = (car) => {
+    setSelectedCar(car);
+    setShowEditCarModal(true);
+  };
+
+  // Handle deleting a car
+  const handleDeleteCar = (carId) => {
+    setCarToDelete(carId);
+    setShowDeleteConfirmModal(true);
+  };
+
+  // Handle confirming car deletion
+  const handleConfirmDeleteCar = async () => {
+    if (!carToDelete) return;
+
+    try {
+      setIsProcessingPayment(true); // Reuse the loading state
+      const response = await CarService.deleteCar(carToDelete);
+
+      if (response.success) {
+        // Remove the deleted car from the list
+        setCars(prevCars => prevCars.filter(car => car._id !== carToDelete));
+
+        setSuccessMessage('Vehicle deleted successfully');
+        setShowSuccessMessage(true);
+
+        // Hide success message after 3 seconds
+        setTimeout(() => {
+          setShowSuccessMessage(false);
+        }, 3000);
+
+        setShowDeleteConfirmModal(false);
+        setCarToDelete(null);
+      } else {
+        console.error('Failed to delete car:', response.error);
+        setCarsError(response.error);
+      }
+    } catch (error) {
+      console.error('Error deleting car:', error);
+      setCarsError(error.message || 'An unexpected error occurred');
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  // Handle saving a new or edited car
+  const handleSaveCar = async (carData) => {
+    try {
+      setIsProcessingPayment(true); // Reuse the loading state
+
+      let response;
+      if (selectedCar) {
+        // Update existing car
+        response = await CarService.updateCar(selectedCar._id, carData);
+      } else {
+        // Create new car
+        response = await CarService.saveCar(carData);
+      }
+
+      if (response.success) {
+        // If editing, update the car in the list
+        if (selectedCar) {
+          setCars(prevCars => prevCars.map(car =>
+            car._id === selectedCar._id ? response.car : car
+          ));
+          setShowEditCarModal(false);
+        } else {
+          // If adding, add the new car to the list
+          setCars(prevCars => [...prevCars, response.car]);
+          setShowAddCarModal(false);
+        }
+
+        setSuccessMessage(`Vehicle ${selectedCar ? 'updated' : 'added'} successfully`);
+        setShowSuccessMessage(true);
+
+        // Reset selected car
+        setSelectedCar(null);
+
+        // Hide success message after 3 seconds
+        setTimeout(() => {
+          setShowSuccessMessage(false);
+        }, 3000);
+      } else {
+        console.error(`Failed to ${selectedCar ? 'update' : 'add'} car:`, response.error);
+        setCarsError(response.error);
+      }
+    } catch (error) {
+      console.error(`Error ${selectedCar ? 'updating' : 'adding'} car:`, error);
+      setCarsError(error.message || 'An unexpected error occurred');
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  // Debug function to refresh ticket data
+  const refreshTickets = async () => {
+    setLoadingTickets(true);
+    try {
+      const response = await TicketService.getUserTickets();
+      console.log('Fresh Tickets response:', response);
+      if (response.success) {
+        // The server returns an array directly, not wrapped in a tickets property
+        const ticketsData = Array.isArray(response.data) ? response.data : [];
+        console.log('Tickets data processed:', ticketsData);
+        setTickets(ticketsData);
+
+        // Display success message
+        setSuccessMessage("Tickets refreshed successfully!");
+        setShowSuccessMessage(true);
+        setTimeout(() => setShowSuccessMessage(false), 3000);
+      } else {
+        setTicketsError(response.error || 'Failed to fetch tickets');
+      }
+    } catch (error) {
+      console.error('Error fetching tickets:', error);
+      setTicketsError('An unexpected error occurred while fetching tickets');
+    } finally {
+      setLoadingTickets(false);
+    }
+  };
+
+  // Handle selecting a saved payment method
+  const handleSelectPaymentMethod = (method) => {
+    setSelectedPaymentMethod(method);
+    setCardDetails({
+      ...cardDetails,
+      cardNumber: `**** **** **** ${method.last4}`,
+      paymentMethodId: method.id
+    });
+  };
+
+  // Delete a saved payment method
+  const handleDeletePaymentMethod = async (methodId, event) => {
+    event.stopPropagation(); // Prevent selecting the card when clicking delete
+    try {
+      const response = await PaymentMethodService.deletePaymentMethod(methodId);
+      if (response.success) {
+        // Remove the deleted method from the state
+        setSavedPaymentMethods(savedPaymentMethods.filter(pm => pm.id !== methodId));
+
+        // If the deleted method was selected, clear the selection
+        if (selectedPaymentMethod && selectedPaymentMethod.id === methodId) {
+          setSelectedPaymentMethod(null);
+          setCardDetails({
+            ...cardDetails,
+            cardNumber: '',
+            paymentMethodId: null
+          });
+        }
+
+        // Update hasStoredCard based on remaining payment methods
+        setHasStoredCard(savedPaymentMethods.length > 1);
+      } else {
+        console.error('Failed to delete payment method:', response.error);
+      }
+    } catch (error) {
+      console.error('Error deleting payment method:', error);
+    }
+  };
+
+  // Set a payment method as default
+  const handleSetDefaultPaymentMethod = async (methodId) => {
+    try {
+      const response = await PaymentMethodService.setDefaultPaymentMethod(methodId);
+      if (response.success) {
+        // Update the saved payment methods to reflect the new default
+        const updatedMethods = savedPaymentMethods.map(pm => ({
+          ...pm,
+          isDefault: pm.id === methodId
+        }));
+        setSavedPaymentMethods(updatedMethods);
+      } else {
+        console.error('Failed to set default payment method:', response.error);
+      }
+    } catch (error) {
+      console.error('Error setting default payment method:', error);
+    }
+  };
+
   return (
     <div className={`min-h-screen p-6 ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
       <h1 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Dashboard</h1>
@@ -416,21 +1019,80 @@ const StudentDashboard = ({ darkMode }) => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className={`p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
           <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Active Permits</p>
-          <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{activePermits.length}</p>
+          {loadingPermits ? (
+            <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Loading...</p>
+          ) : permitsError ? (
+            <p className="text-sm text-red-500 mt-1">Error loading permits</p>
+          ) : (
+            <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{activePermits.length}</p>
+          )}
         </div>
         <div className={`p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
           <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Citations</p>
-          <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{tickets.length}</p>
+          {loadingTickets ? (
+            <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Loading...</p>
+          ) : ticketsError ? (
+            <p className="text-sm text-red-500 mt-1">Error loading citations</p>
+          ) : (
+            <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{tickets.length}</p>
+          )}
         </div>
         <div className={`p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
           <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Outstanding Balance</p>
-          <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            {formatCurrency(tickets.filter(ticket => !ticket.isPaid).reduce((total, ticket) => total + ticket.amount, 0))}
-          </p>
+          {loadingTickets ? (
+            <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Loading...</p>
+          ) : ticketsError ? (
+            <p className="text-sm text-red-500 mt-1">Error loading balance</p>
+          ) : (
+            <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              {formatCurrency(
+                tickets
+                  .filter(ticket => ticket && !ticket.isPaid)
+                  .reduce((total, ticket) => total + (ticket.amount || 0), 0)
+              )}
+            </p>
+          )}
+          {/* Add a debug button to force refresh tickets data */}
+          <button
+            onClick={() => {
+              console.log("Current tickets:", tickets);
+              const fetchTickets = async () => {
+                setLoadingTickets(true);
+                try {
+                  const response = await TicketService.getUserTickets();
+                  console.log('Tickets response:', response);
+                  if (response.success) {
+                    const ticketsData = Array.isArray(response.data) ? response.data : [];
+                    console.log('Tickets data processed:', ticketsData);
+                    setTickets(ticketsData);
+                  } else {
+                    setTicketsError(response.error || 'Failed to fetch tickets');
+                  }
+                } catch (error) {
+                  console.error('Error fetching tickets:', error);
+                  setTicketsError('An unexpected error occurred while fetching tickets');
+                } finally {
+                  setLoadingTickets(false);
+                }
+              };
+              fetchTickets();
+            }}
+            className="mt-2 text-xs text-blue-500 hover:text-blue-700"
+          >
+            Refresh
+          </button>
         </div>
         <div className={`p-6 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
           <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Active Reservations</p>
-          <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{reservations.filter(r => r.status.toLowerCase() === 'active').length}</p>
+          {loadingReservations ? (
+            <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Loading...</p>
+          ) : reservationsError ? (
+            <p className="text-sm text-red-500 mt-1">Error loading reservations</p>
+          ) : (
+            <p className={`text-2xl font-bold mt-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              {reservations.filter(r => r.status.toLowerCase() === 'active').length}
+            </p>
+          )}
         </div>
       </div>
 
@@ -455,83 +1117,95 @@ const StudentDashboard = ({ darkMode }) => {
           </button>
         </div>
 
-        {reservations.length === 0 ? (
-          <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any parking reservations.</p>
+        {loadingReservations ? (
+          <div className="flex justify-center items-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-700"></div>
+          </div>
+        ) : reservationsError ? (
+          <div className={`p-4 rounded-md ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-50 text-red-800'}`}>
+            <p className="flex items-center">
+              <FaExclamationTriangle className="mr-2 flex-shrink-0" />
+              {reservationsError}
+            </p>
+          </div>
+        ) : reservations.filter(res => res.status.toLowerCase() !== 'cancelled').length === 0 ? (
+          <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any active parking reservations.</p>
         ) : (
           <div className="space-y-4">
-            {reservations.map((reservation) => (
-              <div
-                key={reservation.id}
-                className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}
-              >
-                <div className="flex flex-col md:flex-row justify-between">
-                  <div className="mb-4 md:mb-0">
-                    <div className="flex items-center mb-2">
-                      <FaMapMarkerAlt className={`mr-2 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
-                      <h3 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-800'}`}>
-                        {reservation.lotName} - Spot {reservation.spotNumber}
-                      </h3>
-                    </div>
+            {reservations
+              .filter(reservation => reservation.status.toLowerCase() !== 'cancelled')
+              .map((reservation) => (
+                <div
+                  key={reservation.id}
+                  className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}
+                >
+                  <div className="flex flex-col md:flex-row justify-between">
+                    <div className="mb-4 md:mb-0">
+                      <div className="flex items-center mb-2">
+                        <FaMapMarkerAlt className={`mr-2 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
+                        <h3 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                          {reservation.lotName} - Spot {reservation.spotNumber}
+                        </h3>
+                      </div>
 
-                    <div className="flex items-center mb-2">
-                      <FaClock className={`mr-2 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
-                      <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                        {formatDateTime(reservation.reservationStart)} - {formatDateTime(reservation.reservationEnd).split(',')[1]}
-                      </p>
-                    </div>
+                      <div className="flex items-center mb-2">
+                        <FaClock className={`mr-2 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+                        <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          {formatDateTime(reservation.reservationStart)} - {formatDateTime(reservation.reservationEnd).split(',')[1]}
+                        </p>
+                      </div>
 
-                    <div className="flex flex-wrap gap-3 mt-3">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(reservation.status)}`}>
-                        {reservation.status}
-                      </span>
-
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${darkMode ? 'bg-gray-600 text-gray-100' : 'bg-gray-100 text-gray-800'}`}>
-                        <FaClock className="mr-1" /> {calculateDuration(reservation.reservationStart, reservation.reservationEnd)} hours
-                      </span>
-
-                      {reservation.isEV && (
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800`}>
-                          <FaPlug className="mr-1" /> EV Charging
+                      <div className="flex flex-wrap gap-3 mt-3">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(reservation.status)}`}>
+                          {reservation.status}
                         </span>
-                      )}
 
-                      {reservation.isMetered && (
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800`}>
-                          <FaMoneyBillWave className="mr-1" /> Metered
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${darkMode ? 'bg-gray-600 text-gray-100' : 'bg-gray-100 text-gray-800'}`}>
+                          <FaClock className="mr-1" /> {calculateDuration(reservation.reservationStart, reservation.reservationEnd)} hours
                         </span>
+
+                        {reservation.isEV && (
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800`}>
+                            <FaPlug className="mr-1" /> EV Charging
+                          </span>
+                        )}
+
+                        {reservation.isMetered && (
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800`}>
+                            <FaMoneyBillWave className="mr-1" /> Metered
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col space-y-2">
+                      <button
+                        className={`px-4 py-2 rounded text-sm font-medium ${darkMode ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-gray-300 hover:bg-gray-400 text-gray-800'}`}
+                        onClick={() => handleViewDetails(reservation)}
+                      >
+                        View Details
+                      </button>
+
+                      {(reservation.status.toLowerCase() === 'upcoming' || reservation.status.toLowerCase() === 'active' || reservation.status.toLowerCase() === 'pending') && (
+                        <>
+                          <button
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium"
+                            onClick={() => handleExtendClick(reservation)}
+                          >
+                            Extend Time
+                          </button>
+                          <button
+                            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-medium"
+                            onClick={() => handleCancelClick(reservation)}
+                          >
+                            Cancel
+                          </button>
+                        </>
                       )}
                     </div>
-                  </div>
-
-                  <div className="flex flex-col space-y-2">
-                    {reservation.status.toLowerCase() === 'active' && (
-                      <button
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium"
-                        onClick={() => handleExtendTimeClick(reservation)}
-                      >
-                        Extend Time
-                      </button>
-                    )}
-
-                    <button
-                      className={`px-4 py-2 rounded text-sm font-medium ${darkMode ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-gray-300 hover:bg-gray-400 text-gray-800'}`}
-                      onClick={() => handleViewDetails(reservation)}
-                    >
-                      View Details
-                    </button>
-
-                    {reservation.status.toLowerCase() === 'upcoming' && (
-                      <button
-                        className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-medium"
-                        onClick={() => handleCancelClick(reservation)}
-                      >
-                        Cancel
-                      </button>
-                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         )}
       </div>
@@ -568,7 +1242,7 @@ const StudentDashboard = ({ darkMode }) => {
               </div>
 
               <div>
-                <p className="text-sm font-medium mb-1">Spot Number</p>
+                <p className="text-sm font-medium mb-1">Permit Name</p>
                 <p className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{selectedReservation.spotNumber}</p>
               </div>
 
@@ -610,38 +1284,30 @@ const StudentDashboard = ({ darkMode }) => {
                   )}
                 </div>
               </div>
-
-              <div className="col-span-full">
-                <p className="text-sm font-medium mb-1">Coordinates</p>
-                <p className={`${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  Lat: {selectedReservation.location.x.toFixed(4)}, Long: {selectedReservation.location.y.toFixed(4)}
-                </p>
-              </div>
             </div>
 
             <div className="flex justify-end space-x-3">
-              {selectedReservation.status.toLowerCase() === 'active' && (
-                <button
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium"
-                  onClick={() => {
-                    setShowDetailsModal(false);
-                    handleExtendTimeClick(selectedReservation);
-                  }}
-                >
-                  Extend Time
-                </button>
-              )}
-
-              {selectedReservation.status.toLowerCase() === 'upcoming' && (
-                <button
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-medium"
-                  onClick={() => {
-                    setShowDetailsModal(false);
-                    handleCancelClick(selectedReservation);
-                  }}
-                >
-                  Cancel Reservation
-                </button>
+              {(selectedReservation.status.toLowerCase() === 'upcoming' || selectedReservation.status.toLowerCase() === 'active' || selectedReservation.status.toLowerCase() === 'pending') && (
+                <>
+                  <button
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium"
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      handleExtendClick(selectedReservation);
+                    }}
+                  >
+                    Extend Time
+                  </button>
+                  <button
+                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-medium"
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      handleCancelClick(selectedReservation);
+                    }}
+                  >
+                    Cancel Reservation
+                  </button>
+                </>
               )}
 
               <button
@@ -649,85 +1315,6 @@ const StudentDashboard = ({ darkMode }) => {
                 onClick={closeAllModals}
               >
                 Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Extend Time Modal */}
-      {showExtendModal && selectedReservation && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className={`relative w-full max-w-md ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'} rounded-lg shadow-xl p-6`}>
-            <button
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-              onClick={closeAllModals}
-            >
-              <FaTimes size={20} />
-            </button>
-
-            <h3 className="text-xl font-semibold mb-2">Extend Reservation Time</h3>
-            <p className={`mb-4 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-              Current end time: {formatDateTime(selectedReservation.reservationEnd)}
-            </p>
-
-            <div className="mb-4">
-              <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                Add Hours
-              </label>
-              <div className="flex items-center">
-                <button
-                  className={`px-3 py-1 rounded-l ${darkMode ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-800'}`}
-                  onClick={() => setAdditionalHours(Math.max(1, additionalHours - 1))}
-                >
-                  -
-                </button>
-                <input
-                  type="number"
-                  min="1"
-                  max="12"
-                  value={additionalHours}
-                  onChange={(e) => setAdditionalHours(Math.min(12, Math.max(1, parseInt(e.target.value) || 1)))}
-                  className={`w-16 text-center py-1 ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} border`}
-                />
-                <button
-                  className={`px-3 py-1 rounded-r ${darkMode ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-800'}`}
-                  onClick={() => setAdditionalHours(Math.min(12, additionalHours + 1))}
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            <div className="mb-6">
-              <div className={`p-3 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                <div className="flex justify-between mb-2">
-                  <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>New End Time:</span>
-                  <span className="font-medium">
-                    {formatDateTime(new Date(new Date(selectedReservation.reservationEnd).getTime() + (additionalHours * 60 * 60 * 1000)).toISOString())}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Additional Cost:</span>
-                  <span className="font-medium">
-                    {formatCurrency(additionalHours * (selectedReservation.isMetered ? 2.50 : 1.50))}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-3">
-              <button
-                className={`px-4 py-2 rounded-lg font-medium text-sm ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
-                onClick={closeAllModals}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium"
-                onClick={handleExtendTime}
-              >
-                Confirm Extension
               </button>
             </div>
           </div>
@@ -778,14 +1365,205 @@ const StudentDashboard = ({ darkMode }) => {
               <button
                 className={`px-4 py-2 rounded-lg font-medium text-sm ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
                 onClick={closeAllModals}
+                disabled={isProcessingPayment}
               >
                 Keep Reservation
               </button>
               <button
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium"
+                className={`px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium flex items-center justify-center ${isProcessingPayment ? 'opacity-75 cursor-not-allowed' : ''}`}
                 onClick={handleCancelReservation}
+                disabled={isProcessingPayment}
               >
-                Yes, Cancel Reservation
+                {isProcessingPayment ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                    Processing...
+                  </>
+                ) : (
+                  'Yes, Cancel Reservation'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Extend Reservation Modal */}
+      {showExtendModal && selectedReservation && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className={`relative w-full max-w-md ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'} rounded-lg shadow-xl p-6`}>
+            <button
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+              onClick={closeAllModals}
+            >
+              <FaTimes size={20} />
+            </button>
+
+            <div className="flex items-center mb-4 text-blue-500">
+              <FaClock size={24} className="mr-2" />
+              <h3 className="text-xl font-semibold">Extend Reservation Time</h3>
+            </div>
+
+            <p className={`mb-4 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+              You are extending your reservation at {selectedReservation.lotName} ({selectedReservation.spotNumber}).
+            </p>
+
+            <div className="mb-6">
+              <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Current end time
+              </label>
+              <p className={`mb-4 font-medium ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                {formatDateTime(selectedReservation.reservationEnd)}
+              </p>
+
+              <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Additional hours
+              </label>
+              <div className="flex items-center">
+                <button
+                  className={`px-4 py-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-l-lg font-bold`}
+                  onClick={() => setAdditionalHours(Math.max(1, additionalHours - 1))}
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min="1"
+                  max="24"
+                  value={additionalHours}
+                  onChange={(e) => setAdditionalHours(Math.max(1, Math.min(24, parseInt(e.target.value) || 1)))}
+                  className={`w-16 text-center py-2 ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} border`}
+                />
+                <button
+                  className={`px-4 py-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-r-lg font-bold`}
+                  onClick={() => setAdditionalHours(Math.min(24, additionalHours + 1))}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <p className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>New end time</p>
+              <p className={`font-medium text-green-500`}>
+                {formatDateTime(new Date(new Date(selectedReservation.reservationEnd).getTime() + (additionalHours * 60 * 60 * 1000)))}
+              </p>
+            </div>
+
+            {/* Only show pricing info if available */}
+            {selectedReservation.rateType && (
+              <div className="mb-6">
+                <p className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>Pricing</p>
+                {selectedReservation.rateType.toLowerCase() === 'hourly' ? (
+                  // For hourly rate lots
+                  <p className={`${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Your hourly rate is ${selectedReservation.hourlyRate?.toFixed(2) || '0.00'}/hour.
+                    <br />
+                    {selectedReservation.isMetered ? (
+                      (() => {
+                        // Calculate the new end time
+                        const currentEndTime = new Date(selectedReservation.reservationEnd);
+                        const newEndTime = new Date(currentEndTime.getTime() + (additionalHours * 60 * 60 * 1000));
+                        const isAfter7PM = newEndTime.getHours() >= 19; // 7PM = 19:00
+
+                        // Check if current time is after 4PM (for permit holders)
+                        const currentTime = new Date();
+                        const isAfter4PM = currentTime.getHours() >= 16; // 4PM = 16:00
+
+                        // If user has active permits and we're after 4PM
+                        const hasPermitAndAfter4PM = activePermits.length > 0 && isAfter4PM;
+
+                        if (hasPermitAndAfter4PM) {
+                          return (
+                            <>
+                              <span className="font-medium text-green-500">Free extension after 4PM with permit!</span><br />
+                              <span className="text-xs">Permit holders get free access after 4PM</span><br />
+                              Hourly cost: ${((selectedReservation.hourlyRate || 0) * additionalHours).toFixed(2)}<br />
+                              <span className="font-medium text-green-500">Estimated total cost: $0.00</span>
+                            </>
+                          );
+                        } else if (isAfter7PM) {
+                          return (
+                            <>
+                              <span className="font-medium text-green-500">Free extension after 7PM!</span><br />
+                              Hourly cost: ${((selectedReservation.hourlyRate || 0) * additionalHours).toFixed(2)}<br />
+                              Estimated total cost: ${((selectedReservation.hourlyRate || 0) * additionalHours).toFixed(2)}
+                            </>
+                          );
+                        } else {
+                          return (
+                            <>
+                              <span className="font-medium text-amber-500">Extension fee: $2.50</span><br />
+                              Hourly cost: ${((selectedReservation.hourlyRate || 0) * additionalHours).toFixed(2)}<br />
+                              Estimated total cost: ${(((selectedReservation.hourlyRate || 0) * additionalHours) + 2.50).toFixed(2)}
+                            </>
+                          );
+                        }
+                      })()
+                    ) : (
+                      <>
+                        {/* Check if user has permits and it's after 4PM */}
+                        {(() => {
+                          const currentTime = new Date();
+                          const isAfter4PM = currentTime.getHours() >= 16; // 4PM = 16:00
+                          const hasPermitAndAfter4PM = activePermits.length > 0 && isAfter4PM;
+
+                          if (hasPermitAndAfter4PM) {
+                            return (
+                              <>
+                                <span className="font-medium text-green-500">Free extension after 4PM with permit!</span><br />
+                                <span className="text-xs">Permit holders get free access after 4PM</span><br />
+                                <span className="font-medium text-green-500">Estimated total cost: $0.00</span>
+                              </>
+                            );
+                          } else {
+                            return (
+                              <>
+                                Estimated additional cost: ${((selectedReservation.hourlyRate || 0) * additionalHours).toFixed(2)}
+                              </>
+                            );
+                          }
+                        })()}
+                      </>
+                    )}
+                  </p>
+                ) : (
+                  // For semester-based/permit-based lots
+                  <p className={`${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <span className="text-green-500 font-medium">No additional cost</span> - This is a semester/permit-based lot
+                    with fixed pricing for the term.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {extendingError && (
+              <div className={`p-3 mb-4 rounded-md ${darkMode ? 'bg-red-900/20 text-red-200' : 'bg-red-50 text-red-800'}`}>
+                <p>{extendingError}</p>
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3">
+              <button
+                className={`px-4 py-2 rounded-lg font-medium text-sm ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
+                onClick={closeAllModals}
+                disabled={isProcessingPayment}
+              >
+                Cancel
+              </button>
+              <button
+                className={`px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center justify-center ${isProcessingPayment ? 'opacity-75 cursor-not-allowed' : ''}`}
+                onClick={handleExtendReservation}
+                disabled={isProcessingPayment}
+              >
+                {isProcessingPayment ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                    Processing...
+                  </>
+                ) : (
+                  'Extend Reservation'
+                )}
               </button>
             </div>
           </div>
@@ -804,7 +1582,18 @@ const StudentDashboard = ({ darkMode }) => {
           </button>
         </div>
 
-        {activePermits.length === 0 ? (
+        {loadingPermits ? (
+          <div className="flex justify-center items-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-700"></div>
+          </div>
+        ) : permitsError ? (
+          <div className={`p-4 rounded-md ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-50 text-red-800'}`}>
+            <p className="flex items-center">
+              <FaExclamationTriangle className="mr-2 flex-shrink-0" />
+              {permitsError}
+            </p>
+          </div>
+        ) : activePermits.length === 0 ? (
           <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any active permits.</p>
         ) : (
           <div className="space-y-4">
@@ -825,6 +1614,84 @@ const StudentDashboard = ({ darkMode }) => {
         )}
       </div>
 
+      {/* My Vehicles Section */}
+      <div className={`rounded-lg shadow-sm p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>My Vehicles</h2>
+          <button
+            className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+            onClick={() => setShowAddCarModal(true)}
+            disabled={cars.length >= 2}
+          >
+            <FaPlus className="mr-2" />
+            Add Vehicle {cars.length >= 2 && "(Max 2)"}
+          </button>
+        </div>
+
+        {loadingCars ? (
+          <div className="flex justify-center items-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-700"></div>
+          </div>
+        ) : carsError ? (
+          <div className={`p-4 rounded-md ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-50 text-red-800'}`}>
+            <p className="flex items-center">
+              <FaExclamationTriangle className="mr-2 flex-shrink-0" />
+              {carsError}
+            </p>
+          </div>
+        ) : cars.length === 0 ? (
+          <div className="text-center py-8">
+            <FaCar className={`mx-auto text-5xl mb-4 ${darkMode ? 'text-gray-600' : 'text-gray-400'}`} />
+            <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You haven't added any vehicles yet.</p>
+            <button
+              className="mt-4 px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+              onClick={() => setShowAddCarModal(true)}
+            >
+              Add Your First Vehicle
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {cars.map((car) => (
+              <div key={car._id} className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}>
+                <div className="flex justify-between">
+                  <div>
+                    <div className="flex items-start">
+                      <FaCar className={`mt-1 mr-2 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
+                      <div>
+                        <h3 className={`font-semibold text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                          {car.make} {car.model} ({car.year})
+                        </h3>
+                        <p className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                          {car.color} {car.bodyType}
+                        </p>
+                        <p className={`mt-1 font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                          {car.plateNumber} • {car.stateProv}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col space-y-2">
+                    <button
+                      className={`px-4 py-2 rounded text-sm font-medium ${darkMode ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-gray-300 hover:bg-gray-400 text-gray-800'}`}
+                      onClick={() => handleEditCar(car)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-medium"
+                      onClick={() => handleDeleteCar(car._id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Billing History Section - Updated to properly use darkMode prop */}
       <div className={`rounded-lg shadow-sm p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
         <div className="flex justify-between items-center mb-4">
@@ -837,7 +1704,18 @@ const StudentDashboard = ({ darkMode }) => {
           </button>
         </div>
 
-        {billingHistory.length === 0 ? (
+        {loadingBilling ? (
+          <div className="flex justify-center items-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-700"></div>
+          </div>
+        ) : billingError ? (
+          <div className={`p-4 rounded-md ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-50 text-red-800'}`}>
+            <p className="flex items-center">
+              <FaExclamationTriangle className="mr-2 flex-shrink-0" />
+              {billingError}
+            </p>
+          </div>
+        ) : billingHistory.length === 0 ? (
           <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any billing history.</p>
         ) : (
           <div className="space-y-4">
@@ -941,15 +1819,26 @@ const StudentDashboard = ({ darkMode }) => {
             <div className="mb-4">
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Citation Details</p>
               <div className={`mt-2 p-3 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                <p className="font-medium">{selectedCitation.violation}</p>
-                <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Date: {selectedCitation.date}</p>
-                <p className="font-bold mt-2">Amount Due: {selectedCitation.amount}</p>
+                <p className="font-medium">{selectedCitation.name}</p>
+                <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  Date: {new Date(selectedCitation.date_posted).toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'short', day: 'numeric'
+                  })}
+                </p>
+                <p className="font-bold mt-2">Amount Due: ${selectedCitation.amount.toFixed(2)}</p>
               </div>
             </div>
+
+            {billingError && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-300 text-red-800 rounded-lg text-sm">
+                {billingError}
+              </div>
+            )}
 
             <div className="mb-4">
               <p className={`text-sm mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Select Payment Method</p>
               <div className="space-y-2">
+                {/* Credit/Debit Card Option */}
                 <label className={`flex items-center p-3 rounded-lg border ${darkMode
                   ? paymentMethod === 'credit-card' ? 'border-blue-500 bg-gray-700' : 'border-gray-600 bg-gray-700'
                   : paymentMethod === 'credit-card' ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'
@@ -964,28 +1853,83 @@ const StudentDashboard = ({ darkMode }) => {
                   />
                   <div className="flex-grow">
                     <p className="font-medium">Credit/Debit Card</p>
-                    {hasStoredCard ? (
+                    {hasStoredCard && selectedPaymentMethod ? (
                       <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Card ending in {cardDetails.cardNumber.slice(-4) || '1234'}
+                        Using card ending in {selectedPaymentMethod.last4}
                       </p>
                     ) : (
                       <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        No card on file
+                        Add a payment card
                       </p>
                     )}
                   </div>
-                  {paymentMethod === 'credit-card' && !hasStoredCard && !showAddCardForm && (
+                </label>
+
+                {/* Display saved payment methods if any */}
+                {paymentMethod === 'credit-card' && savedPaymentMethods.length > 0 && (
+                  <div className={`mt-2 ml-8 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <p className="text-sm font-medium mb-2">Your saved cards:</p>
+                    <div className="space-y-2">
+                      {savedPaymentMethods.map((method) => (
+                        <div
+                          key={method.id}
+                          onClick={() => handleSelectPaymentMethod(method)}
+                          className={`flex items-center justify-between p-2 rounded cursor-pointer ${selectedPaymentMethod && selectedPaymentMethod.id === method.id
+                            ? darkMode ? 'bg-blue-800' : 'bg-blue-100'
+                            : darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-gray-100 hover:bg-gray-200'
+                            }`}
+                        >
+                          <div className="flex items-center">
+                            <FaCreditCard className="mr-2" />
+                            <div>
+                              <p className="text-sm">{method.brand} •••• {method.last4}</p>
+                              <p className="text-xs">Expires {method.exp_month}/{method.exp_year}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center">
+                            {method.isDefault && (
+                              <span className={`mr-2 px-1.5 py-0.5 text-xs rounded-full ${darkMode ? 'bg-green-800 text-green-200' : 'bg-green-100 text-green-800'
+                                }`}>
+                                Default
+                              </span>
+                            )}
+                            <button
+                              onClick={(e) => handleDeletePaymentMethod(method.id, e)}
+                              className={`p-1 rounded-full ${darkMode ? 'hover:bg-red-900 text-gray-400' : 'hover:bg-red-100 text-gray-500'
+                                }`}
+                            >
+                              <FaTrash size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                     <button
                       onClick={() => setShowAddCardForm(true)}
-                      className={`ml-2 flex items-center px-2 py-1 rounded text-xs ${darkMode
+                      className={`mt-3 flex items-center px-2 py-1 rounded text-xs ${darkMode
                         ? 'bg-blue-600 hover:bg-blue-700 text-white'
                         : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
                         }`}
                     >
-                      <FaPlus className="mr-1" /> Add Card
+                      <FaPlus className="mr-1" /> Add New Card
                     </button>
-                  )}
-                </label>
+                  </div>
+                )}
+
+                {/* Add a new card button if no saved cards */}
+                {paymentMethod === 'credit-card' && !savedPaymentMethods.length && !showAddCardForm && (
+                  <div className="mt-2 ml-8">
+                    <button
+                      onClick={() => setShowAddCardForm(true)}
+                      className={`flex items-center px-2 py-1 rounded text-xs ${darkMode
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
+                        }`}
+                    >
+                      <FaPlus className="mr-1" /> Add Payment Card
+                    </button>
+                  </div>
+                )}
 
                 <label className={`flex items-center p-3 rounded-lg border ${darkMode
                   ? paymentMethod === 'student-account' ? 'border-blue-500 bg-gray-700' : 'border-gray-600 bg-gray-700'
@@ -1007,139 +1951,20 @@ const StudentDashboard = ({ darkMode }) => {
               </div>
             </div>
 
-            {/* Credit Card Form */}
-            {paymentMethod === 'credit-card' && showAddCardForm && (
-              <div className={`mb-4 p-4 rounded-lg border ${darkMode ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-50'}`}>
-                <h4 className="font-medium mb-3">Add Payment Card</h4>
-
-                <div className="space-y-3">
-                  {/* Card Number */}
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Card Number
-                    </label>
-                    <input
-                      type="text"
-                      name="cardNumber"
-                      value={cardDetails.cardNumber}
-                      onChange={handleCardDetailChange}
-                      placeholder="1234 5678 9012 3456"
-                      className={`w-full px-3 py-2 rounded-lg border ${darkMode
-                        ? 'bg-gray-800 text-white border-gray-600'
-                        : 'bg-white text-gray-900 border-gray-300'
-                        } focus:outline-none ${cardErrors.cardNumber
-                          ? darkMode ? 'border-red-500' : 'border-red-500'
-                          : darkMode ? 'focus:border-blue-500' : 'focus:border-blue-600'
-                        }`}
-                    />
-                    {cardErrors.cardNumber && (
-                      <p className="mt-1 text-xs text-red-500">{cardErrors.cardNumber}</p>
-                    )}
-                  </div>
-
-                  {/* Cardholder Name */}
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Cardholder Name
-                    </label>
-                    <input
-                      type="text"
-                      name="cardholderName"
-                      value={cardDetails.cardholderName}
-                      onChange={handleCardDetailChange}
-                      placeholder="John Doe"
-                      className={`w-full px-3 py-2 rounded-lg border ${darkMode
-                        ? 'bg-gray-800 text-white border-gray-600'
-                        : 'bg-white text-gray-900 border-gray-300'
-                        } focus:outline-none ${cardErrors.cardholderName
-                          ? darkMode ? 'border-red-500' : 'border-red-500'
-                          : darkMode ? 'focus:border-blue-500' : 'focus:border-blue-600'
-                        }`}
-                    />
-                    {cardErrors.cardholderName && (
-                      <p className="mt-1 text-xs text-red-500">{cardErrors.cardholderName}</p>
-                    )}
-                  </div>
-
-                  {/* Expiry Date and CVV (in a row) */}
-                  <div className="flex space-x-4">
-                    <div className="w-1/2">
-                      <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                        Expiry Date
-                      </label>
-                      <input
-                        type="text"
-                        name="expiryDate"
-                        value={cardDetails.expiryDate}
-                        onChange={handleCardDetailChange}
-                        placeholder="MM/YY"
-                        className={`w-full px-3 py-2 rounded-lg border ${darkMode
-                          ? 'bg-gray-800 text-white border-gray-600'
-                          : 'bg-white text-gray-900 border-gray-300'
-                          } focus:outline-none ${cardErrors.expiryDate
-                            ? darkMode ? 'border-red-500' : 'border-red-500'
-                            : darkMode ? 'focus:border-blue-500' : 'focus:border-blue-600'
-                          }`}
-                      />
-                      {cardErrors.expiryDate && (
-                        <p className="mt-1 text-xs text-red-500">{cardErrors.expiryDate}</p>
-                      )}
-                    </div>
-
-                    <div className="w-1/2">
-                      <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                        CVV
-                      </label>
-                      <input
-                        type="text"
-                        name="cvv"
-                        value={cardDetails.cvv}
-                        onChange={handleCardDetailChange}
-                        placeholder="123"
-                        className={`w-full px-3 py-2 rounded-lg border ${darkMode
-                          ? 'bg-gray-800 text-white border-gray-600'
-                          : 'bg-white text-gray-900 border-gray-300'
-                          } focus:outline-none ${cardErrors.cvv
-                            ? darkMode ? 'border-red-500' : 'border-red-500'
-                            : darkMode ? 'focus:border-blue-500' : 'focus:border-blue-600'
-                          }`}
-                      />
-                      {cardErrors.cvv && (
-                        <p className="mt-1 text-xs text-red-500">{cardErrors.cvv}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end mt-4">
-                  <button
-                    onClick={() => setShowAddCardForm(false)}
-                    className={`px-3 py-1 rounded-lg font-medium text-xs mr-2 ${darkMode
-                      ? 'bg-gray-600 hover:bg-gray-500 text-white'
-                      : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
-                      }`}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleAddCard}
-                    disabled={isAddingCard}
-                    className={`px-3 py-1 rounded-lg font-medium text-xs ${isAddingCard
-                      ? 'bg-blue-400 cursor-not-allowed'
-                      : 'bg-blue-600 hover:bg-blue-700'
-                      } text-white flex items-center`}
-                  >
-                    {isAddingCard ? (
-                      'Saving...'
-                    ) : (
-                      <>
-                        <FaCheck className="mr-1" /> Save Card
-                      </>
-                    )}
-                  </button>
-                </div>
+            {/* Stripe Card Element */}
+            {paymentMethod === 'credit-card' && !hasStoredCard && (
+              <div className="mb-4">
+                <StripeProvider>
+                  <StripeCardElement
+                    darkMode={darkMode}
+                    onPaymentMethodCreated={handlePaymentMethodCreated}
+                    buttonText="Save Card & Pay"
+                  />
+                </StripeProvider>
               </div>
             )}
+
+            {/* Manual Credit Card Form is replaced by Stripe Elements */}
 
             <div className="flex justify-end">
               <button
@@ -1151,16 +1976,20 @@ const StudentDashboard = ({ darkMode }) => {
               >
                 Cancel
               </button>
-              <button
-                onClick={handleProcessTicketPayment}
-                disabled={isProcessingPayment || (paymentMethod === 'credit-card' && !hasStoredCard)}
-                className={`px-4 py-2 rounded-lg font-medium text-sm ${isProcessingPayment || (paymentMethod === 'credit-card' && !hasStoredCard)
-                  ? 'bg-blue-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700'
-                  } text-white`}
-              >
-                {isProcessingPayment ? 'Processing...' : `Pay ${selectedCitation.amount}`}
-              </button>
+
+              {/* Only show this button if we have a stored card or using student account */}
+              {(hasStoredCard || paymentMethod === 'student-account') && (
+                <button
+                  onClick={handleProcessTicketPayment}
+                  disabled={isProcessingPayment}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm ${isProcessingPayment
+                    ? 'bg-blue-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                    } text-white`}
+                >
+                  {isProcessingPayment ? 'Processing...' : `Pay $${selectedCitation.amount.toFixed(2)}`}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1170,18 +1999,26 @@ const StudentDashboard = ({ darkMode }) => {
       <div className={`rounded-lg shadow-sm p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
         <div className="flex justify-between items-center mb-4">
           <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Citations</h2>
-          <button
-            className={`text-sm font-medium flex items-center ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
-            onClick={() => navigate('/past-citations')}
-          >
-            View All Citations <FaArrowLeft className="ml-1 transform rotate-180" />
-          </button>
+          <div className="flex space-x-2">
+            <button
+              className={`text-sm px-2 py-1 rounded border ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200'}`}
+              onClick={refreshTickets}
+            >
+              Refresh
+            </button>
+            <button
+              className={`text-sm font-medium flex items-center ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
+              onClick={() => navigate('/past-citations')}
+            >
+              View All <FaArrowLeft className="ml-1 transform rotate-180" />
+            </button>
+          </div>
         </div>
 
-        {loading ? (
+        {loadingTickets ? (
           <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Loading citations...</p>
-        ) : error ? (
-          <p className="text-red-500">Error: {error}</p>
+        ) : ticketsError ? (
+          <p className="text-red-500">Error: {ticketsError}</p>
         ) : tickets.length === 0 ? (
           <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any citations.</p>
         ) : (
@@ -1215,9 +2052,124 @@ const StudentDashboard = ({ darkMode }) => {
           </div>
         )}
       </div>
+
+      {/* Add Car Modal */}
+      {showAddCarModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className={`relative w-full max-w-2xl ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'} rounded-lg shadow-xl p-6`}>
+            <button
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+              onClick={() => setShowAddCarModal(false)}
+            >
+              <FaTimes size={20} />
+            </button>
+
+            <h3 className="text-xl font-semibold mb-4 flex items-center">
+              <FaCar className="mr-2" /> Add New Vehicle
+            </h3>
+
+            <p className={`mb-4 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+              You can add up to 2 vehicles to your account. Vehicle information will be used for your parking reservations.
+            </p>
+
+            <CarForm
+              darkMode={darkMode}
+              onSubmit={handleSaveCar}
+              onCancel={() => setShowAddCarModal(false)}
+              isProcessing={isProcessingPayment}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Edit Car Modal */}
+      {showEditCarModal && selectedCar && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className={`relative w-full max-w-2xl ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'} rounded-lg shadow-xl p-6`}>
+            <button
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+              onClick={() => {
+                setShowEditCarModal(false);
+                setSelectedCar(null);
+              }}
+            >
+              <FaTimes size={20} />
+            </button>
+
+            <h3 className="text-xl font-semibold mb-4 flex items-center">
+              <FaCar className="mr-2" /> Edit Vehicle
+            </h3>
+
+            <CarForm
+              darkMode={darkMode}
+              initialData={selectedCar}
+              onSubmit={handleSaveCar}
+              onCancel={() => {
+                setShowEditCarModal(false);
+                setSelectedCar(null);
+              }}
+              isProcessing={isProcessingPayment}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Delete Car Confirmation Modal */}
+      {showDeleteConfirmModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className={`relative w-full max-w-md ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'} rounded-lg shadow-xl p-6`}>
+            <button
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+              onClick={() => {
+                setShowDeleteConfirmModal(false);
+                setCarToDelete(null);
+              }}
+            >
+              <FaTimes size={20} />
+            </button>
+
+            <div className="flex items-center mb-4 text-red-500">
+              <FaExclamationTriangle size={24} className="mr-2" />
+              <h3 className="text-xl font-semibold">Delete Vehicle</h3>
+            </div>
+
+            <p className={`mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+              Are you sure you want to delete this vehicle? This action cannot be undone.
+            </p>
+
+            <div className="flex justify-end space-x-3">
+              <button
+                className={`px-4 py-2 rounded-lg font-medium text-sm ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
+                onClick={() => {
+                  setShowDeleteConfirmModal(false);
+                  setCarToDelete(null);
+                }}
+                disabled={isProcessingPayment}
+              >
+                Cancel
+              </button>
+              <button
+                className={`px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium flex items-center justify-center ${isProcessingPayment ? 'opacity-75 cursor-not-allowed' : ''}`}
+                onClick={handleConfirmDeleteCar}
+                disabled={isProcessingPayment}
+              >
+                {isProcessingPayment ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                    Processing...
+                  </>
+                ) : (
+                  'Yes, Delete Vehicle'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default StudentDashboard;
+
 
