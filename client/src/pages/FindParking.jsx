@@ -1,11 +1,17 @@
+// TP: this .jsx file's code was heavily manipulated, optimized, and contributed to by ChatGPT (after the initial was written by Students via Pair Programming) to provide clarity on bugs, modularize, and optimize/provide better solutions during the coding process. 
+// It was given context and prompted to take the initial student iteration/changes and modify/optimize it to adapt for more concise techniques to achieve the same desired changes/new functionalities.
+// It was also prompted to explain all changes in detail (completely studied/understood by the student) before the AI's optimized/modified version of the student written code was added to the code file. 
+// Additionally, ChatGPT (with project and code context) modified the initial/previous iteration of code to be maximized for code readability as well as descriptive comments (for Instructor understanding). 
+// It can be credited that AI played a crucial role in heavily contributing/modifying/optimizing this entire file's code (after the initial changes were written by Student). 
+// Commits and pushes are executed after the final version have been made for the specific implementation changes during that coding session. 
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ResultsView from '../components/ResultsView';
 import LotDetailsView from '../components/LotDetailsView';
 import CarInfoForm from '../components/CarInfoForm';
 import PaymentPage from '../components/PaymentPage';
-import { mockParkingLots } from '../utils/fakeData';
-import { LotService } from '../utils/api';
+import { LotService, ReservationService, PermitService, CarService } from '../utils/api';
 // Import Mapbox components
 import ReactMapGL, { Marker, NavigationControl, GeolocateControl, Source, Layer } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -75,6 +81,21 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
     // State for storing walking routes
     const [selectedLotRoute, setSelectedLotRoute] = useState(null);
+
+    // Add state for selected permit type
+    const [selectedPermitType, setSelectedPermitType] = useState('');
+
+    // Add state for existing permits
+    const [existingPermits, setExistingPermits] = useState([]);
+    const [hasValidPermit, setHasValidPermit] = useState(false);
+    const [validPermitDetails, setValidPermitDetails] = useState(null);
+
+    // Add state for checking if user has saved car info
+    const [hasSavedCarInfo, setHasSavedCarInfo] = useState(false);
+    const [savedCarInfo, setSavedCarInfo] = useState(null);
+    const [userCars, setUserCars] = useState([]);
+    const [loadingCars, setLoadingCars] = useState(false);
+    const [carError, setCarError] = useState(null);
 
     // Effect to restore reservation data from sessionStorage if present
     useEffect(() => {
@@ -222,7 +243,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
             coordinates: [location.coordinates[1], location.coordinates[0]]
         });
 
-            setMapCenter({
+        setMapCenter({
             longitude: location.coordinates[0],
             latitude: location.coordinates[1],
             zoom: 16
@@ -360,14 +381,11 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
             errors.date = 'Date is required';
             isValid = false;
         } else {
-            // Validate date is not in the past
-            const selectedDate = new Date(date);
-            selectedDate.setHours(0, 0, 0, 0);
+            // Validate date is not in the past - using date string comparison rather than Date objects
+            const selectedDateStr = date; // YYYY-MM-DD format
+            const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local timezone
 
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-
-            if (selectedDate < today) {
+            if (selectedDateStr < todayStr) {
                 errors.date = 'Date cannot be in the past';
                 isValid = false;
             }
@@ -422,16 +440,16 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 address: matchingSBULocation.name,
                 coordinates: [matchingSBULocation.coordinates[1], matchingSBULocation.coordinates[0]]
             };
-                    setSelectedLocation(locationToUse);
+            setSelectedLocation(locationToUse);
         }
         // If no valid location has been set yet, use the entered address with map center
         else if (!locationToUse) {
             locationToUse = {
                 name: address || "Selected Location",
                 address: address || "Stony Brook University",
-            coordinates: [mapCenter.latitude, mapCenter.longitude]
-        };
-        setSelectedLocation(locationToUse);
+                coordinates: [mapCenter.latitude, mapCenter.longitude]
+            };
+            setSelectedLocation(locationToUse);
         }
 
         setSearching(true);
@@ -461,7 +479,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 setSelectedLot(foundLot);
             }
         } else {
-        setSelectedLot(lot);
+            setSelectedLot(lot);
         }
     };
 
@@ -549,9 +567,50 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         });
         setAddress(clickedLocation.address);
     };
+    // Changes below made in collaboration between multiple team members 4/6/2025
+    // Function to fetch user's cars from backend
+    const fetchUserCars = async () => {
+        if (!isAuthenticated) return null;
+
+        try {
+            setLoadingCars(true);
+            const response = await CarService.getUserCars();
+
+            if (response.success && response.cars && response.cars.length > 0) {
+                setUserCars(response.cars);
+
+                // Just use the first car instead of looking for a primary car
+                const firstCar = response.cars[0];
+
+                // Format car data for our application
+                const formattedCar = {
+                    plateNumber: firstCar.plateNumber,
+                    state: firstCar.stateProv,
+                    make: firstCar.make,
+                    model: firstCar.model,
+                    color: firstCar.color,
+                    bodyType: firstCar.bodyType,
+                    year: firstCar.year,
+                    carId: firstCar._id
+                };
+
+                return formattedCar;
+            }
+            return null;
+        } catch (error) {
+            console.error('Error fetching user cars:', error);
+            setCarError('Failed to load your vehicles');
+            return null;
+        } finally {
+            setLoadingCars(false);
+        }
+    };
 
     // Handle reservation request
-    const handleReserve = (lotId) => {
+    const handleReserve = async (lotId, permitType) => {
+        // Save selected permit type
+        setSelectedPermitType(permitType);
+
         if (!isAuthenticated) {
             // Save reservation data to sessionStorage before redirecting
             const reservationData = {
@@ -562,34 +621,209 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 endTime: endTime,
                 duration: duration,
                 selectedLocation: selectedLocation,
-                currentView: 'details'
+                currentView: 'details',
+                selectedPermitType: permitType
             };
             sessionStorage.setItem('pendingReservation', JSON.stringify(reservationData));
 
             // Redirect to login page
             navigate('/login', { state: { from: '/find-parking', reservationPending: true } });
         } else {
-            // If authenticated, proceed to car information form
-            console.log('Proceeding to car info for lot:', lotId);
-            setCurrentView('car-info');
+            // Always check for permit validation, regardless of the next step
+            await fetchUserPermits();
+
+            // Check if user has saved car info in backend
+            const userCar = await fetchUserCars();
+
+            if (userCar) {
+                // If they have car info, use it and skip to payment
+                setVehicleInfo(userCar);
+                setCurrentView('payment');
+            } else {
+                // If authenticated but no car info, proceed to car information form
+                setCurrentView('car-info');
+            }
         }
     };
 
-    // Handle car information submission
+    // Handle car information submission and move to payment step
     const handleCarInfoSubmit = (carData) => {
-        setVehicleInfo(carData);
+        console.log('Car information submitted:', carData);
+
+        // Normalize the vehicle info to ensure consistency with backend model
+        const normalizedCarData = {
+            ...carData,
+            // Handle state/stateProv conversion for consistency
+            stateProv: carData.stateProv || carData.state,
+        };
+
+        // If state was used instead of stateProv, remove it to avoid confusion
+        if (normalizedCarData.state && normalizedCarData.stateProv) {
+            delete normalizedCarData.state;
+        }
+
+        setVehicleInfo(normalizedCarData);
         setCurrentView('payment');
+
+        // If we've already fetched permits, use them for the payment view
+        if (!hasValidPermit && !validPermitDetails && isAuthenticated) {
+            fetchUserPermits();
+        }
+    };
+
+    // Function to check if permit type is compatible
+    const checkPermitTypeCompatibility = (permit, selectedType) => {
+        // First check if we have permit type IDs to compare
+        if (permit.permitTypeId && selectedType.id) {
+            // If we have IDs, use them for exact matching
+            if (permit.permitTypeId === selectedType.id) {
+                return true;
+            }
+        }
+
+        // Fall back to name-based matching
+        const permitType = permit.permitType || '';
+        // Normalize both types to lowercase for case-insensitive comparison
+        const normalizedPermitType = permitType.toLowerCase();
+        const normalizedSelectedType = (typeof selectedType === 'string' ? selectedType : selectedType.name || '').toLowerCase();
+
+        // Direct match
+        if (normalizedPermitType === normalizedSelectedType) {
+            return true;
+        }
+
+        // Also check permit name if available
+        if (permit.permitName && permit.permitName.toLowerCase().includes(normalizedSelectedType)) {
+            return true;
+        }
+
+        // Handle common variations
+        const studentVariations = ['student', 'commuter', 'resident', 'student permit', 'core permit'];
+        const facultyVariations = ['faculty', 'faculty/staff', 'staff', 'faculty permit'];
+        const visitorVariations = ['visitor', 'guest', 'visitor permit'];
+
+        // If permit is a student type and selected is any student variation
+        if (studentVariations.includes(normalizedPermitType) &&
+            (studentVariations.some(v => normalizedSelectedType.includes(v)))) {
+            return true;
+        }
+
+        // If permit is a faculty type and selected is any faculty variation
+        if (facultyVariations.includes(normalizedPermitType) &&
+            (facultyVariations.some(v => normalizedSelectedType.includes(v)))) {
+            return true;
+        }
+
+        // If permit is a visitor type and selected is any visitor variation
+        if (visitorVariations.includes(normalizedPermitType) &&
+            (visitorVariations.some(v => normalizedSelectedType.includes(v)))) {
+            return true;
+        }
+
+        return false;
+    };
+
+    // Function to fetch user permits and check if any match the selected lot
+    const fetchUserPermits = async () => {
+        if (!isAuthenticated || !selectedLot) return;
+
+        try {
+            const result = await PermitService.getUserPermits('active');
+
+            if (result.success) {
+                setExistingPermits(result.permits || []);
+
+                // Check if user has a valid permit for this lot type
+                const validPermit = result.permits.find(permit => {
+                    // Basic permit validity checks
+                    // Check if permit types are compatible - flexibly match common variations
+                    const isPermitTypeCompatible = checkPermitTypeCompatibility(permit, selectedPermitType);
+                    const isActive = permit.status === 'active';
+                    const isPaid = permit.paymentStatus === 'paid' || permit.paymentStatus === 'completed';
+
+                    // Check if permit is expired - compare only the date part (ignore time)
+                    // This makes the permit valid until the end of its expiration day
+                    const permitEndDate = new Date(permit.endDate);
+                    const today = new Date();
+
+                    // Reset time to midnight to compare only the date part
+                    permitEndDate.setHours(0, 0, 0, 0);
+                    today.setHours(0, 0, 0, 0);
+
+                    const isNotExpired = permitEndDate >= today;
+
+                    // Check if this permit is valid for the selected lot or has no lots specified
+                    const hasNoLots = !permit.lots || permit.lots.length === 0;
+                    const hasMatchingLot = permit.lots && permit.lots.some(lot => lot.lotId === selectedLot.id);
+
+                    return isPermitTypeCompatible && isActive && isPaid && isNotExpired && (hasNoLots || hasMatchingLot);
+                });
+
+                if (validPermit) {
+                    setHasValidPermit(true);
+                    setValidPermitDetails(validPermit);
+                } else {
+                    setHasValidPermit(false);
+                    setValidPermitDetails(null);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching permits:', error);
+        }
     };
 
     // Handle payment completion
-    const handlePaymentComplete = (paymentData) => {
+    const handlePaymentComplete = async (paymentData) => {
+        setIsLoading(true);
         setPaymentInfo(paymentData);
 
-        // Generate a fake reservation ID
-        setReservationId('RES' + Math.floor(Math.random() * 1000000));
+        try {
+            // Calculate total price based on lot rate type
+            const totalPrice = selectedLot.rateType === 'Hourly'
+                ? parseFloat(duration) * selectedLot.hourlyRate
+                : selectedLot.semesterRate;
 
-        // Show confirmation
-        setCurrentView('confirmation');
+            // Prepare reservation data
+            const reservationData = {
+                lotId: selectedLot.id,
+                startTime: `${date}T${startTime}:00`,
+                endTime: `${date}T${endTime}:00`,
+                permitType: selectedPermitType,
+                vehicleInfo: {
+                    ...vehicleInfo,
+                    plateNumber: vehicleInfo.plateNumber.toUpperCase()
+                },
+                paymentInfo: {
+                    ...paymentData,
+                    amount: totalPrice
+                },
+                // Add flag to indicate if user has valid permit
+                useExistingPermit: hasValidPermit,
+                existingPermitId: validPermitDetails ? validPermitDetails._id : null
+            };
+
+            // Send reservation to backend
+            const result = await ReservationService.createReservation(reservationData);
+
+            if (result.success) {
+                // Use real reservation ID from backend if available
+                setReservationId(result.data.reservationId || 'RES' + Math.floor(Math.random() * 1000000));
+                setError('');
+            } else {
+                setError(result.error || 'Failed to create reservation');
+                // Use a fake ID for demo purposes if backend call fails
+                setReservationId('RES' + Math.floor(Math.random() * 1000000));
+            }
+        } catch (err) {
+            console.error('Error creating reservation:', err);
+            setError('An unexpected error occurred while creating your reservation');
+            // Use a fake ID for demo purposes if there's an error
+            setReservationId('RES' + Math.floor(Math.random() * 1000000));
+        } finally {
+            setIsLoading(false);
+            // Show confirmation regardless of backend success (for demo)
+            setCurrentView('confirmation');
+        }
     };
 
     // Handle back button from car-info or payment views
@@ -608,6 +842,33 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
             setReservationId(null);
         }
     };
+
+    // Restore selected permit type from session storage when component loads
+    useEffect(() => {
+        const pendingReservation = sessionStorage.getItem('pendingReservation');
+        if (pendingReservation) {
+            try {
+                const reservationData = JSON.parse(pendingReservation);
+                if (reservationData.selectedPermitType) {
+                    setSelectedPermitType(reservationData.selectedPermitType);
+                }
+            } catch (error) {
+                console.error('Error parsing selected permit type from session storage:', error);
+            }
+        }
+    }, []);
+
+    // Fetch user's permits when directly entering the car-info or payment step without going through handleReserve
+    // This handles cases like browser refresh or direct navigation
+    useEffect(() => {
+        if (isAuthenticated &&
+            (currentView === 'car-info' || currentView === 'payment') &&
+            selectedLot &&
+            !hasValidPermit &&
+            !validPermitDetails) {
+            fetchUserPermits();
+        }
+    }, [isAuthenticated, currentView, selectedLot, hasValidPermit, validPermitDetails]);
 
     // Add a function to render the error message
     const renderError = () => {
@@ -714,7 +975,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                                     setFormErrors(prev => ({ ...prev, date: '' }));
                                                 }
                                             }}
-                                            min={new Date().toISOString().split('T')[0]} // Set min date to today
+                                            min={new Date().toLocaleDateString('en-CA')} // Use locale-aware date string instead of ISO
                                             className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
                                                 ? 'bg-gray-800 text-white border-gray-700 focus:ring-red-600 [color-scheme:dark]'
                                                 : 'bg-gray-100 text-gray-900 border-gray-300 focus:ring-red-500 [color-scheme:light]'
@@ -948,7 +1209,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                 darkMode={darkMode}
                                 lot={selectedLot}
                                 onBackClick={handleBackClick}
-                                onReserve={() => handleReserve(selectedLot.id)}
+                                onReserve={handleReserve}
                                 startDateTime={formatDateTime(date, startTime)}
                                 endDateTime={formatDateTime(date, endTime)}
                                 duration={duration}
@@ -964,8 +1225,10 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                         <CarInfoForm
                             darkMode={darkMode}
                             lotName={selectedLot?.name}
+                            permitType={selectedPermitType}
                             onBackClick={handlePaymentBackClick}
                             onContinue={handleCarInfoSubmit}
+                            isAuthenticated={isAuthenticated}
                         />
                     </div>
                 );
@@ -976,10 +1239,14 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                         <PaymentPage
                             darkMode={darkMode}
                             lotName={selectedLot?.name}
-                            price={selectedLot?.hourlyRate}
+                            price={selectedLot?.rateType === 'Hourly'
+                                ? `$${(parseFloat(duration) * selectedLot.hourlyRate).toFixed(2)}`
+                                : `$${selectedLot.semesterRate.toFixed(2)}`}
                             vehicleInfo={vehicleInfo}
                             onBackClick={handlePaymentBackClick}
                             onCompletePayment={handlePaymentComplete}
+                            hasValidPermit={hasValidPermit}
+                            validPermitDetails={validPermitDetails}
                         />
                     </div>
                 );
@@ -1049,11 +1316,13 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                     <p className={`text-sm mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                                         Payment
                                     </p>
-                                    <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                    <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                                         {paymentInfo?.paymentMethod === 'card' ? 'Credit Card' : 'SOLAR Account'}
                                     </p>
                                     <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                        {selectedLot?.hourlyRate} • Transaction #{paymentInfo?.transactionId}
+                                        {selectedLot?.rateType === 'Hourly'
+                                            ? `$${(parseFloat(duration) * selectedLot.hourlyRate).toFixed(2)}`
+                                            : `$${selectedLot.semesterRate.toFixed(2)}`} • Transaction #{paymentInfo?.transactionId}
                                     </p>
                                 </div>
                             </div>
