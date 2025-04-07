@@ -18,6 +18,17 @@ try {
     const permitTypeRoutes = require('./routes/permit_types');
     const permitRoutes = require('./routes/permits');
     const reservationRoutes = require('./routes/reservations');
+    /*
+    // Import models to ensure they are registered
+    require('./models/users');
+    require('./models/lot');
+    require('./models/car');
+    require('./models/reservation');
+    require('./models/tickets');
+    require('./models/permit_types');
+    require('./models/credit_card');
+    require('./models/revenue_statistics');
+    */
 
     const app = express();
     const PORT = process.env.PORT || 5000;
@@ -52,12 +63,18 @@ try {
             }
         },
         credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization']
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+        preflightContinue: false,
+        optionsSuccessStatus: 204
     };
 
     // Middleware
     app.use(cors(corsOptions));
+
+    // Add explicit options handling for preflight requests
+    app.options('*', cors(corsOptions));
+
     app.use(express.json());
 
     // Request logger middleware

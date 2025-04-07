@@ -35,7 +35,8 @@ router.get('/', verifyToken, async (req, res) => {
     const reservations = await Reservation.find(query)
       .populate('user', 'firstName lastName email')
       .populate('lotId', 'name')
-      .populate('vehicleInfo', 'make model year licensePlate')
+      // Temporarily comment out the vehicleInfo populate to get the page working
+      // .populate('vehicleInfo', 'make model year plateNumber')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -60,7 +61,8 @@ router.get('/:id', verifyToken, async (req, res) => {
     const reservation = await Reservation.findById(req.params.id)
       .populate('user', 'firstName lastName email')
       .populate('lotId', 'name')
-      .populate('vehicleInfo', 'make model year licensePlate');
+      // temporarily comment out the vehicleInfo populate to get the page working
+      // .populate('vehicleInfo', 'make model year plateNumber');
 
     if (!reservation) {
       return res.status(404).json({ message: 'Reservation not found' });

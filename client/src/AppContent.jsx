@@ -26,6 +26,7 @@ import PastReservations from './pages/PastReservations.jsx';
 import PastCitations from './pages/PastCitations.jsx';
 import PastPermits from './pages/PastPermits.jsx';
 import ManageTickets from './pages/admin/ManageTickets';
+import ManageReservations from './pages/admin/ManageReservations.jsx';
 import { AuthService, UserService } from './utils/api.js';
 
 // Protected route component
@@ -674,6 +675,33 @@ const AppContent = () => {
                 />
                 <main className="flex-grow">
                   <ManagePermitTypes
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/reservations"
+          element={
+            <ProtectedRoute
+              isAuthenticated={isAuthenticated}
+              requiredUserType="admin"
+              user={user}
+            >
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <ManageReservations
                     darkMode={darkMode}
                     isAuthenticated={isAuthenticated}
                   />

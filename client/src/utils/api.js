@@ -2,11 +2,7 @@ import axios from 'axios';
 
 // Define potential server URLs to try (in order of preference)
 const SERVER_URLS = [
-    'http://localhost:8080/api',  // Primary port
-    'http://localhost:3000/api',  // Fallback port 1
-    'http://localhost:5000/api',  // Fallback port 2 (default Express port)
-    'http://127.0.0.1:8080/api',  // Try with IP instead of localhost
-    'http://127.0.0.1:3000/api'   // Another IP-based fallback
+    'http://localhost:8080/api'  // Primary port
 ];
 
 // Initialize API with first URL
@@ -237,6 +233,27 @@ export const AdminService = {
             return {
                 success: false,
                 error: error.response?.data?.message || 'Failed to fetch users'
+            };
+        }
+    },
+
+    // Get all reservations with filtering and pagination
+    getAllReservations: async (filters = {}, page = 1, limit = 10) => {
+        try {
+            const { status, userId, lotId, search } = filters;
+            let queryString = `page=${page}&limit=${limit}`;
+
+            if (status) queryString += `&status=${status}`;
+            if (userId) queryString += `&userId=${userId}`;
+            if (lotId) queryString += `&lotId=${lotId}`;
+            if (search) queryString += `&search=${encodeURIComponent(search)}`;
+
+            const response = await API.get(`/reservations?${queryString}`);
+            return { success: true, data: response.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch reservations'
             };
         }
     },

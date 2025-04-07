@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
 const CreditCardSchema = new mongoose.Schema({
-    stripeCustomerId: { type: Schema._id, required: true },
+    stripeCustomerId: { type: mongoose.Schema.Types.ObjectId, required: true },
     stripePaymentMethodId: { type: String, required: true },
     email: { type: String, required: true },
     // Optional non-sensitive metadata
