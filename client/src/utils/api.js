@@ -1,7 +1,16 @@
+// TP: this .js file's code was manipulated, optimized, and contributed to by ChatGPT (after the initial was written by Students via Pair/Trio/Quartet Programming) to provide clarity on bugs, modularize, and optimize/provide better solutions during the coding process. 
+// It was prompted to take the initial iteration/changes and modify/optimize it to adapt for more concise techniques to achieve the desired functionalities.
+// It was also prompted to explain all changes in detail (completely studied/understood by the student) before the AI's optimized/modified version of the student changes/written code was added to the code file. 
+// Additionally, ChatGPT (with project and code context) modified the initial/previous iteration of code to be maximized for code readability as well as descriptive comments (for Instructor understanding). 
+// It can be credited that AI played a crucial role in heavily contributing/modifying/optimizing this entire file's code (after the initial changes were written by Student). 
+// Commits and pushes are executed after the final version have been made for the specific implementation changes during that coding session. 
+
 import axios from 'axios';
+import { API_URL } from './env';
 
 // Define potential server URLs to try (in order of preference)
 const SERVER_URLS = [
+    API_URL,                      // Primary URL from environment
     'http://localhost:8080/api',  // Primary port
     'http://localhost:3000/api',  // Fallback port 1
     'http://localhost:5000/api',  // Fallback port 2 (default Express port)
@@ -10,8 +19,18 @@ const SERVER_URLS = [
 ];
 
 // Initialize API with first URL
+const API_BASE_URL = SERVER_URLS[0];
+
+// Helper function to handle API errors
+const handleApiError = (error) => {
+    console.error('API Response Error:', error.response?.data || error);
+    return error.response?.data?.message || error.message || 'An unexpected error occurred';
+};
+
+// Configure Axios to use the base URL and include credentials
 const API = axios.create({
-    baseURL: SERVER_URLS[0]
+    baseURL: API_BASE_URL,
+    withCredentials: true
 });
 
 // Try connecting to alternative URLs if the main one fails
@@ -216,6 +235,19 @@ export const UserService = {
                 error: error.response?.data?.message || 'Failed to fetch activity history'
             };
         }
+    },
+
+    // Get user billing history
+    getBillingHistory: async () => {
+        try {
+            const response = await API.get('/user/billing-history');
+            return { success: true, data: response.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch billing history'
+            };
+        }
     }
 };
 
@@ -241,14 +273,41 @@ export const AdminService = {
         }
     },
 
-    // Get active reservations count
-    getActiveReservationsCount: async () => {
+    // Get all reservations (admin only) with filtering and pagination
+    getAllReservations: async (filters = {}, page = 1, limit = 10) => {
         try {
-            const response = await API.get('/reservations/active-count');
-            return { success: true, count: response.data.count };
+            const { status, startDate, endDate, userId, search } = filters;
+            let queryString = `page=${page}&limit=${limit}`;
+
+            if (status) queryString += `&status=${status}`;
+            if (startDate) queryString += `&startDate=${startDate}`;
+            if (endDate) queryString += `&endDate=${endDate}`;
+            if (userId) queryString += `&userId=${userId}`;
+            if (search) queryString += `&search=${encodeURIComponent(search)}`;
+
+            const response = await API.get(`/admin/reservations?${queryString}`);
+            return { success: true, data: response.data };
         } catch (error) {
             return {
                 success: false,
+                error: error.response?.data?.message || 'Failed to fetch reservations'
+            };
+        }
+    },
+
+    // Get active reservations count
+    getActiveReservationsCount: async () => {
+        try {
+            const response = await API.get('/admin/reservations/count?status=active');
+            return {
+                success: true,
+                count: response.data.count || 0
+            };
+        } catch (error) {
+            console.error('Error fetching active reservations count:', error);
+            return {
+                success: false,
+                count: 0,
                 error: error.response?.data?.message || 'Failed to fetch active reservations count'
             };
         }
@@ -263,19 +322,6 @@ export const AdminService = {
             return {
                 success: false,
                 error: error.response?.data?.message || 'Failed to fetch user'
-            };
-        }
-    },
-
-    // Get revenue statistics
-    getRevenueStatistics: async (timeRange = 'monthly') => {
-        try {
-            const response = await API.get(`/admin/statistics/revenue?timeRange=${timeRange}`);
-            return { success: true, data: response.data };
-        } catch (error) {
-            return {
-                success: false,
-                error: error.response?.data?.message || 'Failed to fetch revenue statistics'
             };
         }
     },
@@ -341,6 +387,77 @@ export const AdminService = {
             return {
                 success: false,
                 error: error.response?.data?.message || 'Failed to approve user'
+            };
+        }
+    },
+
+    // Get revenue statistics
+    getRevenueStatistics: async () => {
+        try {
+            const response = await API.get('/statistics/revenue');
+            return { success: true, data: response.data };
+        } catch (error) {
+            console.error('Revenue statistics endpoint failed:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch revenue statistics',
+                data: []
+            };
+        }
+    },
+
+    // Download revenue statistics as PDF
+    downloadRevenueReportPDF: async (months = 12) => {
+        try {
+            // Use axios directly to get the response as a blob
+            const response = await API.get(`/statistics/revenue/report/pdf?months=${months}`, {
+                responseType: 'blob'
+            });
+
+            // Create a download link and trigger download
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().split('T')[0];
+            link.href = url;
+            link.setAttribute('download', `revenue_report_${timestamp}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+            return { success: true };
+        } catch (error) {
+            console.error('Failed to download PDF report:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to download PDF report'
+            };
+        }
+    },
+
+    // Download revenue statistics as CSV
+    downloadRevenueReportCSV: async (months = 12) => {
+        try {
+            // Use axios directly to get the response as a blob
+            const response = await API.get(`/statistics/revenue/report/csv?months=${months}`, {
+                responseType: 'blob'
+            });
+
+            // Create a download link and trigger download
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().split('T')[0];
+            link.href = url;
+            link.setAttribute('download', `revenue_report_${timestamp}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+            return { success: true };
+        } catch (error) {
+            console.error('Failed to download CSV report:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to download CSV report'
             };
         }
     },
@@ -419,13 +536,22 @@ export const AdminService = {
 
         // Delete a permit type
         delete: async (permitTypeId) => {
-            try {
-                const response = await API.delete(`/admin/permit-types/${permitTypeId}`);
-                return { success: true, data: response.data };
-            } catch (error) {
+            if (!permitTypeId) {
+                console.error('Attempt to delete permit type with missing ID');
                 return {
                     success: false,
-                    error: error.response?.data?.message || 'Failed to delete permit type'
+                    error: 'Permit type ID is required'
+                };
+            }
+            try {
+                console.log('Deleting permit type with ID:', permitTypeId);
+                await API.delete(`/admin/permit-types/${permitTypeId}`);
+                return { success: true };
+            } catch (error) {
+                console.error('Error deleting permit type:', error.response?.data || error.message);
+                return {
+                    success: false,
+                    error: error.response?.data?.message || 'Failed to delete permit type',
                 };
             }
         }
@@ -457,8 +583,27 @@ export const TicketService = {
     getUserTickets: async () => {
         try {
             const response = await API.get('/user/tickets');
-            return { success: true, data: response.data };
+            console.log('Raw ticket response:', response);
+
+            // Handle different response formats
+            // Server might return array directly or wrapped in data object
+            let ticketsData;
+            if (Array.isArray(response.data)) {
+                ticketsData = response.data;
+            } else if (response.data && response.data.tickets) {
+                ticketsData = response.data.tickets;
+            } else if (response.data) {
+                ticketsData = Array.isArray(response.data) ? response.data : [];
+            } else {
+                ticketsData = [];
+            }
+
+            return {
+                success: true,
+                data: ticketsData
+            };
         } catch (error) {
+            console.error('Error fetching tickets:', error);
             return {
                 success: false,
                 error: error.response?.data?.message || 'Failed to fetch your tickets'
@@ -467,10 +612,10 @@ export const TicketService = {
     },
 
     // Pay a ticket
-    payTicket: async (ticketId) => {
+    payTicket: async (ticketId, paymentData = {}) => {
         try {
-            const response = await API.post(`/user/tickets/${ticketId}/pay`);
-            return { success: true, data: response.data };
+            const response = await API.post(`/user/tickets/${ticketId}/pay`, paymentData);
+            return response.data;
         } catch (error) {
             return {
                 success: false,
@@ -537,49 +682,72 @@ export const PermitTypeService = {
     // used by ManagePermitTypes
     getPermitTypes: async (queryParams = {}) => {
         try {
-          const response = await API.get('/permit-types', { params: queryParams });
-          return { success: true, data: response.data };
+            const response = await API.get('/permit-types', { params: queryParams });
+            return { success: true, data: response.data };
         } catch (error) {
-          return {
-            success: false,
-            error: error.response?.data?.message || 'Failed to fetch permit types',
-          };
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch permit types',
+            };
         }
     },
-    
+
+    // Get all publicly available permit types (no admin authorization required)
+    getAllPublicPermitTypes: async () => {
+        try {
+            const response = await API.get('/permit-types/public');
+            return { success: true, data: response.data };
+        } catch (error) {
+            console.error('Error fetching public permit types:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch permit types',
+            };
+        }
+    },
+
     createPermitType: async (permitData) => {
         try {
-          const response = await API.post('/permit-types', permitData);
-          return { success: true, data: response.data.permitType };
+            const response = await API.post('/permit-types', permitData);
+            return { success: true, data: response.data.permitType };
         } catch (error) {
-          return {
-            success: false,
-            error: error.response?.data?.message || 'Failed to create permit type',
-          };
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to create permit type',
+            };
         }
     },
-    
+
     updatePermitType: async (permitId, permitData) => {
         try {
-          const response = await API.put(`/permit-types/${permitId}`, permitData);
-          return { success: true, data: response.data.permitType };
+            const response = await API.put(`/permit-types/${permitId}`, permitData);
+            return { success: true, data: response.data.permitType };
         } catch (error) {
-          return {
-            success: false,
-            error: error.response?.data?.message || 'Failed to update permit type',
-          };
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to update permit type',
+            };
         }
     },
-    
+
     deletePermitType: async (permitId) => {
+        if (!permitId) {
+            console.error('Attempt to delete permit type with missing ID');
+            return {
+                success: false,
+                error: 'Permit type ID is required'
+            };
+        }
         try {
-          await API.delete(`/permit-types/${permitId}`);
-          return { success: true };
+            console.log('Deleting permit type with ID:', permitId);
+            await API.delete(`/permit-types/${permitId}`);
+            return { success: true };
         } catch (error) {
-          return {
-            success: false,
-            error: error.response?.data?.message || 'Failed to delete permit type',
-          };
+            console.error('Error deleting permit type:', error.response?.data || error.message);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to delete permit type',
+            };
         }
     },
     // Get all permit types with pagination and filtering
@@ -639,16 +807,17 @@ export const PermitTypeService = {
         }
     },
 
-    // Delete a permit type
-    delete: async (permitTypeId) => {
+    // Delete a permit
+    delete: async (permitId) => {
+        if (!permitId) {
+            throw new Error('Permit ID is required');
+        }
         try {
-            const response = await API.delete(`/admin/permit-types/${permitTypeId}`);
-            return { success: true, data: response.data };
+            const response = await API.delete(`/permits/${permitId}`);
+            return response.data;
         } catch (error) {
-            return {
-                success: false,
-                error: error.response?.data?.message || 'Failed to delete permit type'
-            };
+            console.error('Error deleting permit:', error);
+            throw new Error(error.response?.data?.message || error.message || 'Failed to delete permit');
         }
     }
 };
@@ -658,13 +827,13 @@ export const LotService = {
     // used by ManagePermitTypes
     getLots: async () => {
         try {
-          const response = await API.get('/lot');
-          return { success: true, data: response.data };
+            const response = await API.get('/lot');
+            return { success: true, data: response.data };
         } catch (error) {
-          return {
-            success: false,
-            error: error.response?.data?.message || 'Failed to fetch lots',
-          };
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch lots',
+            };
         }
     },
 
@@ -797,14 +966,498 @@ export const LotService = {
     }
 };
 
-// Notification Service
-export const NotificationService = {
-    // Get user notifications
-    getNotifications: async () => {
+// Reservation Service for booking and managing parking spots
+export const ReservationService = {
+    // Create a new reservation
+    createReservation: async (reservationData) => {
         try {
-            const response = await API.get('/notifications');
+            const response = await API.post('/reservations', reservationData);
             return { success: true, data: response.data };
         } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to create reservation'
+            };
+        }
+    },
+
+    // Get all reservations for the current user
+    getUserReservations: async (filters = {}) => {
+        try {
+            let queryString = '';
+            if (Object.keys(filters).length > 0) {
+                queryString = '?' + new URLSearchParams(filters).toString();
+            }
+
+            console.log(`Fetching reservations with URL: ${API.defaults.baseURL}/reservations${queryString}`);
+            console.log('Auth token present:', !!localStorage.getItem('auth_token'));
+            console.log('Using filters:', filters);
+
+            const response = await API.get(`/reservations${queryString}`);
+            console.log('Reservations response data:', response.data);
+
+            // Additional diagnostic logging
+            if (response.data && response.data.data && response.data.data.reservations) {
+                console.log('Number of reservations:', response.data.data.reservations.length);
+                response.data.data.reservations.forEach((res, idx) => {
+                    console.log(`Reservation ${idx + 1}:`, {
+                        id: res.reservationId || res._id,
+                        status: res.status,
+                        startTime: res.startTime,
+                        endTime: res.endTime,
+                        lotName: res.lotId?.name || 'Unknown'
+                    });
+                });
+            } else {
+                console.log('Reservation data missing or in unexpected format');
+            }
+
+            return { success: true, data: response.data };
+        } catch (error) {
+            console.error('Error fetching reservations:', error);
+            console.error('Response details:', error.response?.data);
+            console.error('Request details:', error.request);
+            return {
+                success: false,
+                error: error.response?.data?.message || error.message || 'Failed to fetch reservations'
+            };
+        }
+    },
+
+    // Get a specific reservation by ID
+    getReservationById: async (reservationId) => {
+        try {
+            const response = await API.get(`/reservations/${reservationId}`);
+            return { success: true, data: response.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch reservation'
+            };
+        }
+    },
+
+    // Update a reservation (extend time, change status, etc.)
+    updateReservation: async (reservationId, updateData) => {
+        try {
+            const response = await API.put(`/reservations/${reservationId}`, updateData);
+            return { success: true, data: response.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to update reservation'
+            };
+        }
+    },
+
+    // Cancel a reservation
+    cancelReservation: async (reservationId, reason = '') => {
+        try {
+            const response = await API.post(`/reservations/${reservationId}/cancel`, { reason });
+
+            // Log refund information if available
+            if (response.data.data && response.data.data.refund) {
+                console.log('Refund processed:', response.data.data.refund);
+            }
+
+            return {
+                success: true,
+                data: response.data.data,
+                message: response.data.message
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to cancel reservation'
+            };
+        }
+    },
+
+    // Extend a reservation's time
+    extendReservation: async (reservationId, additionalHours, paymentMethodId = null, isMetered = false) => {
+        try {
+            const payload = {
+                additionalHours,
+                isMetered
+            };
+
+            // Add payment method if provided
+            if (paymentMethodId) {
+                payload.paymentMethodId = paymentMethodId;
+            }
+
+            const response = await API.post(`/reservations/${reservationId}/extend`, payload);
+            return { success: true, data: response.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to extend reservation'
+            };
+        }
+    }
+};
+
+// Permit Service for managing permits
+export const PermitService = {
+    getAll: async (filters = {}, page = 1, limit = 10) => {
+        try {
+            // Build query parameters
+            let queryString = `page=${page}&limit=${limit}`;
+
+            if (filters.status) queryString += `&status=${filters.status}`;
+            if (filters.permitType) queryString += `&permitType=${filters.permitType}`;
+            if (filters.paymentStatus) queryString += `&paymentStatus=${filters.paymentStatus}`;
+            if (filters.search) queryString += `&search=${encodeURIComponent(filters.search)}`;
+
+            const response = await API.get(`/permits?${queryString}`);
+
+            return {
+                success: true,
+                permits: response.data.permits,
+                pagination: response.data.pagination
+            };
+        } catch (error) {
+            console.error('Error in PermitService.getAll:', error);
+            return {
+                success: false,
+                error: 'An unexpected error occurred while fetching permits'
+            };
+        }
+    },
+
+    getActiveCount: async () => {
+        try {
+            // We only need to know if permits exist with status=active, so limit=1 is sufficient
+            const response = await API.get(`/permits?status=active&limit=1`);
+
+            return {
+                success: true,
+                count: response.data.pagination.total || 0
+            };
+        } catch (error) {
+            console.error('Error in PermitService.getActiveCount:', error);
+            return {
+                success: false,
+                count: 0,
+                error: 'An unexpected error occurred while fetching active permits count'
+            };
+        }
+    },
+
+    // Get a single permit by ID
+    getById: async (permitId) => {
+        try {
+            const response = await API.get(`/permits/${permitId}`);
+            return { success: true, data: response.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch permit'
+            };
+        }
+    },
+
+    // Update a permit
+    update: async (permitId, permitData) => {
+        try {
+            const response = await API.put(`/permits/${permitId}`, permitData);
+            return { success: true, data: response.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to update permit'
+            };
+        }
+    },
+
+    // Toggle permit status (active/inactive)
+    toggleStatus: async (permitId, newStatus) => {
+        if (!permitId) {
+            throw new Error('Permit ID is required');
+        }
+        try {
+            const response = await API.put(`/permits/${permitId}/toggle-status`, { status: newStatus });
+            return response.data;
+        } catch (error) {
+            throw handleApiError(error);
+        }
+    },
+
+    // Update payment status
+    updatePaymentStatus: async (permitId, newPaymentStatus) => {
+        if (!permitId) {
+            throw new Error('Permit ID is required');
+        }
+        try {
+            const response = await API.put(`/permits/${permitId}/payment-status`, { paymentStatus: newPaymentStatus });
+            return response.data;
+        } catch (error) {
+            throw handleApiError(error);
+        }
+    },
+
+    // Delete a permit
+    delete: async (permitId) => {
+        if (!permitId) {
+            throw new Error('Permit ID is required');
+        }
+        try {
+            const response = await API.delete(`/permits/${permitId}`);
+            return response.data;
+        } catch (error) {
+            console.error('Error deleting permit:', error);
+            throw new Error(error.response?.data?.message || error.message || 'Failed to delete permit');
+        }
+    },
+
+    // Get permits for the current user
+    getUserPermits: async (status = 'active') => {
+        try {
+            console.log('Fetching user permits');
+
+            // Get the current user from localStorage
+            const user = AuthService.getCurrentUser();
+            if (!user) {
+                console.error('No user found in localStorage');
+                return {
+                    success: false,
+                    error: 'User not authenticated'
+                };
+            }
+
+            console.log('Fetching permits for user ID:', user.id || user._id);
+
+            // Use the standard permits endpoint with a filter for the current user
+            const response = await API.get(`/permits?status=${status}&userId=${user.id || user._id}`);
+            console.log('User permits response:', response.data);
+
+            return {
+                success: true,
+                permits: response.data.permits || [],
+                pagination: response.data.pagination
+            };
+        } catch (error) {
+            console.error('Error fetching user permits:', error);
+            console.error('Response details:', error.response?.data);
+            console.error('Request details:', error.request);
+            return {
+                success: false,
+                error: error.response?.data?.message || error.message || 'Failed to fetch user permits'
+            };
+        }
+    },
+
+    // Get past permits for the current user
+    getUserPastPermits: async () => {
+        try {
+            console.log('Fetching user past permits');
+
+            // Get the current user from localStorage
+            const user = AuthService.getCurrentUser();
+            if (!user) {
+                console.error('No user found in localStorage');
+                return {
+                    success: false,
+                    error: 'User not authenticated'
+                };
+            }
+
+            const userId = user.id || user._id;
+
+            // Use the standard permits endpoint but filter for inactive/expired permits
+            // We're querying permits with specific statuses (inactive, expired) or those that have ended
+            const response = await API.get(`/permits?userId=${userId}`);
+
+            // Filter on client side to get past permits (inactive or endDate in the past)
+            const allPermits = response.data.permits || [];
+            const now = new Date();
+            const pastPermits = allPermits.filter(permit => {
+                const isExpired = new Date(permit.endDate) < now;
+                return permit.status === 'inactive' || isExpired;
+            });
+
+            // Update status to "Expired" for permits that have passed their end date
+            const updatedPastPermits = pastPermits.map(permit => {
+                if (new Date(permit.endDate) < now && permit.status === 'active') {
+                    return { ...permit, status: 'expired' };
+                }
+                return permit;
+            });
+
+            console.log('User past permits:', updatedPastPermits);
+
+            return {
+                success: true,
+                permits: updatedPastPermits
+            };
+        } catch (error) {
+            console.error('Error fetching user past permits:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || error.message || 'Failed to fetch past permits'
+            };
+        }
+    }
+};
+
+// Car Service for managing user's vehicles
+export const CarService = {
+    // Get all cars for the current user
+    getUserCars: async () => {
+        try {
+            const response = await API.get('/cars');
+            return {
+                success: true,
+                cars: response.data.cars
+            };
+        } catch (error) {
+            console.error('Error fetching user cars:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || error.message || 'Failed to fetch cars'
+            };
+        }
+    },
+
+    // Save a new car
+    saveCar: async (carData) => {
+        try {
+            // Remove isPrimary if it exists in carData
+            const { isPrimary: _, ...carDataWithoutPrimary } = carData;
+
+            const response = await API.post('/cars', carDataWithoutPrimary);
+            return {
+                success: true,
+                car: response.data.data.car
+            };
+        } catch (error) {
+            console.error('Error saving car:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || error.message || 'Failed to save car'
+            };
+        }
+    },
+
+    // Update an existing car
+    updateCar: async (carId, carData) => {
+        try {
+            // Remove isPrimary if it exists in carData
+            const { isPrimary: _, ...carDataWithoutPrimary } = carData;
+
+            const response = await API.put(`/cars/${carId}`, carDataWithoutPrimary);
+            return {
+                success: true,
+                car: response.data.data.car
+            };
+        } catch (error) {
+            console.error('Error updating car:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || error.message || 'Failed to update car'
+            };
+        }
+    },
+
+    // Delete a car
+    deleteCar: async (carId) => {
+        try {
+            await API.delete(`/cars/${carId}`);
+            return {
+                success: true
+            };
+        } catch (error) {
+            console.error('Error deleting car:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || error.message || 'Failed to delete car'
+            };
+        }
+    }
+};
+
+// Payment Method Service for managing saved payment methods
+export const PaymentMethodService = {
+    // Get all saved payment methods for the current user
+    getSavedPaymentMethods: async () => {
+        try {
+            const response = await API.get('/user/payment-methods');
+            return {
+                success: true,
+                paymentMethods: response.data.paymentMethods || []
+            };
+        } catch (error) {
+            console.error('Error fetching saved payment methods:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || error.message || 'Failed to fetch payment methods'
+            };
+        }
+    },
+
+    // Save a payment method for future use
+    savePaymentMethod: async (paymentMethodId, isDefault = false) => {
+        try {
+            const response = await API.post('/user/payment-methods', {
+                paymentMethodId,
+                isDefault
+            });
+            return {
+                success: true,
+                paymentMethod: response.data.paymentMethod
+            };
+        } catch (error) {
+            console.error('Error saving payment method:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || error.message || 'Failed to save payment method'
+            };
+        }
+    },
+
+    // Delete a saved payment method
+    deletePaymentMethod: async (paymentMethodId) => {
+        try {
+            await API.delete(`/user/payment-methods/${paymentMethodId}`);
+            return {
+                success: true
+            };
+        } catch (error) {
+            console.error('Error deleting payment method:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || error.message || 'Failed to delete payment method'
+            };
+        }
+    },
+
+    // Set a payment method as default
+    setDefaultPaymentMethod: async (paymentMethodId) => {
+        try {
+            const response = await API.put(`/user/payment-methods/${paymentMethodId}/default`);
+            return {
+                success: true,
+                paymentMethod: response.data.paymentMethod
+            };
+        } catch (error) {
+            console.error('Error setting default payment method:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || error.message || 'Failed to set default payment method'
+            };
+        }
+    }
+};
+
+// Notification Service for user notifications
+export const NotificationService = {
+    // Get user notifications
+    getNotifications: async (limit = 10, unreadOnly = false, skip = 0) => {
+        try {
+            const response = await API.get(`/user/notifications?limit=${limit}&unreadOnly=${unreadOnly}&skip=${skip}`);
+            return { success: true, data: response.data };
+        } catch (error) {
+            console.error('Error fetching notifications:', error);
             return {
                 success: false,
                 error: error.response?.data?.message || 'Failed to fetch notifications'
@@ -815,151 +1468,41 @@ export const NotificationService = {
     // Mark notification as read
     markAsRead: async (notificationId) => {
         try {
-            const response = await API.put(`/notifications/${notificationId}/read`);
+            const response = await API.put(`/user/notifications/${notificationId}/read`);
             return { success: true, data: response.data };
         } catch (error) {
+            console.error('Error marking notification as read:', error);
             return {
                 success: false,
                 error: error.response?.data?.message || 'Failed to mark notification as read'
             };
         }
-    }
-};
+    },
 
-// Permit Service
-export const PermitService = {
-    // Get user permits
-    getUserPermits: async () => {
+    // Mark all notifications as read
+    markAllAsRead: async () => {
         try {
-            const response = await API.get('/permits/user');
+            const response = await API.put('/user/notifications/read-all');
             return { success: true, data: response.data };
         } catch (error) {
+            console.error('Error marking all notifications as read:', error);
             return {
                 success: false,
-                error: error.response?.data?.message || 'Failed to fetch permits'
+                error: error.response?.data?.message || 'Failed to mark all notifications as read'
             };
         }
     },
 
-    // Get active permits count
-    getActiveCount: async () => {
+    // Delete a notification
+    deleteNotification: async (notificationId) => {
         try {
-            const response = await API.get('/permits/active-count');
-            return { success: true, count: response.data.count };
-        } catch (error) {
-            return {
-                success: false,
-                error: error.response?.data?.message || 'Failed to fetch active permits count'
-            };
-        }
-    },
-
-    // Purchase a permit
-    purchasePermit: async (permitData) => {
-        try {
-            const response = await API.post('/permits/purchase', permitData);
+            const response = await API.delete(`/user/notifications/${notificationId}`);
             return { success: true, data: response.data };
         } catch (error) {
+            console.error('Error deleting notification:', error);
             return {
                 success: false,
-                error: error.response?.data?.message || 'Failed to purchase permit'
-            };
-        }
-    }
-};
-
-// Car Service
-export const CarService = {
-    // Get user's cars
-    getUserCars: async () => {
-        try {
-            const response = await API.get('/cars/user');
-            return { success: true, data: response.data };
-        } catch (error) {
-            return {
-                success: false,
-                error: error.response?.data?.message || 'Failed to fetch cars'
-            };
-        }
-    },
-
-    // Add a new car
-    addCar: async (carData) => {
-        try {
-            const response = await API.post('/cars', carData);
-            return { success: true, data: response.data };
-        } catch (error) {
-            return {
-                success: false,
-                error: error.response?.data?.message || 'Failed to add car'
-            };
-        }
-    },
-
-    // Update car information
-    updateCar: async (carId, carData) => {
-        try {
-            const response = await API.put(`/cars/${carId}`, carData);
-            return { success: true, data: response.data };
-        } catch (error) {
-            return {
-                success: false,
-                error: error.response?.data?.message || 'Failed to update car'
-            };
-        }
-    },
-
-    // Delete a car
-    deleteCar: async (carId) => {
-        try {
-            const response = await API.delete(`/cars/${carId}`);
-            return { success: true, data: response.data };
-        } catch (error) {
-            return {
-                success: false,
-                error: error.response?.data?.message || 'Failed to delete car'
-            };
-        }
-    }
-};
-
-// Payment Method Service
-export const PaymentMethodService = {
-    // Get user's payment methods
-    getPaymentMethods: async () => {
-        try {
-            const response = await API.get('/payment-methods');
-            return { success: true, data: response.data };
-        } catch (error) {
-            return {
-                success: false,
-                error: error.response?.data?.message || 'Failed to fetch payment methods'
-            };
-        }
-    },
-
-    // Add a new payment method
-    addPaymentMethod: async (paymentMethodData) => {
-        try {
-            const response = await API.post('/payment-methods', paymentMethodData);
-            return { success: true, data: response.data };
-        } catch (error) {
-            return {
-                success: false,
-                error: error.response?.data?.message || 'Failed to add payment method'
-            };
-        }
-    },
-
-    // Delete a payment method
-    deletePaymentMethod: async (paymentMethodId) => {
-        try {
-            const response = await API.delete(`/payment-methods/${paymentMethodId}`);
-            return { success: true, data: response.data };
-        } catch (error) {
-            return {
-                success: false,
-                error: error.response?.data?.message || 'Failed to delete payment method'
+                error: error.response?.data?.message || 'Failed to delete notification'
             };
         }
     }
