@@ -1,3 +1,5 @@
+// TP: ChatGPT was prompted to add descriptive comments to code to improve understanding and readability. 
+
 // Don't need to import process for Vite
 /**
  * Environment variable utility for the application
@@ -24,7 +26,8 @@ const getEnv = (key, defaultValue = '') => {
 // Export common environment variables used in the app
 // Using direct access to Vite environment variables to ensure we have the token
 export const MAPBOX_TOKEN = import.meta.env.VITE_REACT_APP_MAPBOX_TOKEN || '';
-export const API_URL = getEnv('REACT_APP_API_URL', 'http://localhost:5000/api');
+// change made 4/6/2025 for API_URL 
+export const API_URL = import.meta.env.VITE_REACT_APP_API_URL || 'http://localhost:8080/api';
 
 // Log token for debugging (truncated for security)
 if (MAPBOX_TOKEN) {

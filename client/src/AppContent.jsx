@@ -26,6 +26,9 @@ import PastReservations from './pages/PastReservations.jsx';
 import PastCitations from './pages/PastCitations.jsx';
 import PastPermits from './pages/PastPermits.jsx';
 import ManageTickets from './pages/admin/ManageTickets';
+import ManageReservations from './pages/admin/ManageReservations';
+import Notifications from './pages/Notifications.jsx';
+import PaymentComplete from './components/PaymentComplete.jsx';
 import { AuthService, UserService } from './utils/api.js';
 
 // Protected route component
@@ -677,6 +680,67 @@ const AppContent = () => {
                     darkMode={darkMode}
                     isAuthenticated={isAuthenticated}
                   />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route // These routes (reservations, payment-complete, and notifications) utilize the same logic as the above, Initial was written by Student (TP: Initial code written by Student for these 3 routes processed and modified by ChatGPT for code readability/moduralizing/optimization)
+          path="/admin/reservations" // (*ChatGPT has context of project*, was asked to modularize, optimize, and modify these 3 routes' code blocks for better readability, formatting, and concise logic. )
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} requiredUserType="admin" user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <ManageReservations
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/payment-complete"
+          element={
+            <>
+              <Navbar
+                darkMode={darkMode}
+                setDarkMode={setDarkMode}
+                isAuthenticated={isAuthenticated}
+                user={user}
+                logout={logout}
+              />
+              <main className="flex-grow">
+                <PaymentComplete darkMode={darkMode} />
+              </main>
+              <Footer darkMode={darkMode} />
+            </>
+          }
+        />
+        <Route
+          path="/notifications"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <Notifications darkMode={darkMode} user={user} />
                 </main>
                 <Footer darkMode={darkMode} />
               </>
