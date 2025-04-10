@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "node build-env.js && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "fix-deps": "node fix-dependencies.js"
   },
   "dependencies": {
     "@mapbox/mapbox-gl-geocoder": "^5.0.3",
