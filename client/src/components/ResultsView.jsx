@@ -86,8 +86,12 @@ const ResultsView = ({
         // Apply price filter
         if (priceFilter === 'hourly') {
             filtered = filtered.filter(spot => spot.rateType === 'Hourly');
+            // Reset permit filter when hourly is selected
+            if (permitFilter.length > 0) {
+                setPermitFilter([]);
+            }
         } else if (priceFilter === 'semester') {
-            filtered = filtered.filter(spot => spot.rateType === 'Semester');
+            filtered = filtered.filter(spot => spot.rateType === 'Permit-based');
         } else if (priceFilter === 'low-to-high') {
             filtered.sort((a, b) => {
                 const aValue = a.rateType === 'Hourly' ? a.hourlyRate : a.semesterRate;
@@ -352,19 +356,26 @@ const ResultsView = ({
                         {/* Permit Types Filter */}
                         {uniquePermitTypes.length > 0 && (
                             <div>
-                                <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                    Permit Types
+                                <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'} flex items-center justify-between`}>
+                                    <span>Permit Types</span>
+                                    {priceFilter === 'hourly' && (
+                                        <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            (Disabled for hourly lots)
+                                        </span>
+                                    )}
                                 </label>
                                 <div className="flex flex-wrap gap-2">
                                     {uniquePermitTypes.map((permit) => (
                                         <div
                                             key={permit}
-                                            onClick={() => handlePermitFilterChange(permit)}
-                                            className={`px-3 py-1 rounded-full text-sm font-medium cursor-pointer transition-colors ${permitFilter.includes(permit)
-                                                ? 'bg-red-600 text-white'
-                                                : darkMode
-                                                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                                                    : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                                            onClick={() => priceFilter !== 'hourly' && handlePermitFilterChange(permit)}
+                                            className={`px-3 py-1 rounded-full text-sm font-medium cursor-pointer transition-colors ${priceFilter === 'hourly'
+                                                    ? (darkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed')
+                                                    : permitFilter.includes(permit)
+                                                        ? 'bg-red-600 text-white'
+                                                        : darkMode
+                                                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                                            : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
                                                 }`}
                                         >
                                             {permit}
