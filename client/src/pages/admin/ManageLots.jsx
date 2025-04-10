@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaSearch, FaFilter, FaEdit, FaTrash, FaCheckCircle, FaTimesCircle, FaPlus, FaArrowLeft, FaMapMarkerAlt } from 'react-icons/fa';
+import { FaSearch, FaFilter, FaEdit, FaTrash, FaCheckCircle, FaTimesCircle, FaPlus, FaArrowLeft, FaMapMarkerAlt, FaExclamationTriangle, FaInfoCircle } from 'react-icons/fa';
 import { LotService } from '../../utils/api';
+import { PermitTypeService } from '../../utils/api';
 
 const ManageLots = ({ darkMode, isAuthenticated }) => {
     const navigate = useNavigate();
@@ -54,6 +55,49 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
     // Validation state
     const [formErrors, setFormErrors] = useState({});
 
+    // State for permit types
+    const [permitTypes, setPermitTypes] = useState([]);
+    const [isLoadingPermits, setIsLoadingPermits] = useState(true);
+
+    // Fetch permit types
+    useEffect(() => {
+        const fetchPermitTypes = async () => {
+            setIsLoadingPermits(true);
+            try {
+                console.log('Fetching permit types...');
+                const result = await PermitTypeService.getAllPublicPermitTypes();
+                console.log('Permit types API response:', result);
+
+                if (result.success && result.data && result.data.permitTypes) {
+                    console.log('Successfully loaded permit types:', result.data.permitTypes);
+
+                    // Debug the price values to make sure they're proper numbers
+                    const normalizedPermitTypes = result.data.permitTypes.map(pt => {
+                        // Ensure all permit types have a numeric price 
+                        const normalizedType = { ...pt };
+                        if (pt.price !== undefined) {
+                            normalizedType.price = typeof pt.price === 'number' ? pt.price : Number(pt.price);
+                            console.log(`Normalized permit type ${pt.name} price:`, pt.price, '->', normalizedType.price);
+                        }
+                        return normalizedType;
+                    });
+
+                    setPermitTypes(normalizedPermitTypes);
+                } else {
+                    console.error('Failed to load permit types. API returned:', result);
+                    setError('Failed to load permit types. Please try again.');
+                }
+            } catch (err) {
+                console.error('Error in fetchPermitTypes:', err);
+                setError('An unexpected error occurred while fetching permit types. Please try again.');
+            } finally {
+                setIsLoadingPermits(false);
+            }
+        };
+
+        fetchPermitTypes();
+    }, []);
+
     // Fetch lots based on current filters and pagination
     useEffect(() => {
         const fetchLots = async () => {
@@ -69,6 +113,17 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                 // Handle permit type filter
                 if (filters.permitType) {
                     apiFilters.permitType = filters.permitType;
+                }
+
+                // Handle lot type filter
+                if (filters.lotType) {
+                    if (filters.lotType === 'ev') {
+                        apiFilters.features = 'isEV';
+                    } else if (filters.lotType === 'metered') {
+                        apiFilters.features = 'isMetered';
+                    } else if (filters.lotType === 'standard') {
+                        apiFilters.features = 'standard';
+                    }
                 }
 
                 // Handle rate type filter
@@ -107,7 +162,21 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
 
     // Handle filter changes
     const handleFilterChange = (filterName, value) => {
-        setFilters(prev => ({ ...prev, [filterName]: value }));
+        setFilters(prev => {
+            const newFilters = { ...prev, [filterName]: value };
+
+            // Clear lotType if it's EV or metered and we're setting permitType
+            if (filterName === 'permitType' && value && (prev.lotType === 'ev' || prev.lotType === 'metered')) {
+                newFilters.lotType = '';
+            }
+
+            // Clear permitType if setting lotType to EV or metered
+            if (filterName === 'lotType' && (value === 'ev' || value === 'metered')) {
+                newFilters.permitType = '';
+            }
+
+            return newFilters;
+        });
         setCurrentPage(1); // Reset to first page when filters change
     };
 
@@ -201,7 +270,7 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
             },
             totalSpaces: 0,
             availableSpaces: 0,
-            permitTypes: ['Commuter Student', 'Faculty'],
+            permitTypes: permitTypes.length > 0 ? [permitTypes[0].name] : [],
             hourlyRate: 0,
             semesterRate: 0,
             rateType: 'Permit-based',
@@ -274,6 +343,74 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                 };
             });
         }
+        // Special handling for name to suggest permit types
+        else if (name === 'name' && modalMode === 'create') {
+            setFormData(prev => {
+                // Suggest permit types based on lot name
+                let suggestedPermitTypes = prev.permitTypes;
+                if (suggestedPermitTypes.length === 0 || prev.name === '') {
+                    // Find permit types that match keywords in the lot name
+                    const lowercaseName = value.toLowerCase();
+
+                    // Find matching permit types from the backend data
+                    const facultyTypes = permitTypes.filter(type =>
+                        type.name.toLowerCase().includes('faculty') ||
+                        type.name.toLowerCase().includes('staff')
+                    );
+
+                    const visitorTypes = permitTypes.filter(type =>
+                        type.name.toLowerCase().includes('visitor') ||
+                        type.name.toLowerCase().includes('guest')
+                    );
+
+                    const commuterTypes = permitTypes.filter(type =>
+                        type.name.toLowerCase().includes('commuter')
+                    );
+
+                    const residentTypes = permitTypes.filter(type =>
+                        type.name.toLowerCase().includes('resident')
+                    );
+
+                    // Suggest based on lot name keywords
+                    if (lowercaseName.includes('faculty') || lowercaseName.includes('staff')) {
+                        suggestedPermitTypes = facultyTypes.length > 0
+                            ? facultyTypes.map(type => type.name)
+                            : suggestedPermitTypes;
+                    } else if (lowercaseName.includes('visitor') || lowercaseName.includes('guest')) {
+                        suggestedPermitTypes = visitorTypes.length > 0
+                            ? visitorTypes.map(type => type.name)
+                            : suggestedPermitTypes;
+                    } else if (lowercaseName.includes('commuter')) {
+                        suggestedPermitTypes = commuterTypes.length > 0
+                            ? commuterTypes.map(type => type.name)
+                            : suggestedPermitTypes;
+                    } else if (lowercaseName.includes('resident')) {
+                        suggestedPermitTypes = residentTypes.length > 0
+                            ? residentTypes.map(type => type.name)
+                            : suggestedPermitTypes;
+                    }
+                }
+
+                return {
+                    ...prev,
+                    [name]: value,
+                    ...(suggestedPermitTypes !== prev.permitTypes ? { permitTypes: suggestedPermitTypes } : {})
+                };
+            });
+        }
+        // Special handling for rateType to update semester rate when switching to Permit-based
+        else if (name === 'rateType') {
+            setFormData(prev => {
+                const updatedData = { ...prev, [name]: value };
+
+                // If changing to Permit-based, update the semester rate based on selected permit types
+                if (value === 'Permit-based' && prev.permitTypes.length > 0) {
+                    updatedData.semesterRate = updateSemesterRate(prev.permitTypes);
+                }
+
+                return updatedData;
+            });
+        }
         else {
             setFormData(prev => ({ ...prev, [name]: value }));
         }
@@ -291,28 +428,86 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
         }));
     };
 
+    // Set the semester rate based on selected permit types
+    const updateSemesterRate = (selectedTypes) => {
+        if (selectedTypes.length === 0) {
+            return 0;
+        }
+
+        console.log('Calculating semester rate for permit types:', selectedTypes);
+
+        // Find the highest price among selected permit types
+        const permitPrices = selectedTypes
+            .map(type => {
+                const matchingPermit = permitTypes.find(pt => pt.name === type);
+                // Ensure price is a number and log for debugging
+                const price = matchingPermit && matchingPermit.price ? Number(matchingPermit.price) : 0;
+                console.log(`Permit type "${type}" price:`, price, typeof price);
+                return price;
+            })
+            .filter(price => price > 0);
+
+        console.log('Valid permit prices found:', permitPrices);
+
+        if (permitPrices.length === 0) {
+            return 0;
+        }
+
+        return Math.max(...permitPrices);
+    };
+
     // Handle permit type checkbox changes
     const handlePermitTypeChange = (type) => {
         setFormData(prev => {
             const currentTypes = [...prev.permitTypes];
+            let newTypes;
+            let updatedData = { ...prev };
+
             if (currentTypes.includes(type)) {
-                return { ...prev, permitTypes: currentTypes.filter(t => t !== type) };
+                // Remove the type
+                newTypes = currentTypes.filter(t => t !== type);
+                updatedData.permitTypes = newTypes;
             } else {
-                return { ...prev, permitTypes: [...currentTypes, type] };
+                // Add the type
+                newTypes = [...currentTypes, type];
+                updatedData.permitTypes = newTypes;
             }
+
+            // If rate type is permit-based, update semester rate based on permit types
+            if (prev.rateType === 'Permit-based') {
+                updatedData.semesterRate = updateSemesterRate(newTypes);
+            }
+
+            return updatedData;
         });
     };
 
     // Handle checkbox changes for features
     const handleFeatureChange = (e) => {
         const { name, checked } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            features: {
-                ...prev.features,
-                [name]: checked
+
+        // Create the updated features object
+        const updatedFeatures = {
+            ...formData.features,
+            [name]: checked
+        };
+
+        // Start with updating just the features
+        const updates = {
+            ...formData,
+            features: updatedFeatures
+        };
+
+        // Special handling for metered parking
+        if (name === 'isMetered') {
+            if (checked) {
+                // If metered is being enabled, clear permitTypes and set rate type to Hourly
+                updates.permitTypes = [];
+                updates.rateType = 'Hourly';
             }
-        }));
+        }
+
+        setFormData(updates);
     };
 
     // Validate form
@@ -342,8 +537,9 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
             errors.availableSpaces = "Available spaces must be between 0 and total spaces";
         }
 
-        if (formData.permitTypes.length === 0) {
-            errors.permitTypes = "At least one permit type is required";
+        // Only require permit types for non-metered lots
+        if (formData.permitTypes.length === 0 && !formData.features.isMetered) {
+            errors.permitTypes = "At least one permit type is required for non-metered lots";
         }
 
         // Only validate hourly rate if the rate type is Hourly or has EV/metered features
@@ -353,8 +549,30 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
         }
 
         // Validate semester rate if the rate type is Permit-based
-        if (formData.rateType === 'Permit-based' && (formData.semesterRate === undefined || formData.semesterRate <= 0)) {
-            errors.semesterRate = "Semester rate must be provided for permit-based lots";
+        if (formData.rateType === 'Permit-based') {
+            if (formData.semesterRate === undefined) {
+                errors.semesterRate = "Semester rate must be provided for permit-based lots";
+            }
+
+            // Check if the selected permit types have prices defined
+            const permitTypesWithoutPrice = formData.permitTypes.filter(type => {
+                const matchingPermit = permitTypes.find(pt => pt.name === type);
+                // Add debug log to check the actual values
+                console.log(`Checking permit type "${type}":`, matchingPermit ? `Price: ${matchingPermit.price}, Type: ${typeof matchingPermit.price}` : 'Not found');
+
+                if (!matchingPermit) return true;
+
+                // Safely check for price property existence and value
+                return typeof matchingPermit?.price === 'undefined' ||
+                    matchingPermit.price === null ||
+                    Number(matchingPermit.price) <= 0;
+            });
+
+            if (permitTypesWithoutPrice.length > 0) {
+                // Just add a warning instead of blocking submission
+                errors.permitTypeWarning = `The following selected permit types don't have prices defined: ${permitTypesWithoutPrice.join(', ')}`;
+                errors.permitTypeNote = "Please note: these permit types will use a default price of $0.00 until prices are set in the Permit Type management section.";
+            }
         }
 
         setFormErrors(errors);
@@ -377,6 +595,13 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
 
             // Final safety check - ensure availableSpaces doesn't exceed totalSpaces
             cleanData.availableSpaces = Math.min(cleanData.availableSpaces, cleanData.totalSpaces);
+
+            // Ensure we have a valid array of permit types
+            if (!Array.isArray(cleanData.permitTypes) || cleanData.permitTypes.length === 0) {
+                cleanData.permitTypes = [];
+            }
+
+            console.log('Submitting form data:', cleanData);
 
             let result;
             if (modalMode === 'edit') {
@@ -645,11 +870,18 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                     value={formData.rateType}
                                     onChange={handleFormChange}
                                     className={`w-full px-3 py-2 border ${darkMode ? 'border-gray-600' : 'border-gray-300'} 
-                                            rounded-md ${darkMode ? 'bg-gray-700 text-white' : 'bg-white text-gray-900'} focus:outline-none`}
+                                            rounded-md ${darkMode ? 'bg-gray-700 text-white' : 'bg-white text-gray-900'} focus:outline-none
+                                            ${formData.features.isMetered ? 'cursor-not-allowed bg-gray-100' : ''}`}
+                                    disabled={formData.features.isMetered}
                                 >
                                     <option value="Permit-based">Permit-based (Semester)</option>
                                     <option value="Hourly">Hourly (Metered/EV)</option>
                                 </select>
+                                {formData.features.isMetered && (
+                                    <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                        Metered parking lots automatically use hourly rates.
+                                    </p>
+                                )}
                             </div>
 
                             {/* Hourly Rate - only for metered or EV lots */}
@@ -685,13 +917,29 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                     value={formData.semesterRate}
                                     onChange={handleFormChange}
                                     className={`w-full px-3 py-2 border ${formErrors.semesterRate ? 'border-red-500' : darkMode ? 'border-gray-600' : 'border-gray-300'} 
-                                            rounded-md ${darkMode ? 'bg-gray-700 text-white' : 'bg-white text-gray-900'} focus:outline-none`}
+                                            rounded-md ${darkMode ? 'bg-gray-700 text-white' : 'bg-white text-gray-900'} focus:outline-none
+                                            ${formData.rateType === 'Permit-based' && formData.semesterRate > 0 ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                                     placeholder="$0.00"
+                                    readOnly={formData.rateType === 'Permit-based' && formData.semesterRate > 0}
                                 />
                                 {formErrors.semesterRate && <p className="text-red-500 text-xs mt-1">{formErrors.semesterRate}</p>}
                                 {formData.rateType === 'Permit-based' && (
                                     <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                        Required for permit-based lots
+                                        {formData.permitTypes.length > 0 ? (
+                                            <>
+                                                Based on selected permit type{formData.permitTypes.length > 1 ? 's' : ''}: {formData.permitTypes.join(', ')}
+                                                <br />
+                                                {formData.semesterRate > 0 ? (
+                                                    <span className="italic">The rate is automatically derived from permit type prices</span>
+                                                ) : (
+                                                    <span className="italic text-amber-500">
+                                                        The selected permit types don't have prices defined. Please set prices in the Permit Type management section.
+                                                    </span>
+                                                )}
+                                            </>
+                                        ) : (
+                                            'Required for permit-based lots. Select permit types to set the rate.'
+                                        )}
                                     </p>
                                 )}
                             </div>
@@ -717,25 +965,110 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                             {/* Permit Types */}
                             <div>
                                 <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                    Permit Types*
+                                    Permit Types{formData.features.isMetered ? '' : '*'}
                                 </label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {['Commuter Student', 'Resident Student', 'Faculty', 'Visitor'].map(type => (
-                                        <div key={type} className="flex items-center">
-                                            <input
-                                                type="checkbox"
-                                                id={`type-${type}`}
-                                                checked={formData.permitTypes?.includes(type) || false}
-                                                onChange={() => handlePermitTypeChange(type)}
-                                                className="mr-2"
-                                            />
-                                            <label htmlFor={`type-${type}`} className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
-                                                {type}
-                                            </label>
+                                <div className={`p-3 mb-2 rounded ${darkMode ? 'bg-gray-700' : 'bg-gray-100'} ${formData.features.isMetered ? 'opacity-50' : ''}`}>
+                                    <div className={`mb-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                        <div className="font-medium">Price Information</div>
+                                        <p className="text-xs mt-1">
+                                            Permit prices are fetched from the database. For permit-based lots, the semester rate will automatically use
+                                            the price from the selected permit type(s). If multiple permit types are selected, the highest price will be used.
+                                        </p>
+                                    </div>
+
+                                    {formData.features.isMetered && (
+                                        <div className="mb-3 p-2 bg-blue-100 border border-blue-300 rounded text-blue-800 text-xs">
+                                            <div className="flex items-center">
+                                                <FaInfoCircle className="mr-1 text-blue-500" />
+                                                <span className="font-medium">Metered Parking Selected</span>
+                                            </div>
+                                            <p className="mt-1">
+                                                Permit types are disabled for metered parking lots. Metered lots use hourly rates instead of permit-based access.
+                                            </p>
                                         </div>
-                                    ))}
+                                    )}
+
+                                    {formData.rateType === 'Permit-based' && !formData.features.isMetered && (
+                                        <>
+                                            {permitTypes.filter(pt => !pt.price || pt.price <= 0).length > 0 && (
+                                                <div className="mb-3 p-2 bg-amber-100 border border-amber-300 rounded text-amber-800 text-xs">
+                                                    <div className="flex items-center">
+                                                        <FaExclamationTriangle className="mr-1 text-amber-500" />
+                                                        <span className="font-medium">Warning:</span>
+                                                    </div>
+                                                    <p className="mt-1">
+                                                        Some permit types don't have prices defined. These cannot be used with permit-based lots
+                                                        unless prices are set in the Permit Type management section.
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {isLoadingPermits ? (
+                                            <div className="col-span-2 text-center py-2">Loading permit types...</div>
+                                        ) : permitTypes.length > 0 ? (
+                                            permitTypes.map(permitType => {
+                                                const hasPrice = typeof permitType.price === 'number' ?
+                                                    permitType.price > 0 :
+                                                    Number(permitType.price) > 0;
+                                                const priceInfo = hasPrice ? `$${permitType.price.toFixed(2)}` : 'N/A';
+                                                const durationInfo = permitType.duration || '';
+                                                const tooltipInfo = `${permitType.name}: ${priceInfo} / ${durationInfo || 'Semester'}`;
+
+                                                return (
+                                                    <div key={permitType._id} className="flex items-center group relative mb-1">
+                                                        <input
+                                                            type="checkbox"
+                                                            id={`type-${permitType._id}`}
+                                                            checked={formData.permitTypes?.includes(permitType.name) || false}
+                                                            onChange={() => handlePermitTypeChange(permitType.name)}
+                                                            className="mr-2"
+                                                            disabled={formData.features.isMetered}
+                                                        />
+                                                        <label htmlFor={`type-${permitType._id}`} className={`${darkMode ? 'text-gray-300' : 'text-gray-700'} ${formData.features.isMetered ? 'opacity-50' : ''}`}>
+                                                            {permitType.name}
+                                                            <span className={`text-sm ml-1 ${hasPrice ? 'text-green-500' : 'text-red-500'}`}>
+                                                                ({priceInfo})
+                                                            </span>
+                                                            {!hasPrice && formData.rateType === 'Permit-based' && !formData.features.isMetered && (
+                                                                <FaExclamationTriangle className="inline-block ml-1 text-amber-500" title="This permit type has no price defined" />
+                                                            )}
+                                                        </label>
+                                                        <span className={`hidden group-hover:block absolute left-full -ml-2 top-0 px-2 py-1 text-xs rounded bg-gray-800 text-white z-10 whitespace-nowrap`}>
+                                                            {tooltipInfo}
+                                                            {!hasPrice && formData.rateType === 'Permit-based' && !formData.features.isMetered && (
+                                                                <span className="block text-amber-400 mt-1">
+                                                                    Warning: No price defined
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <div className="col-span-2 text-center py-2">No permit types available</div>
+                                        )}
+                                    </div>
                                 </div>
-                                {formErrors.permitTypes && <p className="text-red-500 text-xs mt-1">{formErrors.permitTypes}</p>}
+
+                                {isLoadingPermits && (
+                                    <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                        Loading permit type information...
+                                    </p>
+                                )}
+                                {formData.features.isMetered ? (
+                                    <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                        Metered parking lots don't use permit types. The lot will be available based on hourly payment.
+                                    </p>
+                                ) : (
+                                    <>
+                                        {formErrors.permitTypes && <p className="text-red-500 text-xs mt-1">{formErrors.permitTypes}</p>}
+                                        {formErrors.permitTypeWarning && <p className="text-amber-500 text-xs mt-1">{formErrors.permitTypeWarning}</p>}
+                                        {formErrors.permitTypeNote && <p className="text-amber-500 text-xs mt-1 italic">{formErrors.permitTypeNote}</p>}
+                                    </>
+                                )}
                             </div>
 
                             {/* Additional Features */}
@@ -905,9 +1238,11 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                          border focus:outline-none`}
                             >
                                 <option value="">All Permit Types</option>
-                                <option value="commuter student">Commuter Student</option>
-                                <option value="resident student">Resident Student</option>
-                                <option value="faculty">Faculty</option>
+                                {permitTypes.map(type => (
+                                    <option key={type._id} value={type.name.toLowerCase()}>
+                                        {type.name}
+                                    </option>
+                                ))}
                             </select>
                         </div>
 
@@ -1041,14 +1376,19 @@ const ManageLots = ({ darkMode, isAuthenticated }) => {
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className={darkMode ? 'text-white' : 'text-gray-900'}>
                                                 {lot.rateType === 'Hourly' ?
-                                                    `${lot.hourlyRate}/hour` :
-                                                    'Permit-based'}
+                                                    `$${lot.hourlyRate}/hour` :
+                                                    `$${lot.semesterRate}/semester`}
                                             </div>
                                             {lot.rateType === 'Hourly' && (
                                                 <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                                     {lot.features.isMetered && 'Metered'}
                                                     {lot.features.isMetered && lot.features.isEV && ' & '}
                                                     {lot.features.isEV && 'EV'}
+                                                </div>
+                                            )}
+                                            {lot.rateType === 'Permit-based' && (
+                                                <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                    {lot.permitTypes?.join(', ')}
                                                 </div>
                                             )}
                                         </td>
