@@ -1,13 +1,14 @@
+/* eslint-disable no-undef */
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable no-unused-vars */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
 } from 'recharts';
-import { FaUsers, FaUserCog, FaParking, FaMapMarkerAlt, FaCheckCircle, FaTimesCircle, FaInfoCircle, FaExclamationCircle, FaTicketAlt, FaCar, FaFileAlt } from 'react-icons/fa';
-import { getActivePermitsCount, getLotsWithActivePermitsCount } from '../../utils/mockPermitData';
-import { AdminService } from '../../utils/api';
+import { FaUsers, FaUserCog, FaParking, FaMapMarkerAlt, FaCheckCircle, FaTimesCircle, FaInfoCircle, FaExclamationCircle, FaTicketAlt, FaCar, FaFileAlt, FaSync, FaFileDownload } from 'react-icons/fa';
+import { AdminService, PermitService } from '../../utils/api';
 
 const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     const navigate = useNavigate();
@@ -22,6 +23,16 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     const [isCountLoading, setIsCountLoading] = useState(true);
     const [countError, setCountError] = useState('');
 
+    // State for active permits count
+    const [activePermitsCount, setActivePermitsCount] = useState(0);
+    const [isPermitsCountLoading, setIsPermitsCountLoading] = useState(true);
+    const [permitsCountError, setPermitsCountError] = useState('');
+
+    // State for active reservations count
+    const [activeReservationsCount, setActiveReservationsCount] = useState(0);
+    const [isReservationsCountLoading, setIsReservationsCountLoading] = useState(true);
+    const [reservationsCountError, setReservationsCountError] = useState('');
+
     // State for lots count
     const [lotsCount, setLotsCount] = useState(0);
     const [isLotsCountLoading, setIsLotsCountLoading] = useState(true);
@@ -32,39 +43,62 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     const [isRevenueLoading, setIsRevenueLoading] = useState(true);
     const [revenueError, setRevenueError] = useState('');
 
+    // State for current month and pie data
+    const [currentMonth, setCurrentMonth] = useState({ month: '', value: 0, permits: 0, citations: 0, other: 0 });
+    const [pieData, setPieData] = useState([
+        { name: 'Permits', value: 0 },
+        { name: 'Citations', value: 0 },
+        { name: 'Other', value: 0 },
+    ]);
+
+    // State for growth data
+    const [growthData, setGrowthData] = useState([]);
+
+    // State for report generation
+    const [isPdfGenerating, setIsPdfGenerating] = useState(false);
+    const [isCsvGenerating, setIsCsvGenerating] = useState(false);
+    const [reportError, setReportError] = useState('');
+
     // State for notifications
     const [showNotification, setShowNotification] = useState(false);
     const [notificationMessage, setNotificationMessage] = useState('');
     const [notificationType, setNotificationType] = useState('success'); // success, error, warning
 
-    // Fetch pending users on component mount
-    useEffect(() => {
+    // Add useRef to imports
+    const isInitialLoad = useRef(true);
+
+    // Update the loadDashboardData function to mark initial load as complete after first fetch
+    const loadDashboardData = useCallback(() => {
         fetchPendingUsers();
         fetchUsersCount();
         fetchLotsCount();
         fetchRevenueStats();
+        fetchActivePermitsCount();
+        fetchActiveReservationsCount();
 
-        // Set up event listener for ticket payment events
-        const _handleTicketPaid = () => {
-            // Refresh revenue data when a ticket is paid
-            fetchRevenueStats();
-
-            // Show notification
-            setNotificationMessage('A ticket was paid. Revenue data has been updated.');
-            setNotificationType('success');
-            setShowNotification(true);
-            setTimeout(() => setShowNotification(false), 3000);
-        };
-
-        // For now, we don't have actual socket implementation, so we'll just set up the function
-        // In a real app, you would connect to a socket and listen for events
-        // socket.on('ticketPaid', _handleTicketPaid);
-
-        return () => {
-            // Cleanup socket connection in a real app
-            // socket.off('ticketPaid', _handleTicketPaid);
-        };
+        // Mark initial load as complete after a short delay
+        setTimeout(() => {
+            isInitialLoad.current = false;
+        }, 2000);
     }, []);
+
+    // Replace the existing useEffect for initial data loading with this improved version
+    useEffect(() => {
+        if (isAuthenticated) {
+            // Load data initially
+            loadDashboardData();
+
+            // Set up polling for live updates (every 30 seconds)
+            const pollingInterval = setInterval(() => {
+                fetchRevenueStats();
+                fetchActivePermitsCount();
+                fetchActiveReservationsCount();
+            }, 30000); // 30 seconds
+
+            // Clean up interval on component unmount
+            return () => clearInterval(pollingInterval);
+        }
+    }, [isAuthenticated]);
 
     // Fetch pending users from backend
     const fetchPendingUsers = async () => {
@@ -137,36 +171,166 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
 
     // Fetch revenue statistics from backend
     const fetchRevenueStats = async () => {
-        setIsRevenueLoading(true);
-        setRevenueError('');
-
         try {
-            const result = await AdminService.getRevenueStats();
+            setIsRevenueLoading(true);
+            const response = await AdminService.getRevenueStatistics();
+            console.log('Revenue API response:', response);
 
-            if (result.success) {
-                setRevenueData(result.data.revenueData);
-            } else {
-                setRevenueError(result.error || 'Failed to fetch revenue statistics');
-                // Fall back to mock data if API fails
-                setRevenueData([
-                    { month: "Jan", value: 38186, permits: 28500, citations: 6450, other: 3236 },
-                    { month: "Feb", value: 40250, permits: 29250, citations: 7800, other: 3200 },
-                    { month: "Mar", value: 41525, permits: 30000, citations: 8125, other: 3400 },
-                    { month: "Apr", value: 42330, permits: 31500, citations: 7180, other: 3650 },
+            if (response.success && response.data && response.data.revenueData) {
+                const receivedData = response.data.revenueData;
+                console.log('Received revenue data:', receivedData);
+
+                // Update revenue data state
+                setRevenueData(receivedData);
+
+                // Find current month data
+                const now = new Date();
+                const currentMonthName = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(now);
+                const currentYearShort = now.getFullYear().toString().slice(-2);
+                const currentMonthKey = `${currentMonthName}`;
+
+                const currentMonthData = receivedData.find(item => item.month === currentMonthKey) || {
+                    month: currentMonthKey,
+                    value: 0,
+                    permits: 0,
+                    citations: 0,
+                    other: 0
+                };
+
+                setCurrentMonth(currentMonthData);
+
+                // Create pie data
+                const newPieData = [
+                    { name: 'Permits', value: currentMonthData.permits || 0 },
+                    { name: 'Citations', value: currentMonthData.citations || 0 },
+                    { name: 'Other', value: currentMonthData.other || 0 }
+                ].filter(item => item.value > 0);
+
+                setPieData(newPieData.length > 0 ? newPieData : [
+                    { name: 'No Revenue', value: 1 }
                 ]);
+
+                // Calculate growth data if we have more than 1 month
+                if (receivedData.length > 1) {
+                    // Sort data chronologically
+                    const sortedData = [...receivedData].sort((a, b) => {
+                        // Parse month strings like "Jan '23"
+                        const [aMonth, aYear] = (a.month.split(" ") || ['', '']);
+                        const [bMonth, bYear] = (b.month.split(" ") || ['', '']);
+
+                        const aYearNum = aYear ? parseInt(aYear.replace("'", "")) + 2000 : new Date().getFullYear();
+                        const bYearNum = bYear ? parseInt(bYear.replace("'", "")) + 2000 : new Date().getFullYear();
+
+                        if (aYearNum !== bYearNum) return aYearNum - bYearNum;
+
+                        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                        return months.indexOf(aMonth) - months.indexOf(bMonth);
+                    });
+
+                    const growthStats = sortedData.map((item, index) => {
+                        if (index === 0) return { month: item.month, growth: 0 };
+
+                        const prevValue = sortedData[index - 1].value;
+                        const currentValue = item.value;
+
+                        let growthRate = 0;
+                        if (prevValue > 0) {
+                            growthRate = ((currentValue - prevValue) / prevValue) * 100;
+                        } else if (currentValue > 0) {
+                            // When previous value is 0 and current is positive,
+                            // we can't calculate a percentage (would be infinity)
+                            // So we set it to a high but meaningful value (e.g., 100%)
+                            growthRate = 100; // New revenue (100% growth)
+                        }
+
+                        return {
+                            month: item.month,
+                            growth: parseFloat(growthRate.toFixed(2))
+                        };
+                    });
+
+                    setGrowthData(growthStats);
+                } else {
+                    setGrowthData([]);
+                }
+
+                // Show notification for revenue data update
+                if (!isInitialLoad.current) {
+                    setNotificationMessage('Revenue statistics updated');
+                    setNotificationType('info');
+                    setShowNotification(true);
+
+                    setTimeout(() => {
+                        setShowNotification(false);
+                    }, 3000);
+                }
+            } else {
+                // Handle empty or error response
+                console.error('Empty or error response from revenue statistics:', response);
+                setRevenueData([]);
+                setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, other: 0 });
+                setPieData([{ name: 'No Revenue', value: 1 }]);
+                setGrowthData([]);
             }
-        } catch (err) {
-            console.error('Error fetching revenue statistics:', err);
-            setRevenueError('An unexpected error occurred while fetching revenue statistics');
-            // Fall back to mock data if API fails
-            setRevenueData([
-                { month: "Jan", value: 38186, permits: 28500, citations: 6450, other: 3236 },
-                { month: "Feb", value: 40250, permits: 29250, citations: 7800, other: 3200 },
-                { month: "Mar", value: 41525, permits: 30000, citations: 8125, other: 3400 },
-                { month: "Apr", value: 42330, permits: 31500, citations: 7180, other: 3650 },
-            ]);
+        } catch (error) {
+            console.error('Error fetching revenue statistics:', error);
+            // Handle error state
+            setRevenueData([]);
+            setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, other: 0 });
+            setPieData([{ name: 'No Revenue', value: 1 }]);
+            setGrowthData([]);
         } finally {
             setIsRevenueLoading(false);
+        }
+    };
+
+    // Helper function to get current month string format
+    const getCurrentMonthString = () => {
+        const now = new Date();
+        const month = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(now);
+        const year = now.getFullYear().toString().slice(-2);
+        return `${month} '${year}`;
+    };
+
+    // Fetch active permits count
+    const fetchActivePermitsCount = async () => {
+        setIsPermitsCountLoading(true);
+        setPermitsCountError('');
+
+        try {
+            const result = await PermitService.getActiveCount();
+
+            if (result.success) {
+                setActivePermitsCount(result.count);
+            } else {
+                setPermitsCountError(result.error || 'Failed to fetch active permits count');
+            }
+        } catch (err) {
+            console.error('Error fetching active permits count:', err);
+            setPermitsCountError('An unexpected error occurred while fetching active permits count');
+        } finally {
+            setIsPermitsCountLoading(false);
+        }
+    };
+
+    // Fetch active reservations count
+    const fetchActiveReservationsCount = async () => {
+        setIsReservationsCountLoading(true);
+        setReservationsCountError('');
+
+        try {
+            const result = await AdminService.getActiveReservationsCount();
+
+            if (result.success) {
+                setActiveReservationsCount(result.count);
+            } else {
+                setReservationsCountError(result.error || 'Failed to fetch active reservations count');
+            }
+        } catch (err) {
+            console.error('Error fetching active reservations count:', err);
+            setReservationsCountError('An unexpected error occurred while fetching active reservations count');
+        } finally {
+            setIsReservationsCountLoading(false);
         }
     };
 
@@ -174,33 +338,19 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
         navigate('/');
     }
 
-    // Get counts from mock data
-    const activePermitsCount = getActivePermitsCount();
-
-    // Data for line chart showing growth trend
-    const growthData = revenueData.length > 1 ? revenueData.map((item, index) => {
-        const prevMonth = index > 0 ? revenueData[index - 1].value : revenueData[0].value;
-        const growthPercentage = ((item.value - prevMonth) / prevMonth) * 100;
-
-        return {
-            month: item.month,
-            growth: index === 0 ? 0 : parseFloat(growthPercentage.toFixed(2))
-        };
-    }) : [];
-
-    // Data for pie chart
-    const currentMonth = revenueData.length > 0 ? revenueData[revenueData.length - 1] : { month: '', value: 0, permits: 0, citations: 0, other: 0 };
-    const pieData = [
-        { name: 'Permits', value: currentMonth.permits },
-        { name: 'Citations', value: currentMonth.citations },
-        { name: 'Other', value: currentMonth.other },
-    ];
-
     const COLORS = ['#4CAF50', '#F44336', '#2196F3'];
 
     const revenue = revenueData.length > 0 ? revenueData[revenueData.length - 1].value : 0;
     const prevRevenue = revenueData.length > 1 ? revenueData[revenueData.length - 2].value : 0;
-    const revenueChange = prevRevenue > 0 ? ((revenue - prevRevenue) / prevRevenue * 100).toFixed(1) : '0.0';
+
+    // Fix for Infinity% issue - handle the case when previous revenue is 0
+    let revenueChange;
+    if (prevRevenue === 0) {
+        revenueChange = revenue > 0 ? 'N/A' : '0.0';
+    } else {
+        revenueChange = ((revenue - prevRevenue) / prevRevenue * 100).toFixed(1);
+    }
+
     const revenueIncreased = revenue > prevRevenue;
 
     // Calculate total revenue for the year
@@ -316,9 +466,88 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
         navigate('/manage-lots');
     };
 
+    // Add function to navigate to Manage Reservations page
+    const goToManageReservations = () => {
+        navigate('/admin/reservations');
+    };
+
     // Add function to navigate to Manage Tickets page
     const goToManageTickets = () => {
         navigate('/admin/tickets');
+    };
+
+    // Add function to handle manual refresh
+    const handleManualRefresh = async () => {
+        setNotificationMessage('Refreshing data...');
+        setNotificationType('info');
+        setShowNotification(true);
+
+        try {
+            await fetchRevenueStats();
+            await fetchActivePermitsCount();
+            await fetchActiveReservationsCount();
+
+            setNotificationMessage('Data refreshed successfully');
+            setNotificationType('success');
+        } catch (error) {
+            setNotificationMessage('Failed to refresh data');
+            setNotificationType('error');
+        }
+
+        // Hide notification after 3 seconds
+        setTimeout(() => {
+            setShowNotification(false);
+        }, 3000);
+    };
+
+    // Handle PDF report generation
+    const handleGeneratePdfReport = async () => {
+        try {
+            setIsPdfGenerating(true);
+            setReportError('');
+            const months = document.getElementById('pdfMonths')?.value || 12;
+            const result = await AdminService.downloadRevenueReportPDF(months);
+
+            if (!result.success) {
+                setReportError(result.error || 'Failed to generate PDF report');
+                setShowNotification(true);
+                setNotificationMessage(result.error || 'Failed to generate PDF report');
+                setNotificationType('error');
+            }
+        } catch (error) {
+            console.error('Error generating PDF report:', error);
+            setReportError('Error generating PDF report');
+            setShowNotification(true);
+            setNotificationMessage('Error generating PDF report');
+            setNotificationType('error');
+        } finally {
+            setIsPdfGenerating(false);
+        }
+    };
+
+    // Handle CSV report generation
+    const handleGenerateCsvReport = async () => {
+        try {
+            setIsCsvGenerating(true);
+            setReportError('');
+            const months = document.getElementById('csvMonths')?.value || 12;
+            const result = await AdminService.downloadRevenueReportCSV(months);
+
+            if (!result.success) {
+                setReportError(result.error || 'Failed to generate CSV report');
+                setShowNotification(true);
+                setNotificationMessage(result.error || 'Failed to generate CSV report');
+                setNotificationType('error');
+            }
+        } catch (error) {
+            console.error('Error generating CSV report:', error);
+            setReportError('Error generating CSV report');
+            setShowNotification(true);
+            setNotificationMessage('Error generating CSV report');
+            setNotificationType('error');
+        } finally {
+            setIsCsvGenerating(false);
+        }
     };
 
     // Display the users count card with loading and error states
@@ -383,7 +612,12 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                             <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Revenue (Current Month)</p>
                             <p className="text-2xl font-bold mt-1">{formatCurrency(revenue)}</p>
                             <div className={`flex items-center mt-1 text-xs font-medium ${revenueIncreased ? 'text-green-600' : 'text-red-600'}`}>
-                                <span>{revenueIncreased ? '↑' : '↓'} {revenueChange}%</span>
+                                <span>
+                                    {revenueIncreased ? '↑' : '↓'}
+                                    {typeof revenueChange === 'string' && revenueChange === 'N/A'
+                                        ? 'N/A'
+                                        : `${revenueChange}%`}
+                                </span>
                                 <span className={`ml-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>vs last month</span>
                             </div>
                         </div>
@@ -398,16 +632,23 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                     onClick={goToManagePermits}
                     className={`p-6 shadow-sm rounded-lg border hover:shadow-md transition-shadow cursor-pointer
                               ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}
-                    id="manage permits"
                 >
                     <div className="flex justify-between items-start">
                         <div>
                             <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Active Permits</p>
-                            <p className="text-2xl font-bold mt-1">{activePermitsCount}</p>
+                            {isPermitsCountLoading ? (
+                                <p className="text-2xl font-bold mt-1">
+                                    <span className="inline-block animate-pulse">...</span>
+                                </p>
+                            ) : permitsCountError ? (
+                                <p className="text-sm text-red-500 mt-1">Error loading count</p>
+                            ) : (
+                                <p className="text-2xl font-bold mt-1">{activePermitsCount}</p>
+                            )}
                             <p className="text-xs text-blue-600 mt-1">Click to manage permits</p>
                         </div>
-                        <div className={`rounded-full p-2 ${darkMode ? 'bg-green-900' : 'bg-green-50'}`}>
-                            <FaParking className="h-5 w-5 text-green-500" />
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-green-900' : 'bg-green-100'}`}>
+                            <FaTicketAlt className="h-5 w-5 text-green-500" />
                         </div>
                     </div>
                 </div>
@@ -420,11 +661,43 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                     <div className="flex justify-between items-start">
                         <div>
                             <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Total Lots</p>
-                            <p className="text-2xl font-bold mt-1">{isLotsCountLoading ? "..." : lotsCount}</p>
+                            {isLotsCountLoading ? (
+                                <p className="text-2xl font-bold mt-1">
+                                    <span className="inline-block animate-pulse">...</span>
+                                </p>
+                            ) : lotsCountError ? (
+                                <p className="text-sm text-red-500 mt-1">Error loading count</p>
+                            ) : (
+                                <p className="text-2xl font-bold mt-1">{lotsCount}</p>
+                            )}
                             <p className="text-xs text-blue-600 mt-1">Click to manage lots</p>
                         </div>
                         <div className={`rounded-full p-2 ${darkMode ? 'bg-red-900' : 'bg-red-50'}`}>
                             <FaMapMarkerAlt className="h-5 w-5 text-red-500" />
+                        </div>
+                    </div>
+                </div>
+                <div
+                    onClick={goToManageReservations}
+                    className={`p-6 shadow-sm rounded-lg border hover:shadow-md transition-shadow cursor-pointer
+                              ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}
+                >
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Active Reservations</p>
+                            {isReservationsCountLoading ? (
+                                <p className="text-2xl font-bold mt-1">
+                                    <span className="inline-block animate-pulse">...</span>
+                                </p>
+                            ) : reservationsCountError ? (
+                                <p className="text-sm text-red-500 mt-1">Error loading count</p>
+                            ) : (
+                                <p className="text-2xl font-bold mt-1">{activeReservationsCount}</p>
+                            )}
+                            <p className="text-xs text-blue-600 mt-1">Click to manage reservations</p>
+                        </div>
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-yellow-900' : 'bg-yellow-50'}`}>
+                            <FaCar className="h-5 w-5 text-yellow-500" />
                         </div>
                     </div>
                 </div>
@@ -458,7 +731,15 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                 {/* Revenue Dashboard */}
                 <section className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-md p-6 mb-6`}>
                     <div className="flex justify-between items-center mb-4">
-                        <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Revenue Overview</h2>
+                        <h2 className="text-lg font-semibold">Revenue Overview</h2>
+                        <button
+                            onClick={handleManualRefresh}
+                            className={`p-2 rounded-full ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'
+                                } transition-colors`}
+                            title="Refresh revenue data"
+                        >
+                            <FaSync className={`${isRevenueLoading ? 'animate-spin' : ''} text-red-600`} />
+                        </button>
                     </div>
 
                     {isRevenueLoading ? (
@@ -475,101 +756,119 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                     ) : (
                         <div>
                             {/* Revenue Charts and Analytics */}
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                                {/* Monthly Revenue Overview */}
-                                <div className="lg:col-span-2">
-                                    <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Monthly Revenue Breakdown</h3>
-                                    <div className="h-80">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={revenueData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#DDDDDD'} />
-                                                <XAxis dataKey="month" tick={{ fill: darkMode ? '#D1D5DB' : '#6B7280' }} />
-                                                <YAxis tickFormatter={(value) => `$${value / 1000}k`} tick={{ fill: darkMode ? '#D1D5DB' : '#6B7280' }} />
-                                                <Tooltip
-                                                    formatter={(value) => [`$${value.toLocaleString()}`, 'Revenue']}
-                                                    contentStyle={{ backgroundColor: darkMode ? '#1F2937' : '#FFF', borderColor: darkMode ? '#374151' : '#DDD', color: darkMode ? '#FFF' : '#000' }}
-                                                />
-                                                <Legend />
-                                                <Bar name="Total Revenue" dataKey="value" fill="#F59E0B" />
-                                            </BarChart>
-                                        </ResponsiveContainer>
+                            <div>
+                                {revenueData.length === 0 ? (
+                                    <div className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                        <FaInfoCircle className="mx-auto mb-2 text-3xl" />
+                                        <p>No revenue data available yet.</p>
+                                        <p className="text-sm mt-2">Revenue data will appear here as permits are purchased and citations are paid.</p>
                                     </div>
-                                </div>
+                                ) : (
+                                    <div>
+                                        {/* Monthly Revenue Overview */}
+                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                                            <div className="lg:col-span-2">
+                                                <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Monthly Revenue Breakdown</h3>
+                                                <div className="h-80">
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <BarChart data={revenueData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                                            <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#DDDDDD'} />
+                                                            <XAxis dataKey="month" tick={{ fill: darkMode ? '#D1D5DB' : '#6B7280' }} />
+                                                            <YAxis tickFormatter={(value) => `$${value / 1000}k`} tick={{ fill: darkMode ? '#D1D5DB' : '#6B7280' }} />
+                                                            <Tooltip
+                                                                formatter={(value) => [`$${value.toLocaleString()}`, 'Revenue']}
+                                                                contentStyle={{ backgroundColor: darkMode ? '#1F2937' : '#FFF', borderColor: darkMode ? '#374151' : '#DDD', color: darkMode ? '#FFF' : '#000' }}
+                                                            />
+                                                            <Legend />
+                                                            <Bar name="Total Revenue" dataKey="value" fill="#F59E0B" />
+                                                        </BarChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            </div>
 
-                                {/* Current Month Breakdown */}
-                                <div>
-                                    <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Current Month Breakdown</h3>
-                                    <div className="h-80 flex flex-col items-center justify-center">
-                                        <ResponsiveContainer width="100%" height="80%">
-                                            <PieChart>
-                                                <Pie
-                                                    data={pieData}
-                                                    cx="50%"
-                                                    cy="50%"
-                                                    labelLine={false}
-                                                    outerRadius={80}
-                                                    fill="#8884d8"
-                                                    dataKey="value"
-                                                    nameKey="name"
-                                                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                                                >
-                                                    {pieData.map((entry, index) => (
-                                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                    ))}
-                                                </Pie>
-                                                <Tooltip
-                                                    formatter={(value) => `$${value.toLocaleString()}`}
-                                                    contentStyle={{ backgroundColor: darkMode ? '#1F2937' : '#FFF', borderColor: darkMode ? '#374151' : '#DDD' }}
-                                                />
-                                            </PieChart>
-                                        </ResponsiveContainer>
-                                        <div className={`text-center mt-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
-                                            <span className="font-semibold">Total: </span>
-                                            {formatCurrency(currentMonth.value || 0)}
+                                            {/* Current Month Breakdown */}
+                                            <div>
+                                                <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Current Month Breakdown</h3>
+                                                <div className="h-80 flex flex-col items-center justify-center">
+                                                    <ResponsiveContainer width="100%" height="80%">
+                                                        <PieChart>
+                                                            <Pie
+                                                                data={pieData}
+                                                                cx="50%"
+                                                                cy="50%"
+                                                                labelLine={false}
+                                                                outerRadius={80}
+                                                                fill="#8884d8"
+                                                                dataKey="value"
+                                                                nameKey="name"
+                                                                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                                            >
+                                                                {pieData.map((entry, index) => (
+                                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                                ))}
+                                                            </Pie>
+                                                            <Tooltip
+                                                                formatter={(value) => `$${value.toLocaleString()}`}
+                                                                contentStyle={{ backgroundColor: darkMode ? '#1F2937' : '#FFF', borderColor: darkMode ? '#374151' : '#DDD' }}
+                                                            />
+                                                        </PieChart>
+                                                    </ResponsiveContainer>
+                                                    <div className={`text-center mt-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                                                        <span className="font-semibold">Total: </span>
+                                                        {formatCurrency(currentMonth.value || 0)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Growth Trends and Monthly Revenue */}
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                                            {/* Growth Trend */}
+                                            <div>
+                                                <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Growth Trend</h3>
+                                                <div className="h-72">
+                                                    {growthData.length > 1 ? (
+                                                        <ResponsiveContainer width="100%" height="100%">
+                                                            <LineChart data={growthData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                                                <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#DDDDDD'} />
+                                                                <XAxis dataKey="month" tick={{ fill: darkMode ? '#D1D5DB' : '#6B7280' }} />
+                                                                <YAxis tickFormatter={(value) => `${value}%`} tick={{ fill: darkMode ? '#D1D5DB' : '#6B7280' }} />
+                                                                <Tooltip
+                                                                    formatter={(value) => [`${value}%`, 'Growth']}
+                                                                    contentStyle={{ backgroundColor: darkMode ? '#1F2937' : '#FFF', borderColor: darkMode ? '#374151' : '#DDD' }}
+                                                                />
+                                                                <Line type="monotone" dataKey="growth" stroke="#10B981" strokeWidth={2} />
+                                                            </LineChart>
+                                                        </ResponsiveContainer>
+                                                    ) : (
+                                                        <div className={`flex items-center justify-center h-full text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                            <p>Not enough data to display growth trends.<br />More data points are needed.</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Total Revenue Trend */}
+                                            <div>
+                                                <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Total Revenue Trend</h3>
+                                                <div className="h-72">
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <AreaChart data={revenueData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                                            <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#DDDDDD'} />
+                                                            <XAxis dataKey="month" tick={{ fill: darkMode ? '#D1D5DB' : '#6B7280' }} />
+                                                            <YAxis tickFormatter={(value) => `$${value / 1000}k`} tick={{ fill: darkMode ? '#D1D5DB' : '#6B7280' }} />
+                                                            <Tooltip
+                                                                formatter={(value) => [`$${value.toLocaleString()}`, 'Revenue']}
+                                                                contentStyle={{ backgroundColor: darkMode ? '#1F2937' : '#FFF', borderColor: darkMode ? '#374151' : '#DDD' }}
+                                                            />
+                                                            <Area type="monotone" dataKey="value" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.2} />
+                                                        </AreaChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-
-                            {/* Growth Trends and Monthly Revenue */}
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                                {/* Growth Trend */}
-                                <div>
-                                    <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Growth Trend</h3>
-                                    <div className="h-72">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <LineChart data={growthData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#DDDDDD'} />
-                                                <XAxis dataKey="month" tick={{ fill: darkMode ? '#D1D5DB' : '#6B7280' }} />
-                                                <YAxis tickFormatter={(value) => `${value}%`} tick={{ fill: darkMode ? '#D1D5DB' : '#6B7280' }} />
-                                                <Tooltip
-                                                    formatter={(value) => [`${value}%`, 'Growth']}
-                                                    contentStyle={{ backgroundColor: darkMode ? '#1F2937' : '#FFF', borderColor: darkMode ? '#374151' : '#DDD' }}
-                                                />
-                                                <Line type="monotone" dataKey="growth" stroke="#10B981" strokeWidth={2} />
-                                            </LineChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </div>
-
-                                {/* Total Revenue Trend */}
-                                <div>
-                                    <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Total Revenue Trend</h3>
-                                    <div className="h-72">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <AreaChart data={revenueData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#DDDDDD'} />
-                                                <XAxis dataKey="month" tick={{ fill: darkMode ? '#D1D5DB' : '#6B7280' }} />
-                                                <YAxis tickFormatter={(value) => `$${value / 1000}k`} tick={{ fill: darkMode ? '#D1D5DB' : '#6B7280' }} />
-                                                <Tooltip
-                                                    formatter={(value) => [`$${value.toLocaleString()}`, 'Revenue']}
-                                                    contentStyle={{ backgroundColor: darkMode ? '#1F2937' : '#FFF', borderColor: darkMode ? '#374151' : '#DDD' }}
-                                                />
-                                                <Area type="monotone" dataKey="value" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.2} />
-                                            </AreaChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -658,10 +957,112 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                             <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
                                 <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Overall Growth</p>
                                 <p className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                    {revenueData.length >= 2
-                                        ? `${(((revenueData[revenueData.length - 1].value - revenueData[0].value) / revenueData[0].value) * 100).toFixed(1)}%`
-                                        : '0.0%'}
+                                    {revenueData.length > 1 ? (
+                                        revenueData[0].value === 0 ? (
+                                            revenueData[revenueData.length - 1].value > 0 ? 'New Revenue' : '0.0%'
+                                        ) : (
+                                            `${(((revenueData[revenueData.length - 1].value - revenueData[0].value) / revenueData[0].value) * 100).toFixed(1)}%`
+                                        )
+                                    ) : 'N/A'}
                                 </p>
+                            </div>
+                        </div>
+
+                        {/* Reports section */}
+                        <h3 className={`text-lg font-semibold mt-6 mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Generate Reports</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <h4 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>PDF Report</h4>
+                                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Generate a detailed PDF report with revenue statistics</p>
+                                    </div>
+                                    <div className={`rounded-full p-2 ${darkMode ? 'bg-red-900' : 'bg-red-50'}`}>
+                                        <FaFileAlt className="h-5 w-5 text-red-500" />
+                                    </div>
+                                </div>
+                                <div className="flex flex-col space-y-2">
+                                    <div className="flex items-center">
+                                        <label htmlFor="pdfMonths" className={`mr-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Months:</label>
+                                        <select
+                                            id="pdfMonths"
+                                            className={`px-2 py-1 rounded ${darkMode ? 'bg-gray-800 text-white border-gray-600' : 'bg-gray-50 text-gray-900 border-gray-300'} border`}
+                                            defaultValue="12"
+                                        >
+                                            <option value="3">3 months</option>
+                                            <option value="6">6 months</option>
+                                            <option value="12">12 months</option>
+                                            <option value="24">24 months</option>
+                                        </select>
+                                    </div>
+                                    <button
+                                        onClick={handleGeneratePdfReport}
+                                        className={`w-full px-4 py-2 rounded-lg flex items-center justify-center
+                                            ${darkMode
+                                                ? 'bg-red-600 hover:bg-red-700 text-white'
+                                                : 'bg-red-600 hover:bg-red-700 text-white'}`}
+                                        disabled={isPdfGenerating}
+                                    >
+                                        {isPdfGenerating ? (
+                                            <>
+                                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white mr-2"></div>
+                                                Generating PDF...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <FaFileDownload className="mr-2" />
+                                                Download PDF Report
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <h4 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>CSV Report</h4>
+                                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Export revenue data as CSV for spreadsheet analysis</p>
+                                    </div>
+                                    <div className={`rounded-full p-2 ${darkMode ? 'bg-green-900' : 'bg-green-50'}`}>
+                                        <FaFileAlt className="h-5 w-5 text-green-500" />
+                                    </div>
+                                </div>
+                                <div className="flex flex-col space-y-2">
+                                    <div className="flex items-center">
+                                        <label htmlFor="csvMonths" className={`mr-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Months:</label>
+                                        <select
+                                            id="csvMonths"
+                                            className={`px-2 py-1 rounded ${darkMode ? 'bg-gray-800 text-white border-gray-600' : 'bg-gray-50 text-gray-900 border-gray-300'} border`}
+                                            defaultValue="12"
+                                        >
+                                            <option value="3">3 months</option>
+                                            <option value="6">6 months</option>
+                                            <option value="12">12 months</option>
+                                            <option value="24">24 months</option>
+                                        </select>
+                                    </div>
+                                    <button
+                                        onClick={handleGenerateCsvReport}
+                                        className={`w-full px-4 py-2 rounded-lg flex items-center justify-center
+                                            ${darkMode
+                                                ? 'bg-green-600 hover:bg-green-700 text-white'
+                                                : 'bg-green-600 hover:bg-green-700 text-white'}`}
+                                        disabled={isCsvGenerating}
+                                    >
+                                        {isCsvGenerating ? (
+                                            <>
+                                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white mr-2"></div>
+                                                Generating CSV...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <FaFileDownload className="mr-2" />
+                                                Download CSV Report
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>

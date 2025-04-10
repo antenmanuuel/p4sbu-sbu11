@@ -1,19 +1,129 @@
-import React, { useState, useEffect } from 'react';
-import { FaArrowLeft, FaCar, FaExclamationCircle, FaCheckCircle } from 'react-icons/fa';
+// TP: this .jsx file's code was manipulated, optimized, and contributed to by ChatGPT (after the initial was written by Student) to provide clarity on bugs, modularize, and optimize/provide better solutions during the coding process. 
+// It was prompted to take the initial iteration/changes and modify/optimize it to adapt for more concise techniques to achieve the desired functionalities.
+// It was also prompted to explain all changes in detail (completely studied/understood by the student) before the AI's optimized/modified version of the student changes/written code was added to the code file. 
+// Additionally, ChatGPT (with project and code context) modified the initial/previous iteration of code to be maximized for code readability as well as descriptive comments (for Instructor understanding). 
+// It can be credited that AI played a crucial role in heavily contributing/modifying/optimizing this entire file's code (after the initial changes were written by Student). 
+// Commits and pushes are executed after the final version have been made for the specific implementation changes during that coding session. 
 
-const CarInfoForm = ({ darkMode, lotName, onBackClick, onContinue }) => {
+import React, { useState, useEffect } from 'react';
+import { FaArrowLeft, FaCar, FaExclamationCircle, FaCheckCircle, FaTicketAlt } from 'react-icons/fa';
+import PropTypes from 'prop-types';
+import { CarService } from '../utils/api';
+
+const CarInfoForm = ({ darkMode, lotName, permitType, onBackClick, onContinue, isAuthenticated }) => {
     const [vehicleInfo, setVehicleInfo] = useState({
         plateNumber: '',
         state: 'New York',
         make: '',
         model: '',
         color: '',
-        bodyType: ''
+        bodyType: '',
+        year: new Date().getFullYear().toString()
     });
     const [errors, setErrors] = useState({});
     const [touched, setTouched] = useState({});
     const [formSubmitted, setFormSubmitted] = useState(false);
     const [availableModels, setAvailableModels] = useState([]);
+    const [saveCarInfo, setSaveCarInfo] = useState(true);
+    // Changes below made on/before 4/6/2025, please refer to top of file for appropriate credit
+    // State for user's saved cars
+    const [userCars, setUserCars] = useState([]);
+    const [loadingCars, setLoadingCars] = useState(false);
+    const [showSavedCars, setShowSavedCars] = useState(true);
+    const [selectedSavedCarId, setSelectedSavedCarId] = useState(null);
+    const [carsError, setCarsError] = useState(null);
+
+    // Add useEffect to check for saved car info when component mounts
+    useEffect(() => {
+        // Set initial errors
+        validateForm();
+    }, [vehicleInfo]);
+
+    // Fetch user cars from backend if authenticated
+    useEffect(() => {
+        if (isAuthenticated) {
+            fetchUserCars();
+        }
+    }, [isAuthenticated]);
+
+    // Function to fetch user cars from backend
+    const fetchUserCars = async () => {
+        try {
+            if (isAuthenticated) {
+                setLoadingCars(true);
+                setCarsError(null);
+
+                // Fetch cars from backend
+                const response = await CarService.getUserCars();
+
+                if (response.success && response.cars && response.cars.length > 0) {
+                    setUserCars(response.cars);
+                    setShowSavedCars(true);
+
+                    // Select the first car by default instead of the primary car
+                    const defaultCar = response.cars[0];
+                    setSelectedSavedCarId(defaultCar._id);
+
+                    // Pre-fill form with car data
+                    const carInfo = {
+                        plateNumber: defaultCar.plateNumber || '',
+                        state: defaultCar.stateProv || 'New York',
+                        make: defaultCar.make || '',
+                        model: defaultCar.model || '',
+                        color: defaultCar.color || '',
+                        bodyType: defaultCar.bodyType || '',
+                        year: defaultCar.year || new Date().getFullYear().toString()
+                    };
+
+                    setVehicleInfo(carInfo);
+
+                    // Mark all fields as touched to show validation state
+                    const allTouched = {};
+                    Object.keys(carInfo).forEach(key => {
+                        allTouched[key] = true;
+                    });
+                    setTouched(allTouched);
+                } else {
+                    setUserCars([]);
+                    setShowSavedCars(false);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching user cars:', error);
+            setCarsError('Failed to load your saved vehicles. Please try again.');
+            setUserCars([]);
+            setShowSavedCars(false);
+        } finally {
+            setLoadingCars(false);
+        }
+    };
+
+    // Handle selecting a saved car
+    const handleSelectSavedCar = (car) => {
+        setSelectedSavedCarId(car._id);
+
+        // Update the vehicle info fields with the selected car's data
+        setVehicleInfo({
+            make: car.make,
+            model: car.model,
+            plateNumber: car.plateNumber,
+            state: car.stateProv,
+            color: car.color,
+            bodyType: car.bodyType,
+            year: car.year || new Date().getFullYear().toString(),
+            carId: car._id  // Include the car ID for backend reference
+        });
+
+        // Mark all fields as touched to validate them
+        setTouched({
+            make: true,
+            model: true,
+            plateNumber: true,
+            state: true,
+            color: true,
+            bodyType: true
+        });
+    };
 
     // Sample data
     const states = [
@@ -129,6 +239,11 @@ const CarInfoForm = ({ darkMode, lotName, onBackClick, onContinue }) => {
                 [field]: validateField(field, value)
             }));
         }
+
+        // If user changes a field manually, clear the selected saved car
+        if (selectedSavedCarId) {
+            setSelectedSavedCarId(null);
+        }
     };
 
     // Effect to validate touched fields
@@ -150,7 +265,7 @@ const CarInfoForm = ({ darkMode, lotName, onBackClick, onContinue }) => {
         }
     }, [vehicleInfo, touched]);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setFormSubmitted(true);
 
@@ -171,7 +286,37 @@ const CarInfoForm = ({ darkMode, lotName, onBackClick, onContinue }) => {
             return;
         }
 
-        onContinue(vehicleInfo);
+        // If saveCarInfo is checked and no car is selected, save car information
+        if (saveCarInfo && !selectedSavedCarId) {
+            try {
+                if (isAuthenticated) {
+                    // If logged in, save to backend
+                    const carData = {
+                        plateNumber: vehicleInfo.plateNumber,
+                        stateProv: vehicleInfo.state,
+                        make: vehicleInfo.make,
+                        model: vehicleInfo.model,
+                        color: vehicleInfo.color,
+                        bodyType: vehicleInfo.bodyType,
+                        year: vehicleInfo.year
+                    };
+
+                    await CarService.saveCar(carData);
+                } else {
+                    // If not logged in, save to localStorage
+                    localStorage.setItem('userCarInfo', JSON.stringify(vehicleInfo));
+                }
+            } catch (error) {
+                console.error('Error saving car info:', error);
+            }
+        }
+
+        // If a saved car is selected, pass the car ID instead of the car details
+        if (selectedSavedCarId && isAuthenticated) {
+            onContinue({ carId: selectedSavedCarId });
+        } else {
+            onContinue(vehicleInfo);
+        }
     };
 
     // Determine if a field is valid
@@ -196,17 +341,96 @@ const CarInfoForm = ({ darkMode, lotName, onBackClick, onContinue }) => {
             <div className={`p-4 rounded-lg mb-6 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                 <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Reserving spot at:</p>
                 <p className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{lotName}</p>
+
+                {permitType && (
+                    <div className="mt-2 flex items-center">
+                        <FaTicketAlt className={`mr-2 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
+                        <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                            Permit Type: <span className="font-semibold">{permitType}</span>
+                        </p>
+                    </div>
+                )}
             </div>
 
-            {/* Form */}
-            <div className={`p-6 rounded-lg shadow-md ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                <div className="flex items-center mb-5">
-                    <FaCar className={`mr-3 text-xl ${darkMode ? 'text-gray-300' : 'text-gray-700'}`} />
-                    <h2 className={`font-semibold text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                        Enter your vehicle details
-                    </h2>
-                </div>
+            {/* Section for Saved Cars (when authenticated) */}
+            {isAuthenticated && (
+                <div className="mb-8">
+                    {loadingCars ? (
+                        <div className="flex justify-center items-center py-6">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+                        </div>
+                    ) : carsError ? (
+                        <div className={`p-4 rounded-md ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-50 text-red-800'} mb-4`}>
+                            <p className="flex items-center">
+                                <FaExclamationCircle className="mr-2 flex-shrink-0" />
+                                {carsError}
+                            </p>
+                        </div>
+                    ) : userCars.length > 0 ? (
+                        <>
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                    Your Saved Vehicles
+                                </h2>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowSavedCars(false)}
+                                    className={`text-sm ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
+                                >
+                                    Use a different vehicle
+                                </button>
+                            </div>
 
+                            {showSavedCars ? (
+                                <div className="space-y-4">
+                                    {userCars.map((car) => (
+                                        <div
+                                            key={car._id}
+                                            onClick={() => handleSelectSavedCar(car)}
+                                            className={`p-4 border rounded-lg cursor-pointer transition-colors ${selectedSavedCarId === car._id
+                                                ? darkMode
+                                                    ? 'bg-gray-700 border-red-500'
+                                                    : 'bg-red-50 border-red-500'
+                                                : darkMode
+                                                    ? 'bg-gray-800 border-gray-700 hover:bg-gray-700'
+                                                    : 'bg-white border-gray-200 hover:bg-gray-50'
+                                                }`}
+                                        >
+                                            <div className="flex justify-between">
+                                                <div className="flex items-start">
+                                                    <FaCar className={`mt-1 mr-2 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
+                                                    <div>
+                                                        <h3 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                                            {car.make} {car.model} ({car.year || 'Unknown'})
+                                                        </h3>
+                                                        <p className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                                                            {car.color} {car.bodyType}
+                                                        </p>
+                                                        <p className={`mt-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                                            {car.plateNumber} • {car.stateProv}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowSavedCars(true)}
+                                    className={`mb-6 flex items-center text-sm ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
+                                >
+                                    <FaCar className="mr-1" /> Select from saved vehicles
+                                </button>
+                            )}
+                        </>
+                    ) : null}
+                </div>
+            )}
+
+            {/* Only show the vehicle form if not using a saved car */}
+            {(!isAuthenticated || !showSavedCars || userCars.length === 0) && (
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* License Plate */}
@@ -509,6 +733,23 @@ const CarInfoForm = ({ darkMode, lotName, onBackClick, onContinue }) => {
                             </div>
                         </div>
                     )}
+                    
+                    {/* Changes below made on/before 4/6/2025, please refer to top of file for appropriate credit */} 
+                    <div className="flex items-center mb-4">
+                        <input
+                            id="saveCarInfo"
+                            type="checkbox"
+                            checked={saveCarInfo}
+                            onChange={(e) => setSaveCarInfo(e.target.checked)}
+                            className={`w-4 h-4 rounded mr-2 text-red-600 focus:ring-red-500 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-100 border-gray-300'}`}
+                        />
+                        <label
+                            htmlFor="saveCarInfo"
+                            className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
+                        >
+                            Save this vehicle for future reservations
+                        </label>
+                    </div>
 
                     <button
                         type="submit"
@@ -517,9 +758,62 @@ const CarInfoForm = ({ darkMode, lotName, onBackClick, onContinue }) => {
                         Continue to Payment
                     </button>
                 </form>
-            </div>
+            )}
+
+            {/* Changes below made on/before 4/6/2025, please refer to top of file for appropriate credit */}
+            {isAuthenticated && showSavedCars && userCars.length > 0 && (
+                <div className="flex justify-end space-x-4 mt-6">
+                    <button
+                        type="button"
+                        onClick={onBackClick}
+                        className={`px-4 py-2 rounded-lg shadow-md ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
+                    >
+                        Back
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const selectedCar = userCars.find(car => car._id === selectedSavedCarId);
+                            if (selectedCar) {
+                                onContinue({
+                                    make: selectedCar.make,
+                                    model: selectedCar.model,
+                                    plateNumber: selectedCar.plateNumber,
+                                    stateProv: selectedCar.stateProv,
+                                    color: selectedCar.color,
+                                    bodyType: selectedCar.bodyType,
+                                    year: selectedCar.year,
+                                    carId: selectedCar._id
+                                });
+                            }
+                        }}
+                        disabled={!selectedSavedCarId}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-md"
+                    >
+                        Continue
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
 
-export default CarInfoForm; 
+export default CarInfoForm;
+
+// Add PropTypes
+CarInfoForm.propTypes = {
+    darkMode: PropTypes.bool,
+    lotName: PropTypes.string,
+    permitType: PropTypes.string,
+    onBackClick: PropTypes.func.isRequired,
+    onContinue: PropTypes.func.isRequired,
+    isAuthenticated: PropTypes.bool
+};
+
+// Add defaultProps
+CarInfoForm.defaultProps = {
+    darkMode: false,
+    lotName: '',
+    permitType: '',
+    isAuthenticated: false
+}; 

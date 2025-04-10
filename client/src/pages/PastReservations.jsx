@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaMapMarkerAlt, FaClock, FaPlug, FaMoneyBillWave, FaCarAlt, FaSearch, FaFilter, FaCalendarAlt, FaArrowLeft, FaInfoCircle, FaTimes, FaHistory, FaFileDownload } from "react-icons/fa";
+import { FaMapMarkerAlt, FaClock, FaPlug, FaMoneyBillWave, FaCarAlt, FaSearch, FaFilter, FaCalendarAlt, FaArrowLeft, FaInfoCircle, FaTimes, FaHistory, FaFileDownload, FaExclamationTriangle } from "react-icons/fa";
+import { ReservationService } from "../utils/api";
 
 const PastReservations = ({ darkMode, isAuthenticated }) => {
     const navigate = useNavigate();
@@ -12,106 +13,68 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
+    const [reservations, setReservations] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-    if (!isAuthenticated) {
-        navigate("/");
-        return null;
-    }
-
-    // Mock reservations data - in a real app, this would come from an API
-    const allReservations = [
-        {
-            id: "R1001",
-            lotName: "Main Campus Center",
-            spotNumber: "A-15",
-            startTime: "2024-05-10T09:00:00",
-            endTime: "2024-05-10T17:00:00",
-            totalCost: 15.00,
-            status: "Completed",
-            paymentMethod: "Credit Card",
-            chargerType: "Level 2",
-            createdAt: "2024-05-08T14:30:00"
-        },
-        {
-            id: "R1002",
-            lotName: "Engineering Building",
-            spotNumber: "B-22",
-            startTime: "2024-05-05T10:00:00",
-            endTime: "2024-05-05T14:00:00",
-            totalCost: 8.00,
-            status: "Completed",
-            paymentMethod: "Student Account",
-            chargerType: "Level 1",
-            createdAt: "2024-05-04T09:15:00"
-        },
-        {
-            id: "R1003",
-            lotName: "Library Parking",
-            spotNumber: "C-05",
-            startTime: "2024-04-28T08:00:00",
-            endTime: "2024-04-28T16:00:00",
-            totalCost: 16.00,
-            status: "Completed",
-            paymentMethod: "Credit Card",
-            chargerType: "Level 2",
-            createdAt: "2024-04-27T19:45:00"
-        },
-        {
-            id: "R1004",
-            lotName: "Student Union",
-            spotNumber: "D-11",
-            startTime: "2024-04-20T11:30:00",
-            endTime: "2024-04-20T13:30:00",
-            totalCost: 4.00,
-            status: "Canceled",
-            paymentMethod: "Student Account",
-            chargerType: "Level 1",
-            refundAmount: 4.00,
-            cancelReason: "Schedule changed",
-            createdAt: "2024-04-19T22:10:00"
-        },
-        {
-            id: "R1005",
-            lotName: "Science Complex",
-            spotNumber: "E-08",
-            startTime: "2024-04-15T13:00:00",
-            endTime: "2024-04-15T17:00:00",
-            totalCost: 8.00,
-            status: "Completed",
-            paymentMethod: "Credit Card",
-            chargerType: "Level 2",
-            createdAt: "2024-04-14T10:20:00"
-        },
-        {
-            id: "R1006",
-            lotName: "Athletic Center",
-            spotNumber: "F-19",
-            startTime: "2024-04-08T16:00:00",
-            endTime: "2024-04-08T19:00:00",
-            totalCost: 6.00,
-            status: "Completed",
-            paymentMethod: "Student Account",
-            chargerType: "Level 1",
-            createdAt: "2024-04-07T23:55:00"
-        },
-        {
-            id: "R1007",
-            lotName: "Main Campus Center",
-            spotNumber: "A-22",
-            startTime: "2024-04-01T09:30:00",
-            endTime: "2024-04-01T15:30:00",
-            totalCost: 12.00,
-            status: "Canceled",
-            paymentMethod: "Credit Card",
-            chargerType: "Level 2",
-            refundAmount: 10.00,
-            cancelReason: "Vehicle issue",
-            createdAt: "2024-03-30T08:40:00"
+    useEffect(() => {
+        // Check authentication
+        if (!isAuthenticated) {
+            navigate("/login", { state: { from: '/past-reservations' } });
+            return;
         }
-    ];
+
+        // Fetch reservations from the backend
+        const fetchReservations = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                // Pass filters to specifically get past reservations (completed or canceled)
+                const response = await ReservationService.getUserReservations({
+                    status: 'all',
+                    showPastOnly: true
+                });
+                console.log('Past reservations response:', response);
+
+                if (response.success) {
+                    // Check different possible data structures
+                    const reservationsData = response.data?.data?.reservations || response.data?.reservations || [];
+
+                    if (Array.isArray(reservationsData) && reservationsData.length > 0) {
+                        // Transform API data to match the component's expected format
+                        const formattedReservations = reservationsData.map(reservation => ({
+                            id: reservation.reservationId || reservation._id,
+                            lotName: reservation.lotId?.name || 'Unknown Lot',
+                            spotNumber: reservation.permitType || 'Standard',
+                            startTime: reservation.startTime,
+                            endTime: reservation.endTime,
+                            totalCost: reservation.totalPrice || 0,
+                            status: reservation.status || 'Pending',
+                            paymentMethod: reservation.paymentMethod || 'Credit Card',
+                            chargerType: reservation.isEV ? "Level 2" : "None",
+                            createdAt: reservation.createdAt || new Date().toISOString()
+                        }));
+
+                        setReservations(formattedReservations);
+                    } else {
+                        setReservations([]);
+                    }
+                } else {
+                    throw new Error(response.error || 'Failed to fetch reservations');
+                }
+            } catch (error) {
+                console.error('Error fetching past reservations:', error);
+                setError(error.message || 'An unexpected error occurred while fetching reservations');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchReservations();
+    }, [isAuthenticated, navigate]);
 
     // Filter reservations based on search term, status, and date range
-    const filteredReservations = allReservations.filter(reservation => {
+    const filteredReservations = reservations.filter(reservation => {
         // Search term filter
         const matchesSearch =
             reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -387,14 +350,36 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                         )}
                     </div>
 
+                    {/* Loading State */}
+                    {loading && (
+                        <div className="flex justify-center items-center py-20">
+                            <div className={`animate-spin rounded-full h-12 w-12 border-b-2 ${darkMode ? 'border-red-400' : 'border-red-700'}`}></div>
+                        </div>
+                    )}
+
+                    {/* Error State */}
+                    {!loading && error && (
+                        <div className={`p-10 text-center ${darkMode ? 'text-red-400' : 'text-red-500'}`}>
+                            <FaExclamationTriangle className="mx-auto mb-3 text-4xl" />
+                            <p className="text-lg font-medium mb-2">Error loading reservations</p>
+                            <p className="mb-4">{error}</p>
+                            <button
+                                onClick={() => window.location.reload()}
+                                className={`px-4 py-2 rounded ${darkMode ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-red-100 hover:bg-red-200 text-red-800'}`}
+                            >
+                                Try Again
+                            </button>
+                        </div>
+                    )}
+
                     {/* Reservations list */}
-                    {sortedReservations.length === 0 ? (
+                    {!loading && !error && sortedReservations.length === 0 ? (
                         <div className={`p-10 text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                            <FaInfoCircle className="mx-auto mb-3 text-4xl" />
+                            <FaExclamationTriangle className="mx-auto mb-3 text-4xl" />
                             <p className="text-lg font-medium mb-2">No reservations found</p>
                             <p>Try adjusting your filters or search criteria</p>
                         </div>
-                    ) : (
+                    ) : !loading && !error && (
                         <div className="overflow-x-auto">
                             <table className="w-full">
                                 <thead className={darkMode ? 'bg-gray-700' : 'bg-gray-50'}>
@@ -512,7 +497,7 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                         <p className="font-medium">{selectedReservation.lotName}</p>
                                     </div>
                                     <div>
-                                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Spot Number</p>
+                                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Permit Name</p>
                                         <p className="font-medium">{selectedReservation.spotNumber}</p>
                                     </div>
                                     <div>

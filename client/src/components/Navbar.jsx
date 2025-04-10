@@ -12,7 +12,6 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [searchQuery, setSearchQuery] = useState('');
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -177,21 +176,6 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
     setIsProfileDropdownOpen(false);
   };
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    // Implement search functionality here
-    console.log('Searching for:', searchQuery);
-
-    // Check if search query matches about or contact us
-    const query = searchQuery.toLowerCase();
-    if (query.includes('about')) {
-      navigate('/about-us');
-    } else if (query.includes('contact')) {
-      navigate('/contact-us');
-    } else {
-      navigate('/under-construction');
-    }
-  };
 
   const handleLinkClick = (linkName, path) => {
     console.log('Link clicked:', linkName, 'Path:', path);
@@ -300,38 +284,7 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
 
           {/* Right side controls */}
           <div className="flex items-center gap-3">
-            {/* Search Bar - Moved next to dark mode toggle */}
-            <div className="hidden md:flex">
-              <form onSubmit={handleSearch} className="w-full">
-                <div className="relative">
-                  <input
-                    type="text"
-                    className={`w-44 pl-9 pr-3 py-1.5 text-sm rounded-md ${darkMode
-                      ? 'bg-gray-800 border-gray-700 text-white focus:border-red-500'
-                      : 'bg-gray-50 border-gray-300 text-gray-900 focus:border-red-500'
-                      } border focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition-colors`}
-                    placeholder="Search..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                  <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                    <svg
-                      className={`size-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                      />
-                    </svg>
-                  </div>
-                </div>
-              </form>
-            </div>
+
 
             {/* Notifications */}
             {isAuthenticated && user && user.userType !== 'admin' && (
@@ -626,38 +579,7 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
             </div>
           )}
 
-          {/* Mobile Search Bar */}
-          <div className="px-4 py-3">
-            <form onSubmit={handleSearch}>
-              <div className="relative">
-                <input
-                  type="text"
-                  className={`w-full pl-9 pr-3 py-1.5 text-sm rounded-md ${darkMode
-                    ? 'bg-gray-800 border-gray-700 text-white focus:border-red-500'
-                    : 'bg-gray-50 border-gray-300 text-gray-900 focus:border-red-500'
-                    } border focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition-colors`}
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                  <svg
-                    className={`size-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                </div>
-              </div>
-            </form>
-          </div>
+
 
           <div className="space-y-1 px-4 py-3">
             {navLinks.map(link => (

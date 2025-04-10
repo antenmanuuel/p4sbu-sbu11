@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaArrowLeft, FaSearch, FaFilter, FaFileDownload, FaTimes, FaInfoCircle, FaReceipt } from 'react-icons/fa';
+import { FaArrowLeft, FaSearch, FaFilter, FaFileDownload, FaTimes, FaInfoCircle, FaReceipt, FaExclamationTriangle } from 'react-icons/fa';
+import { UserService } from '../utils/api';
 
 const Billing = ({ darkMode, isAuthenticated }) => {
     const navigate = useNavigate();
@@ -17,50 +18,48 @@ const Billing = ({ darkMode, isAuthenticated }) => {
     const [showFilters, setShowFilters] = useState(false);
     const [selectedBill, setSelectedBill] = useState(null);
     const [showReceiptModal, setShowReceiptModal] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [billingHistory, setBillingHistory] = useState([]);
 
-    // Mock billing history data - more comprehensive than dashboard view
-    const billingHistory = [
-        {
-            id: 'BIL-1001',
-            date: '2024-01-10',
-            description: 'Semester Parking Permit',
-            amount: 125.00,
-            status: 'Paid',
-            paymentMethod: 'Credit Card',
-            details: 'Spring 2024 Semester Parking Permit for Lot 2',
-            receiptNumber: 'REC-2024-001'
-        },
-        {
-            id: 'BIL-1002',
-            date: '2024-02-15',
-            description: 'Parking Citation',
-            amount: 50.00,
-            status: 'Unpaid',
-            paymentMethod: null,
-            details: 'No Valid Permit in Library Lot on Feb 15, 2024',
-            dueDate: '2024-03-15'
-        },
-        {
-            id: 'BIL-1003',
-            date: '2024-02-28',
-            description: 'Parking Citation',
-            amount: 75.00,
-            status: 'Unpaid',
-            paymentMethod: null,
-            details: 'Incorrect Parking Spot in Faculty Lot on Feb 26, 2024',
-            dueDate: '2024-03-28'
-        },
-        {
-            id: 'BIL-1004',
-            date: '2023-09-05',
-            description: 'Fall Semester Parking Permit',
-            amount: 125.00,
-            status: 'Paid',
-            paymentMethod: 'Student Account',
-            details: 'Fall 2023 Semester Parking Permit for Lot 2',
-            receiptNumber: 'REC-2023-042'
-        }
-    ];
+    // Fetch billing history from backend
+    useEffect(() => {
+        const fetchBillingHistory = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const response = await UserService.getBillingHistory();
+                console.log('Billing history response:', response);
+
+                if (response.success && response.data.billingHistory) {
+                    // Format the billing data with additional details
+                    const formattedBillingHistory = response.data.billingHistory.map(item => ({
+                        id: item._id,
+                        date: new Date(item.date).toISOString().split('T')[0], // Format as YYYY-MM-DD
+                        description: item.description,
+                        amount: item.amount,
+                        status: item.status,
+                        paymentMethod: 'Credit Card', // Default payment method
+                        details: `${item.description} - Purchased on ${new Date(item.date).toLocaleDateString()}`,
+                        receiptNumber: `REC-${new Date(item.date).getFullYear()}-${item._id.substr(-4)}`
+                    }));
+
+                    setBillingHistory(formattedBillingHistory);
+                } else {
+                    throw new Error(response.error || 'Failed to fetch billing history');
+                }
+            } catch (error) {
+                console.error('Error fetching billing history:', error);
+                setError(error.message || 'An unexpected error occurred');
+                // Set empty array to avoid undefined errors
+                setBillingHistory([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchBillingHistory();
+    }, []);
 
     // Filter the billing history
     const filteredBillingHistory = billingHistory.filter(bill => {
@@ -69,9 +68,7 @@ const Billing = ({ darkMode, isAuthenticated }) => {
 
         const matchesType = filterType === 'all' ||
             (filterType === 'paid' && bill.status === 'Paid') ||
-            (filterType === 'unpaid' && bill.status === 'Unpaid') ||
-            (filterType === 'permits' && bill.description.includes('Permit')) ||
-            (filterType === 'citations' && bill.description.includes('Citation'));
+            (filterType === 'permits' && bill.description.includes('Permit'));
 
         const matchesDate = (!dateRange.start || new Date(bill.date) >= new Date(dateRange.start)) &&
             (!dateRange.end || new Date(bill.date) <= new Date(dateRange.end));
@@ -92,11 +89,6 @@ const Billing = ({ darkMode, isAuthenticated }) => {
     const handleViewReceipt = (bill) => {
         setSelectedBill(bill);
         setShowReceiptModal(true);
-    };
-
-    // Handle pay now functionality
-    const handlePayNow = (bill) => {
-        navigate('/payment', { state: { bill } });
     };
 
     return (
@@ -174,9 +166,7 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                             >
                                 <option value="all">All Transactions</option>
                                 <option value="permits">Permits Only</option>
-                                <option value="citations">Citations Only</option>
                                 <option value="paid">Paid Only</option>
-                                <option value="unpaid">Unpaid Only</option>
                             </select>
                         </div>
 
@@ -236,7 +226,18 @@ const Billing = ({ darkMode, isAuthenticated }) => {
 
             {/* Billing History Table */}
             <div className={`rounded-lg shadow-sm overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
-                {filteredBillingHistory.length === 0 ? (
+                {loading ? (
+                    <div className="flex justify-center items-center py-12">
+                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-700"></div>
+                    </div>
+                ) : error ? (
+                    <div className={`p-6 rounded-md ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-50 text-red-800'}`}>
+                        <p className="flex items-center">
+                            <FaExclamationTriangle className="mr-2 flex-shrink-0" />
+                            {error}
+                        </p>
+                    </div>
+                ) : filteredBillingHistory.length === 0 ? (
                     <div className={`p-8 text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                         <FaInfoCircle className="mx-auto mb-2 text-2xl" />
                         <p>No billing records found matching your criteria.</p>
@@ -294,21 +295,12 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            {bill.status === 'Paid' ? (
-                                                <button
-                                                    onClick={() => handleViewReceipt(bill)}
-                                                    className="text-blue-500 hover:text-blue-700 mr-3"
-                                                >
-                                                    View Receipt
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    onClick={() => handlePayNow(bill)}
-                                                    className="text-red-600 hover:text-red-700 mr-3"
-                                                >
-                                                    Pay Now
-                                                </button>
-                                            )}
+                                            <button
+                                                onClick={() => handleViewReceipt(bill)}
+                                                className="text-blue-500 hover:text-blue-700 mr-3"
+                                            >
+                                                View Receipt
+                                            </button>
                                         </td>
                                     </tr>
                                 ))}

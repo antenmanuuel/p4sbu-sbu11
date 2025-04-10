@@ -1,235 +1,269 @@
-import React, { useState, useEffect } from 'react';
-import { FaArrowLeft, FaCreditCard, FaUniversity, FaCheckCircle, FaExclamationCircle } from 'react-icons/fa';
+// TP: this .jsx file's code was heavily manipulated, optimized, and contributed to by ChatGPT (after the initial was written by Students via Pair Programming) to provide clarity on bugs, modularize, and optimize/provide better solutions during the coding process. 
+// It was given context for stripe docs and prompted to take the initial student iteration/changes and modify/optimize it to adapt for more concise techniques to achieve the desired functionalities.
+// It was also prompted to explain all changes in detail (completely studied/understood by the student) before the AI's optimized/modified version of the student written code was added to the code file. 
+// Additionally, ChatGPT (with project and code context) modified the initial/previous iteration of code to be maximized for code readability as well as descriptive comments (for Instructor understanding). 
+// It can be credited that AI played a crucial role in heavily contributing/modifying/optimizing this entire file's code (after the initial changes were written by Student). 
+// Commits and pushes are executed after the final version have been made for the specific implementation changes during that coding session. 
 
-const PaymentPage = ({ darkMode, lotName, price, vehicleInfo, onBackClick, onCompletePayment }) => {
-    const [paymentMethod, setPaymentMethod] = useState('card');
-    const [cardNumber, setCardNumber] = useState('');
-    const [cardName, setCardName] = useState('');
-    const [expiryDate, setExpiryDate] = useState('');
-    const [cvv, setCvv] = useState('');
+import React, { useState, useEffect } from 'react';
+import { FaArrowLeft, FaCreditCard, FaUniversity, FaCheckCircle, FaExclamationCircle, FaIdCard, FaTrash } from 'react-icons/fa';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
+import { PaymentMethodService } from '../utils/api';
+
+// Load Stripe outside of component to avoid recreating it on re-renders
+// Replace with your publishable key from Stripe dashboard
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+
+// The wrapper component that provides Stripe context
+const PaymentPage = ({
+    darkMode,
+    lotName,
+    price,
+    vehicleInfo,
+    onBackClick,
+    onCompletePayment,
+    hasValidPermit,
+    validPermitDetails
+}) => {
+    return (
+        <Elements stripe={stripePromise}>
+            <PaymentForm
+                darkMode={darkMode}
+                lotName={lotName}
+                price={price}
+                vehicleInfo={vehicleInfo}
+                onBackClick={onBackClick}
+                onCompletePayment={onCompletePayment}
+                hasValidPermit={hasValidPermit}
+                validPermitDetails={validPermitDetails}
+            />
+        </Elements>
+    );
+};
+
+// The actual payment form component
+const PaymentForm = ({
+    darkMode,
+    lotName,
+    price,
+    vehicleInfo,
+    onBackClick,
+    onCompletePayment,
+    hasValidPermit,
+    validPermitDetails
+}) => {
+    const stripe = useStripe();
+    const elements = useElements();
+    const [paymentMethod, setPaymentMethod] = useState(hasValidPermit ? 'existingPermit' : 'card');
     const [isProcessing, setIsProcessing] = useState(false);
     const [paymentStatus, setPaymentStatus] = useState(null);
-    const [errors, setErrors] = useState({});
-    const [touched, setTouched] = useState({});
-    const [formSubmitted, setFormSubmitted] = useState(false);
+    const [cardError, setCardError] = useState('');
+    const [savedPaymentMethods, setSavedPaymentMethods] = useState([]);
+    const [loadingSavedCards, setLoadingSavedCards] = useState(false);
+    const [selectedSavedCard, setSelectedSavedCard] = useState(null);
+    const [showNewCardForm, setShowNewCardForm] = useState(true);
 
-    const formatCardNumber = (value) => {
-        // Remove all non-digits
-        const digits = value.replace(/\D/g, '');
-
-        // Add space after every 4 digits
-        let formatted = '';
-        for (let i = 0; i < digits.length; i++) {
-            if (i > 0 && i % 4 === 0) {
-                formatted += ' ';
-            }
-            formatted += digits[i];
-        }
-
-        // Limit to 19 characters (16 digits + 3 spaces)
-        return formatted.substring(0, 19);
-    };
-
-    const formatExpiryDate = (value) => {
-        // Remove all non-digits
-        const digits = value.replace(/\D/g, '');
-
-        // Format as MM/YY
-        if (digits.length > 2) {
-            return `${digits.substring(0, 2)}/${digits.substring(2, 4)}`;
-        } else {
-            return digits;
-        }
-    };
-
-    // Validate a single field
-    const validateField = (name, value) => {
-        if (paymentMethod !== 'card') return '';
-
-        let error = '';
-        let month, year, currentYear, currentMonth;
-
-        switch (name) {
-            case 'cardNumber':
-                if (!value.trim()) {
-                    error = 'Card number is required';
-                } else if (value.replace(/\s/g, '').length !== 16) {
-                    error = 'Card number must be 16 digits';
-                }
-                // Check if all characters are digits or spaces
-                else if (!/^[\d\s]+$/.test(value)) {
-                    error = 'Card number can only contain digits';
-                }
-                break;
-            case 'cardName':
-                if (!value.trim()) {
-                    error = 'Name on card is required';
-                } else if (value.trim().length < 3) {
-                    error = 'Name must be at least 3 characters';
-                }
-                break;
-            case 'expiryDate':
-                if (!value.trim()) {
-                    error = 'Expiry date is required';
-                } else if (value.length !== 5 || !/^\d\d\/\d\d$/.test(value)) {
-                    error = 'Expiry date must be in MM/YY format';
-                } else {
-                    // Validate month is between 01-12
-                    month = parseInt(value.substring(0, 2), 10);
-                    if (month < 1 || month > 12) {
-                        error = 'Month must be between 01-12';
-                    } else {
-                        // Check if date is in the future
-                        year = parseInt('20' + value.substring(3, 5), 10);
-                        currentYear = new Date().getFullYear();
-                        currentMonth = new Date().getMonth() + 1;
-
-                        if (year < currentYear || (year === currentYear && month < currentMonth)) {
-                            error = 'Card has expired';
-                        }
-                    }
-                }
-                break;
-            case 'cvv':
-                if (!value.trim()) {
-                    error = 'CVV is required';
-                } else if (!/^\d{3,4}$/.test(value)) {
-                    error = 'CVV must be 3-4 digits';
-                }
-                break;
-            default:
-                break;
-        }
-
-        return error;
-    };
-
-    const validateForm = () => {
-        if (paymentMethod === 'solar') return true;
-
-        const newErrors = {};
-
-        newErrors.cardNumber = validateField('cardNumber', cardNumber);
-        newErrors.cardName = validateField('cardName', cardName);
-        newErrors.expiryDate = validateField('expiryDate', expiryDate);
-        newErrors.cvv = validateField('cvv', cvv);
-
-        // Remove empty error messages
-        Object.keys(newErrors).forEach(key => {
-            if (!newErrors[key]) {
-                delete newErrors[key];
-            }
-        });
-
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
-    };
-
-    // Handle field change with validation
-    const handleFieldChange = (name, value) => {
-        // Mark field as touched
-        setTouched(prev => ({ ...prev, [name]: true }));
-
-        // Update field value
-        switch (name) {
-            case 'cardNumber':
-                setCardNumber(formatCardNumber(value));
-                break;
-            case 'cardName':
-                setCardName(value);
-                break;
-            case 'expiryDate':
-                setExpiryDate(formatExpiryDate(value));
-                break;
-            case 'cvv':
-                setCvv(value.replace(/\D/g, '').substring(0, 4));
-                break;
-            default:
-                break;
-        }
-
-        // If form was already submitted once, validate the field immediately
-        if (formSubmitted) {
-            setErrors(prev => ({
-                ...prev,
-                [name]: validateField(name, value)
-            }));
-        }
-    };
-
-    // Effect to validate touched fields
+    // Update payment method when the hasValidPermit prop changes
     useEffect(() => {
-        if (paymentMethod === 'card' && Object.keys(touched).length > 0) {
-            const fieldsToValidate = Object.keys(touched).filter(field => touched[field]);
-
-            const newErrors = { ...errors };
-            fieldsToValidate.forEach(field => {
-                let value;
-                switch (field) {
-                    case 'cardNumber': value = cardNumber; break;
-                    case 'cardName': value = cardName; break;
-                    case 'expiryDate': value = expiryDate; break;
-                    case 'cvv': value = cvv; break;
-                    default: value = '';
-                }
-
-                const error = validateField(field, value);
-                if (error) {
-                    newErrors[field] = error;
-                } else {
-                    delete newErrors[field];
-                }
-            });
-
-            setErrors(newErrors);
+        if (hasValidPermit && validPermitDetails) {
+            setPaymentMethod('existingPermit');
         }
-    }, [cardNumber, cardName, expiryDate, cvv, touched, paymentMethod]);
+    }, [hasValidPermit, validPermitDetails]);
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        setFormSubmitted(true);
+    // Fetch saved payment methods
+    useEffect(() => {
+        const fetchSavedPaymentMethods = async () => {
+            setLoadingSavedCards(true);
+            try {
+                console.log('Attempting to fetch saved payment methods...');
+                const response = await PaymentMethodService.getSavedPaymentMethods();
+                console.log('Saved payment methods response:', response);
+
+                if (response.success) {
+                    // Check if response data is correct
+                    if (!response.paymentMethods) {
+                        console.error('Missing paymentMethods array in successful response');
+                    }
+
+                    setSavedPaymentMethods(response.paymentMethods || []);
+                    setShowNewCardForm(response.paymentMethods.length === 0);
+
+                    // Select the default payment method if available
+                    const defaultMethod = response.paymentMethods.find(pm => pm.isDefault);
+                    if (defaultMethod) {
+                        setSelectedSavedCard(defaultMethod);
+                    }
+
+                    // Log all payment methods for debugging
+                    if (response.paymentMethods && response.paymentMethods.length > 0) {
+                        console.log(`Found ${response.paymentMethods.length} payment methods:`);
+                        response.paymentMethods.forEach((method, i) => {
+                            console.log(`Method ${i + 1}:`, {
+                                id: method.id,
+                                brand: method.brand,
+                                last4: method.last4,
+                                isDefault: method.isDefault
+                            });
+                        });
+                    } else {
+                        console.log('No saved payment methods found');
+                    }
+                } else {
+                    console.error('Failed to fetch payment methods:', response.error);
+                }
+            } catch (error) {
+                console.error('Error fetching saved payment methods:', error);
+            } finally {
+                setLoadingSavedCards(false);
+            }
+        };
 
         if (paymentMethod === 'card') {
-            // Set all credit card fields as touched
-            setTouched({
-                cardNumber: true,
-                cardName: true,
-                expiryDate: true,
-                cvv: true
-            });
+            fetchSavedPaymentMethods();
+
+            // Try again after a short delay in case there was a timing issue
+            const retryTimer = setTimeout(() => {
+                console.log('Retrying payment method fetch...');
+                fetchSavedPaymentMethods();
+            }, 2000);
+
+            return () => clearTimeout(retryTimer);
+        }
+    }, [paymentMethod]);
+
+    // Handle Stripe card element change
+    const handleCardChange = (event) => {
+        if (event.error) {
+            setCardError(event.error.message);
+        } else {
+            setCardError('');
+        }
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+
+        // If using existing permit, process free reservation
+        if (paymentMethod === 'existingPermit') {
+            setIsProcessing(true);
+            setTimeout(() => {
+                setIsProcessing(false);
+                setPaymentStatus('success');
+                setTimeout(() => {
+                    onCompletePayment({
+                        paymentMethod: 'existingPermit',
+                        transactionId: 'FREE-' + Math.floor(Math.random() * 1000000000),
+                        timestamp: new Date().toISOString()
+                    });
+                }, 1500);
+            }, 1000);
+            return;
         }
 
-        if (!validateForm()) {
-            // Scroll to first error and focus it
-            const firstErrorField = document.querySelector('.error-border');
-            if (firstErrorField) {
-                firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                firstErrorField.focus();
-            }
+        // For SOLAR payment method, just simulate a successful transaction
+        if (paymentMethod === 'solar') {
+            setIsProcessing(true);
+            setTimeout(() => {
+                setIsProcessing(false);
+                setPaymentStatus('success');
+                setTimeout(() => {
+                    onCompletePayment({
+                        paymentMethod: 'solar',
+                        transactionId: 'SOLAR-' + Math.floor(Math.random() * 1000000000),
+                        timestamp: new Date().toISOString()
+                    });
+                }, 1500);
+            }, 2000);
+            return;
+        }
+
+        // For card payment method, use Stripe
+        if (!stripe || !elements) {
+            // Stripe.js has not loaded yet. Make sure to disable form submission until Stripe.js has loaded.
             return;
         }
 
         setIsProcessing(true);
 
-        // Simulate payment processing
-        setTimeout(() => {
-            setIsProcessing(false);
-            // For demo purposes, simulate successful payment
-            setPaymentStatus('success');
+        try {
+            // If using a saved card, use its payment method ID
+            if (selectedSavedCard && !showNewCardForm) {
+                console.log('Using saved payment method:', selectedSavedCard.id);
 
-            // After showing success message, proceed
+                // Display success and complete payment with the saved card
+                setPaymentStatus('success');
+                setTimeout(() => {
+                    onCompletePayment({
+                        paymentMethod: 'card',
+                        paymentMethodId: selectedSavedCard.id,
+                        transactionId: 'TRX-' + Math.floor(Math.random() * 1000000000),
+                        timestamp: new Date().toISOString()
+                    });
+                }, 1500);
+                return;
+            }
+
+            // Create a payment method using the Card Element
+            const cardElement = elements.getElement(CardElement);
+            const { error, paymentMethod: stripePaymentMethod } = await stripe.createPaymentMethod({
+                type: 'card',
+                card: cardElement,
+            });
+
+            if (error) {
+                console.error('Error creating payment method:', error);
+                setCardError(error.message);
+                setPaymentStatus('error');
+                setIsProcessing(false);
+                return;
+            }
+
+            // Payment method created successfully
+            console.log('Payment method created:', stripePaymentMethod);
+
+            // Display success and complete payment
+            setPaymentStatus('success');
             setTimeout(() => {
                 onCompletePayment({
-                    paymentMethod,
-                    transactionId: 'TRX' + Math.floor(Math.random() * 1000000000),
+                    paymentMethod: 'card',
+                    paymentMethodId: stripePaymentMethod.id,
+                    transactionId: 'TRX-' + Math.floor(Math.random() * 1000000000),
                     timestamp: new Date().toISOString()
                 });
             }, 1500);
-        }, 2000);
+
+        } catch (err) {
+            console.error('Payment processing error:', err);
+            setCardError('An unexpected error occurred. Please try again later.');
+            setPaymentStatus('error');
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
-    // Determine if a field is valid
-    const isFieldValid = (field) => touched[field] && !errors[field];
+    // Format date to be more readable
+    const formatDate = (dateString) => {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+    };
+
+    // Handle selecting a saved card
+    const handleSelectSavedCard = (card) => {
+        setSelectedSavedCard(card);
+        setShowNewCardForm(false);
+        setCardError('');
+    };
+
+    // Handle showing the new card form
+    const handleShowNewCardForm = () => {
+        setSelectedSavedCard(null);
+        setShowNewCardForm(true);
+    };
 
     return (
         <div className="w-full animate-fadeIn">
@@ -247,6 +281,20 @@ const PaymentPage = ({ darkMode, lotName, price, vehicleInfo, onBackClick, onCom
                 </h1>
             </div>
 
+            {/* Permit notification if applicable */}
+            {hasValidPermit && validPermitDetails && (
+                <div className={`p-4 rounded-lg mb-6 ${darkMode ? 'bg-green-700' : 'bg-green-100'} ${darkMode ? 'text-white' : 'text-green-800'}`}>
+                    <div className="flex items-start">
+                        <FaIdCard className="mr-2 text-xl mt-1" />
+                        <div>
+                            <p className="font-semibold">You have a valid permit!</p>
+                            <p className="text-sm">Permit #{validPermitDetails.permitNumber} valid until {formatDate(validPermitDetails.endDate)}</p>
+                            <p className="text-sm mt-1">No payment required for this reservation.</p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Order summary */}
             <div className={`p-4 rounded-lg mb-6 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                 <div className="mb-3">
@@ -260,15 +308,23 @@ const PaymentPage = ({ darkMode, lotName, price, vehicleInfo, onBackClick, onCom
                         {vehicleInfo.year} {vehicleInfo.make} {vehicleInfo.model} ({vehicleInfo.color})
                     </p>
                     <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                        {vehicleInfo.plateNumber} • {vehicleInfo.state}
+                        {vehicleInfo.plateNumber} • {vehicleInfo.stateProv || vehicleInfo.state}
                     </p>
                 </div>
 
                 <div className="pt-3 border-t border-gray-600">
                     <div className="flex justify-between">
                         <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>Total:</p>
-                        <p className={`font-bold text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>{price}</p>
+                        <p className={`font-bold text-lg ${hasValidPermit ? 'line-through' : ''} ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                            {price}
+                        </p>
                     </div>
+                    {hasValidPermit && (
+                        <div className="flex justify-between mt-1">
+                            <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>With permit discount:</p>
+                            <p className={`font-bold text-lg text-green-500`}>FREE</p>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -302,12 +358,30 @@ const PaymentPage = ({ darkMode, lotName, price, vehicleInfo, onBackClick, onCom
 
                     {/* Payment method selection */}
                     <div className="flex space-x-4 mb-6">
+                        {hasValidPermit && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPaymentMethod('existingPermit');
+                                    setCardError('');
+                                }}
+                                className={`flex-1 p-4 rounded-lg border-2 transition-colors flex flex-col items-center ${paymentMethod === 'existingPermit'
+                                    ? 'border-green-500 bg-green-50 dark:bg-gray-700'
+                                    : 'border-gray-200 dark:border-gray-700'
+                                    }`}
+                            >
+                                <FaIdCard className={`text-2xl mb-2 ${paymentMethod === 'existingPermit' ? 'text-green-500' : 'text-gray-500 dark:text-gray-400'}`} />
+                                <span className={`font-medium ${paymentMethod === 'existingPermit' ? 'text-green-500' : darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                    Use Existing Permit
+                                </span>
+                            </button>
+                        )}
+
                         <button
                             type="button"
                             onClick={() => {
                                 setPaymentMethod('card');
-                                // Clear errors when switching payment methods
-                                setErrors({});
+                                setCardError('');
                             }}
                             className={`flex-1 p-4 rounded-lg border-2 transition-colors flex flex-col items-center ${paymentMethod === 'card'
                                 ? 'border-red-500 bg-red-50 dark:bg-gray-700'
@@ -324,8 +398,7 @@ const PaymentPage = ({ darkMode, lotName, price, vehicleInfo, onBackClick, onCom
                             type="button"
                             onClick={() => {
                                 setPaymentMethod('solar');
-                                // Clear errors when switching payment methods
-                                setErrors({});
+                                setCardError('');
                             }}
                             className={`flex-1 p-4 rounded-lg border-2 transition-colors flex flex-col items-center ${paymentMethod === 'solar'
                                 ? 'border-red-500 bg-red-50 dark:bg-gray-700'
@@ -334,246 +407,168 @@ const PaymentPage = ({ darkMode, lotName, price, vehicleInfo, onBackClick, onCom
                         >
                             <FaUniversity className={`text-2xl mb-2 ${paymentMethod === 'solar' ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`} />
                             <span className={`font-medium ${paymentMethod === 'solar' ? 'text-red-500' : darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                SOLAR
+                                SOLAR Account
                             </span>
                         </button>
                     </div>
 
                     <form onSubmit={handleSubmit}>
-                        {paymentMethod === 'card' ? (
+                        {paymentMethod === 'existingPermit' && validPermitDetails ? (
                             <div className="space-y-5">
-                                <div>
-                                    <label
-                                        htmlFor="cardNumber"
-                                        className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}
-                                    >
-                                        Card Number
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type="text"
-                                            id="cardNumber"
-                                            placeholder="•••• •••• •••• ••••"
-                                            value={cardNumber}
-                                            onChange={(e) => handleFieldChange('cardNumber', e.target.value)}
-                                            onBlur={() => setTouched(prev => ({ ...prev, cardNumber: true }))}
-                                            className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
-                                                ? 'bg-gray-700 text-white border-gray-600 focus:ring-red-600'
-                                                : 'bg-gray-50 text-gray-900 border-gray-300 focus:ring-red-500'
-                                                } border focus:outline-none focus:ring-2 ${errors.cardNumber && touched.cardNumber ? 'border-red-500 error-border' :
-                                                    isFieldValid('cardNumber') ? 'border-green-500' : ''
-                                                }`}
-                                            maxLength={19}
-                                            aria-invalid={errors.cardNumber && touched.cardNumber ? "true" : "false"}
-                                            aria-describedby={errors.cardNumber ? "cardNumber-error" : undefined}
-                                        />
-                                        {isFieldValid('cardNumber') && (
-                                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                <FaCheckCircle className="text-green-500" />
+                                <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                                    <p className={`text-sm mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                                        Using permit:
+                                    </p>
+                                    <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        {validPermitDetails.permitName || validPermitDetails.permitType}
+                                    </p>
+                                    <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                                        Permit #{validPermitDetails.permitNumber} - Valid until {formatDate(validPermitDetails.endDate)}
+                                    </p>
+                                    <p className={`text-sm mt-2 ${darkMode ? 'text-green-300' : 'text-green-600'}`}>
+                                        This permit is valid for this parking lot.
+                                    </p>
+                                </div>
+                            </div>
+                        ) : paymentMethod === 'card' ? (
+                            <div className="space-y-5">
+                                {/* Saved Payment Methods */}
+                                {savedPaymentMethods.length > 0 && (
+                                    <div className="mb-4">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <label className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                                Saved Cards
+                                            </label>
+                                            <button
+                                                type="button"
+                                                onClick={handleShowNewCardForm}
+                                                className={`text-sm ${darkMode ? 'text-blue-400' : 'text-blue-600'} hover:underline`}
+                                            >
+                                                {showNewCardForm ? 'Use saved card' : 'Use new card'}
+                                            </button>
+                                        </div>
+
+                                        {loadingSavedCards ? (
+                                            <div className="flex items-center justify-center p-4">
+                                                <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${darkMode ? 'border-white' : 'border-gray-900'}`}></div>
+                                                <span className="ml-2 text-sm">Loading saved cards...</span>
                                             </div>
-                                        )}
-                                        {errors.cardNumber && touched.cardNumber && (
-                                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                <FaExclamationCircle className="text-red-500" />
+                                        ) : (
+                                            <div className={showNewCardForm ? 'hidden' : 'space-y-2'}>
+                                                {savedPaymentMethods.map(card => (
+                                                    <div
+                                                        key={card.id}
+                                                        onClick={() => handleSelectSavedCard(card)}
+                                                        className={`flex items-center justify-between p-3 rounded-md cursor-pointer ${selectedSavedCard && selectedSavedCard.id === card.id
+                                                            ? darkMode ? 'bg-blue-800' : 'bg-blue-100'
+                                                            : darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-50 hover:bg-gray-100'
+                                                            }`}
+                                                    >
+                                                        <div className="flex items-center">
+                                                            <FaCreditCard className={`text-xl mr-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} />
+                                                            <div>
+                                                                <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                                                    {card.brand.charAt(0).toUpperCase() + card.brand.slice(1)} •••• {card.last4}
+                                                                </p>
+                                                                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                                    Expires {card.exp_month}/{card.exp_year}
+                                                                    {card.isDefault && <span className="ml-2 text-green-500">Default</span>}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
                                         )}
                                     </div>
-                                    {errors.cardNumber && touched.cardNumber && (
-                                        <p id="cardNumber-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                            <FaExclamationCircle className="mr-1" /> {errors.cardNumber}
-                                        </p>
-                                    )}
-                                </div>
+                                )}
 
-                                <div>
-                                    <label
-                                        htmlFor="cardName"
-                                        className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}
-                                    >
-                                        Name on Card
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type="text"
-                                            id="cardName"
-                                            placeholder="John Doe"
-                                            value={cardName}
-                                            onChange={(e) => handleFieldChange('cardName', e.target.value)}
-                                            onBlur={() => setTouched(prev => ({ ...prev, cardName: true }))}
-                                            className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
-                                                ? 'bg-gray-700 text-white border-gray-600 focus:ring-red-600'
-                                                : 'bg-gray-50 text-gray-900 border-gray-300 focus:ring-red-500'
-                                                } border focus:outline-none focus:ring-2 ${errors.cardName && touched.cardName ? 'border-red-500 error-border' :
-                                                    isFieldValid('cardName') ? 'border-green-500' : ''
-                                                }`}
-                                            aria-invalid={errors.cardName && touched.cardName ? "true" : "false"}
-                                            aria-describedby={errors.cardName ? "cardName-error" : undefined}
-                                        />
-                                        {isFieldValid('cardName') && (
-                                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                <FaCheckCircle className="text-green-500" />
-                                            </div>
-                                        )}
-                                        {errors.cardName && touched.cardName && (
-                                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                <FaExclamationCircle className="text-red-500" />
-                                            </div>
-                                        )}
-                                    </div>
-                                    {errors.cardName && touched.cardName && (
-                                        <p id="cardName-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                            <FaExclamationCircle className="mr-1" /> {errors.cardName}
-                                        </p>
-                                    )}
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-5">
+                                {/* Card Details Input */}
+                                {showNewCardForm && (
                                     <div>
                                         <label
-                                            htmlFor="expiryDate"
+                                            htmlFor="card-element"
                                             className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}
                                         >
-                                            Expiry Date
+                                            Card Details
                                         </label>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                id="expiryDate"
-                                                placeholder="MM/YY"
-                                                value={expiryDate}
-                                                onChange={(e) => handleFieldChange('expiryDate', e.target.value)}
-                                                onBlur={() => setTouched(prev => ({ ...prev, expiryDate: true }))}
-                                                className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
-                                                    ? 'bg-gray-700 text-white border-gray-600 focus:ring-red-600'
-                                                    : 'bg-gray-50 text-gray-900 border-gray-300 focus:ring-red-500'
-                                                    } border focus:outline-none focus:ring-2 ${errors.expiryDate && touched.expiryDate ? 'border-red-500 error-border' :
-                                                        isFieldValid('expiryDate') ? 'border-green-500' : ''
-                                                    }`}
-                                                maxLength={5}
-                                                aria-invalid={errors.expiryDate && touched.expiryDate ? "true" : "false"}
-                                                aria-describedby={errors.expiryDate ? "expiryDate-error" : undefined}
+                                        <div className={`p-3 rounded-md border ${darkMode
+                                            ? 'bg-gray-700 text-white border-gray-600'
+                                            : 'bg-gray-50 text-gray-900 border-gray-300'
+                                            } ${cardError ? 'border-red-500' : ''}`}>
+                                            <CardElement
+                                                id="card-element"
+                                                options={{
+                                                    style: {
+                                                        base: {
+                                                            color: darkMode ? '#ffffff' : '#32325d',
+                                                            fontFamily: '"Helvetica Neue", Helvetica, sans-serif',
+                                                            fontSmoothing: 'antialiased',
+                                                            fontSize: '16px',
+                                                            '::placeholder': {
+                                                                color: darkMode ? '#aaaaaa' : '#aab7c4'
+                                                            }
+                                                        },
+                                                        invalid: {
+                                                            color: '#fa755a',
+                                                            iconColor: '#fa755a'
+                                                        }
+                                                    }
+                                                }}
+                                                onChange={handleCardChange}
                                             />
-                                            {isFieldValid('expiryDate') && (
-                                                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                    <FaCheckCircle className="text-green-500" />
-                                                </div>
-                                            )}
-                                            {errors.expiryDate && touched.expiryDate && (
-                                                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                    <FaExclamationCircle className="text-red-500" />
-                                                </div>
-                                            )}
                                         </div>
-                                        {errors.expiryDate && touched.expiryDate && (
-                                            <p id="expiryDate-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                                <FaExclamationCircle className="mr-1" /> {errors.expiryDate}
-                                            </p>
+                                        {cardError && (
+                                            <p className="mt-2 text-sm text-red-500">{cardError}</p>
                                         )}
-                                    </div>
-
-                                    <div>
-                                        <label
-                                            htmlFor="cvv"
-                                            className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}
-                                        >
-                                            CVV
-                                        </label>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                id="cvv"
-                                                placeholder="•••"
-                                                value={cvv}
-                                                onChange={(e) => handleFieldChange('cvv', e.target.value)}
-                                                onBlur={() => setTouched(prev => ({ ...prev, cvv: true }))}
-                                                className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
-                                                    ? 'bg-gray-700 text-white border-gray-600 focus:ring-red-600'
-                                                    : 'bg-gray-50 text-gray-900 border-gray-300 focus:ring-red-500'
-                                                    } border focus:outline-none focus:ring-2 ${errors.cvv && touched.cvv ? 'border-red-500 error-border' :
-                                                        isFieldValid('cvv') ? 'border-green-500' : ''
-                                                    }`}
-                                                maxLength={4}
-                                                aria-invalid={errors.cvv && touched.cvv ? "true" : "false"}
-                                                aria-describedby={errors.cvv ? "cvv-error" : undefined}
-                                            />
-                                            {isFieldValid('cvv') && (
-                                                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                    <FaCheckCircle className="text-green-500" />
-                                                </div>
-                                            )}
-                                            {errors.cvv && touched.cvv && (
-                                                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                    <FaExclamationCircle className="text-red-500" />
-                                                </div>
-                                            )}
-                                        </div>
-                                        {errors.cvv && touched.cvv && (
-                                            <p id="cvv-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                                <FaExclamationCircle className="mr-1" /> {errors.cvv}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Form validation summary */}
-                                {formSubmitted && Object.keys(errors).length > 0 && (
-                                    <div className={`p-3 rounded-md ${darkMode ? 'bg-red-900/50' : 'bg-red-50'} border ${darkMode ? 'border-red-800' : 'border-red-200'}`}>
-                                        <div className="flex">
-                                            <FaExclamationCircle className={`flex-shrink-0 h-5 w-5 text-red-500 mt-0.5`} />
-                                            <div className="ml-3">
-                                                <h3 className={`text-sm font-medium ${darkMode ? 'text-red-300' : 'text-red-800'}`}>
-                                                    Please correct the following errors:
-                                                </h3>
-                                                <div className={`mt-2 text-sm ${darkMode ? 'text-red-300' : 'text-red-700'}`}>
-                                                    <ul className="list-disc pl-5 space-y-1">
-                                                        {Object.keys(errors).map(key => (
-                                                            <li key={key}>{errors[key]}</li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-                                            </div>
-                                        </div>
                                     </div>
                                 )}
                             </div>
                         ) : (
-                            <div className="space-y-4">
-                                <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                                    <p className={`mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                        About SOLAR Payment
-                                    </p>
-                                    <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                                        SOLAR is Stony Brook University's student information system. By selecting this option, the parking fee will be charged to your student account.
-                                    </p>
-                                </div>
-
-                                <div className={`flex items-start p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-yellow-50'}`}>
-                                    <FaExclamationCircle className={`text-yellow-500 mt-0.5 mr-2 flex-shrink-0`} />
-                                    <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                        You will be redirected to SOLAR after clicking "Complete Payment". The charge will appear on your student account within 24 hours.
-                                    </p>
+                            <div className="space-y-5">
+                                <div>
+                                    <label
+                                        htmlFor="solar-id"
+                                        className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}
+                                    >
+                                        SOLAR ID
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="solar-id"
+                                        placeholder="Your SOLAR ID (e.g. 123456789)"
+                                        className={`w-full p-3 rounded-md border ${darkMode
+                                            ? 'bg-gray-700 text-white border-gray-600'
+                                            : 'bg-gray-50 text-gray-900 border-gray-300'
+                                            }`}
+                                    />
                                 </div>
                             </div>
                         )}
 
-                        <button
-                            type="submit"
-                            disabled={isProcessing}
-                            className={`w-full py-3 px-4 mt-6 bg-red-600 hover:bg-red-700 text-white font-medium rounded-md transition-colors shadow-md flex items-center justify-center ${isProcessing ? 'opacity-70 cursor-not-allowed' : ''
-                                }`}
-                        >
-                            {isProcessing ? (
-                                <>
-                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    Processing...
-                                </>
-                            ) : (
-                                `Complete Payment`
-                            )}
-                        </button>
+                        <div className="mt-6">
+                            <button
+                                type="submit"
+                                disabled={isProcessing}
+                                className={`w-full py-3 px-4 rounded-md font-medium shadow-md transition-colors ${isProcessing
+                                    ? 'bg-gray-500 cursor-not-allowed'
+                                    : paymentMethod === 'existingPermit'
+                                        ? 'bg-green-600 hover:bg-green-700 text-white'
+                                        : 'bg-red-600 hover:bg-red-700 text-white'
+                                    }`}
+                            >
+                                {isProcessing ? (
+                                    <div className="flex items-center justify-center">
+                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                                        Processing...
+                                    </div>
+                                ) : paymentMethod === 'existingPermit' ? (
+                                    'Confirm Free Reservation'
+                                ) : (
+                                    `Pay ${price}`
+                                )}
+                            </button>
+                        </div>
                     </form>
                 </div>
             )}

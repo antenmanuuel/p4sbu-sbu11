@@ -44,8 +44,7 @@ const LotSchema = new mongoose.Schema({
     permitTypes: {
         type: [String],
         required: true,
-        enum: ['Faculty', 'Commuter Student', 'Resident Student', 'Visitor'],
-        default: ['Faculty', 'Commuter Student']
+        default: []
     },
     hourlyRate: {
         type: Number,
