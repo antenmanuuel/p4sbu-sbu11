@@ -2,7 +2,10 @@ const express = require('express');
 const router = express.Router();
 const Ticket = require('../models/tickets');
 const User = require('../models/users');
+const RevenueStatistics = require('../models/revenue_statistics');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const NotificationHelper = require('../utils/notificationHelper');
 
 // USER TICKET ROUTES
 
@@ -22,7 +25,7 @@ router.post('/user/tickets/:ticketId/pay', verifyToken, async (req, res) => {
         const ticket = await Ticket.findOne({
             _id: req.params.ticketId,
             user: req.user.userId
-        });
+        }).populate('user');
 
         if (!ticket) {
             return res.status(404).json({ message: 'Ticket not found' });
@@ -32,19 +35,160 @@ router.post('/user/tickets/:ticketId/pay', verifyToken, async (req, res) => {
             return res.status(400).json({ message: 'Ticket is already paid' });
         }
 
+        // Create a payment intent with Stripe if paymentMethodId is provided
+        let paymentIntent = null;
+        const { paymentMethodId } = req.body;
+
+        if (paymentMethodId) {
+            try {
+                // Check if user has a Stripe customer ID
+                const user = await User.findById(req.user.userId);
+                if (!user) {
+                    return res.status(404).json({ message: 'User not found' });
+                }
+
+                // Log for debugging
+                console.log('Processing payment for ticket:', {
+                    ticketId: ticket._id,
+                    amount: ticket.amount,
+                    paymentMethodId,
+                    userStripeCustomerId: user.stripeCustomerId
+                });
+
+                // First determine if we need to create/attach a payment method
+                let stripeCustomerId = user.stripeCustomerId;
+                let paymentMethodBelongsToCustomer = false;
+
+                if (stripeCustomerId) {
+                    // Check if the payment method belongs to this customer
+                    try {
+                        const paymentMethods = await stripe.paymentMethods.list({
+                            customer: stripeCustomerId,
+                            type: 'card',
+                        });
+
+                        paymentMethodBelongsToCustomer = paymentMethods.data.some(pm => pm.id === paymentMethodId);
+                        console.log(`Payment method ${paymentMethodId} belongs to customer? ${paymentMethodBelongsToCustomer}`);
+                    } catch (listError) {
+                        console.error('Error checking payment methods:', listError);
+                    }
+
+                    if (!paymentMethodBelongsToCustomer) {
+                        // Attach the payment method to the customer
+                        try {
+                            await stripe.paymentMethods.attach(paymentMethodId, {
+                                customer: stripeCustomerId,
+                            });
+                            console.log('Payment method attached to customer');
+                        } catch (attachError) {
+                            console.error('Error attaching payment method:', attachError);
+                            // If this fails, we'll continue and let Stripe handle it in the PaymentIntent
+                        }
+                    }
+                } else {
+                    // Create a customer for the user if they don't have one
+                    try {
+                        const customer = await stripe.customers.create({
+                            email: user.email,
+                            name: `${user.firstName} ${user.lastName}`,
+                            metadata: {
+                                userId: user._id.toString()
+                            }
+                        });
+
+                        // Update the user with the new customer ID
+                        stripeCustomerId = customer.id;
+                        user.stripeCustomerId = stripeCustomerId;
+                        await user.save();
+                        console.log('Created new Stripe customer:', stripeCustomerId);
+
+                        // Attach the payment method to the customer
+                        await stripe.paymentMethods.attach(paymentMethodId, {
+                            customer: stripeCustomerId,
+                        });
+                        console.log('Payment method attached to new customer');
+                    } catch (customerError) {
+                        console.error('Error creating customer:', customerError);
+                        return res.status(400).json({
+                            message: 'Payment processing failed - unable to create customer',
+                            error: customerError.message
+                        });
+                    }
+                }
+
+                // Now create the payment intent with the customer ID
+                const paymentOptions = {
+                    amount: Math.round(ticket.amount * 100), // Stripe uses cents
+                    currency: 'usd',
+                    customer: stripeCustomerId, // Always include customer ID with the payment method
+                    payment_method: paymentMethodId,
+                    confirm: true,
+                    description: `Citation payment for ${ticket.name}`,
+                    metadata: {
+                        ticketId: ticket._id.toString(),
+                        studentId: ticket.user.studentId || 'N/A',
+                        violationType: ticket.name
+                    },
+                    // Add configuration to prevent redirect issues
+                    automatic_payment_methods: {
+                        enabled: true,
+                        allow_redirects: 'never'
+                    }
+                };
+
+                if (ticket.user.email) {
+                    paymentOptions.receipt_email = ticket.user.email;
+                }
+
+                // Create the payment intent
+                console.log('Creating payment intent with options:', paymentOptions);
+                paymentIntent = await stripe.paymentIntents.create(paymentOptions);
+                console.log('Payment intent created:', paymentIntent.id);
+
+                // Store payment info with the ticket
+                ticket.stripePaymentIntentId = paymentIntent.id;
+                ticket.paymentMethod = 'credit-card';
+            } catch (stripeError) {
+                console.error('Stripe payment failed:', stripeError);
+                return res.status(400).json({
+                    message: 'Payment processing failed',
+                    error: stripeError.message
+                });
+            }
+        } else {
+            // If no payment method ID, assume student account payment
+            ticket.paymentMethod = 'student-account';
+        }
+
         // Update ticket status
         ticket.isPaid = true;
         ticket.paidAt = new Date();
         await ticket.save();
 
-        // In a real application with WebSockets, we would emit an event here
-        // io.emit('ticketPaid', { ticketId: ticket._id, amount: ticket.amount });
+        // Record the revenue from this ticket payment
+        if (ticket.amount > 0) {
+            try {
+                await RevenueStatistics.recordCitationPayment(ticket.amount);
+                console.log(`Recorded revenue for ticket payment: $${ticket.amount}`);
+            } catch (revenueError) {
+                console.error('Failed to record revenue statistics for ticket:', revenueError);
+                // Continue processing even if revenue recording fails
+            }
+        }
 
-        // For now, we're just updating ticket status without real-time notifications
-
-        res.json(ticket);
+        res.json({
+            success: true,
+            ticket,
+            paymentIntent: paymentIntent ? {
+                id: paymentIntent.id,
+                clientSecret: paymentIntent.client_secret,
+                status: paymentIntent.status,
+                receiptUrl: paymentIntent.charges?.data[0]?.receipt_url || null
+            } : null
+        });
     } catch (error) {
-        res.status(500).json({ message: 'Error processing payment' });
+        console.error('Error processing citation payment:', error);
+        res.status(500).json({ success: false, message: 'Error processing payment', error: error.message });
     }
 });
 
@@ -56,35 +200,37 @@ router.post('/admin/tickets', verifyToken, isAdmin, async (req, res) => {
         const { name, amount, userId } = req.body;
 
         if (!name || !amount || !userId) {
-            return res.status(400).json({ message: 'Name, amount, and userId are required' });
+            return res.status(400).json({ message: 'Missing required fields' });
         }
 
-        // Check if user exists
-        const user = await User.findById(userId);
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-
-        const newTicket = new Ticket({
+        const ticket = new Ticket({
             name,
             amount,
-            user: userId,
             date_posted: new Date(),
-            isPaid: false
+            isPaid: false,
+            user: userId,
+            canPetition: true
         });
 
-        await newTicket.save();
+        const savedTicket = await ticket.save();
 
-        // Populate user data in response
-        const ticket = await Ticket.findById(newTicket._id).populate('user', 'firstName lastName email sbuId');
+        // Create a notification for the user
+        try {
+            await NotificationHelper.createFineNotification(
+                userId,
+                savedTicket,
+                '/past-citations'
+            );
+            console.log('Notification created for new ticket');
+        } catch (notificationError) {
+            console.error('Error creating notification for ticket:', notificationError);
+            // Continue even if notification creation fails
+        }
 
-        res.status(201).json({
-            message: 'Ticket created successfully',
-            ticket
-        });
+        res.status(201).json(savedTicket);
     } catch (error) {
         console.error('Error creating ticket:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Error creating ticket' });
     }
 });
 
