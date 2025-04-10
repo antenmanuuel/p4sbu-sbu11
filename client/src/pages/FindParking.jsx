@@ -4,22 +4,22 @@
 // Additionally, ChatGPT (with project and code context) modified the initial/previous iteration of code to be maximized for code readability as well as descriptive comments (for Instructor understanding). 
 // It can be credited that AI played a crucial role in heavily contributing/modifying/optimizing this entire file's code (after the initial changes were written by Student). 
 // Commits and pushes are executed after the final version have been made for the specific implementation changes during that coding session. 
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ResultsView from '../components/ResultsView';
 import LotDetailsView from '../components/LotDetailsView';
 import CarInfoForm from '../components/CarInfoForm';
 import PaymentPage from '../components/PaymentPage';
-import { LotService, ReservationService, PermitService, CarService } from '../utils/api';
+import { LotService, ReservationService, PermitService, CarService, AuthService } from '../utils/api';
 // Import Mapbox components
-import ReactMapGL, { Marker, NavigationControl, GeolocateControl, Source, Layer } from 'react-map-gl';
+import ReactMapGL, { Marker, NavigationControl, GeolocateControl, Source, Layer, Popup } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 // Import environment variables from our utility
 import { MAPBOX_TOKEN } from '../utils/env';
 import { calculatePathDistances } from '../utils/pathFinding';
 // Import SBU locations data
 import { sbuLocations, searchSbuLocations } from '../utils/sbuLocations';
+import { FaCar, FaWalking, FaBus, FaParking, FaDollarSign } from 'react-icons/fa';
 
 // Verify token is available - developers will see this error in console
 if (!MAPBOX_TOKEN) {
@@ -82,6 +82,9 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
     // State for storing walking routes
     const [selectedLotRoute, setSelectedLotRoute] = useState(null);
 
+    // Add state for transportation mode with 'driving' as default
+    const [transportMode, setTransportMode] = useState('driving');
+
     // Add state for selected permit type
     const [selectedPermitType, setSelectedPermitType] = useState('');
 
@@ -135,9 +138,9 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         }
     }, [isAuthenticated]);
 
-    // Fetch walking route when a lot is selected
+    // Fetch route when a lot is selected
     useEffect(() => {
-        const fetchWalkingRoute = async () => {
+        const fetchRoute = async () => {
             if (!selectedLot || !selectedLocation) {
                 setSelectedLotRoute(null);
                 return;
@@ -167,9 +170,14 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 const start = `${selectedLot.coordinates[1]},${selectedLot.coordinates[0]}`;
                 const end = `${selectedLocation.coordinates[1]},${selectedLocation.coordinates[0]}`;
 
+                // Get the appropriate routing profile based on transport mode
+                // Options: driving, walking, cycling, driving-traffic
+                const routingProfile = transportMode || 'driving';
+                console.log(`Using routing profile: mapbox/${routingProfile}`);
+
                 // Call the MapBox Directions API
                 const response = await fetch(
-                    `https://api.mapbox.com/directions/v5/mapbox/walking/${start};${end}?` +
+                    `https://api.mapbox.com/directions/v5/mapbox/${routingProfile}/${start};${end}?` +
                     `alternatives=false&geometries=geojson&overview=full&steps=false&` +
                     `access_token=${MAPBOX_TOKEN}`
                 );
@@ -196,7 +204,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                     throw new Error("No routes returned from Mapbox API");
                 }
             } catch (error) {
-                console.error("Error fetching walking route:", error);
+                console.error("Error fetching route:", error);
                 // Fallback to simple line
                 const fallbackRoute = {
                     type: 'Feature',
@@ -213,8 +221,8 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
             }
         };
 
-        fetchWalkingRoute();
-    }, [selectedLot, selectedLocation, MAPBOX_TOKEN]);
+        fetchRoute();
+    }, [selectedLot, selectedLocation, MAPBOX_TOKEN, transportMode]);
 
     // Handle custom SBU location search
     const handleAddressChange = (e) => {
@@ -300,7 +308,17 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         setError('');
 
         try {
-            const result = await LotService.getAll({ status: 'Active' });
+            // Get the current user to include user type in the request
+            const currentUser = AuthService.getCurrentUser();
+            const userType = currentUser ? currentUser.userType : null;
+
+            // Add user type to filters if available
+            const filters = {
+                status: 'Active',
+                userType: userType
+            };
+
+            const result = await LotService.getAll(filters);
 
             if (result.success) {
                 const activeLots = result.data.lots.filter(lot => lot.status === 'Active');
@@ -329,9 +347,14 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                         rateType: lot.rateType,
                         hourlyRate: lot.hourlyRate || 0,
                         semesterRate: lot.semesterRate || 0,
-                        price: lot.rateType === 'Hourly'
-                            ? `$${lot.hourlyRate}/hr`
-                            : `$${lot.semesterRate}/semester with permit`,
+                        evChargingRate: lot.evChargingRate || 0,
+                        idleChargingFee: lot.idleChargingFee || 0,
+                        isEV: lot.features?.isEV || false,
+                        price: lot.features?.isEV
+                            ? `$${lot.evChargingRate}/hr (EV)`
+                            : lot.rateType === 'Hourly'
+                                ? `$${lot.hourlyRate}/hr`
+                                : `$${lot.semesterRate}/semester with permit`,
                         status: lot.status
                     };
                 });
@@ -346,15 +369,11 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
                 setNearbyParking(sortedLots);
             } else {
-                setError(result.error || 'Failed to fetch parking lots');
-                // Fall back to mock data
-                setNearbyParking(mockParkingLots);
+                setError('Failed to retrieve parking lots. Please try again.');
             }
-        } catch (err) {
-            console.error('Error fetching parking lots:', err);
-            setError('An unexpected error occurred while fetching parking lots');
-            // Fall back to mock data
-            setNearbyParking(mockParkingLots);
+        } catch (error) {
+            console.error('Error fetching parking lots:', error);
+            setError('An error occurred while fetching parking lots. Please try again.');
         } finally {
             setIsLoading(false);
         }
@@ -519,9 +538,14 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                     rateType: lot.rateType,
                     hourlyRate: lot.hourlyRate || 0,
                     semesterRate: lot.semesterRate || 0,
-                    price: lot.rateType === 'Hourly'
-                        ? `$${lot.hourlyRate}/hr`
-                        : `$${lot.semesterRate}/semester with permit`,
+                    evChargingRate: lot.evChargingRate || 0,
+                    idleChargingFee: lot.idleChargingFee || 0,
+                    isEV: lot.features?.isEV || false,
+                    price: lot.features?.isEV
+                        ? `$${lot.evChargingRate}/hr (EV)`
+                        : lot.rateType === 'Hourly'
+                            ? `$${lot.hourlyRate}/hr`
+                            : `$${lot.semesterRate}/semester with permit`,
                     status: lot.status,
                     // Include any additional fields from the backend that might be useful
                     lastUpdated: new Date(lot.updatedAt || Date.now()).toLocaleString() // Use real update date
@@ -567,7 +591,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         });
         setAddress(clickedLocation.address);
     };
-    // Changes below made in collaboration between multiple team members 4/6/2025
+
     // Function to fetch user's cars from backend
     const fetchUserCars = async () => {
         if (!isAuthenticated) return null;
@@ -625,9 +649,17 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 selectedPermitType: permitType
             };
             sessionStorage.setItem('pendingReservation', JSON.stringify(reservationData));
+            console.log('FindParking: Saved reservation data to sessionStorage');
+            console.log('FindParking: Redirecting to login with state');
 
-            // Redirect to login page
-            navigate('/login', { state: { from: '/find-parking', reservationPending: true } });
+            // Redirect to login page - Make sure the path is consistently "/find-parking" with the leading slash
+            navigate('/login', {
+                state: {
+                    from: '/find-parking',
+                    reservationPending: true
+                },
+                replace: false
+            });
         } else {
             // Always check for permit validation, regardless of the next step
             await fetchUserPermits();
@@ -778,10 +810,12 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         setPaymentInfo(paymentData);
 
         try {
-            // Calculate total price based on lot rate type
-            const totalPrice = selectedLot.rateType === 'Hourly'
-                ? parseFloat(duration) * selectedLot.hourlyRate
-                : selectedLot.semesterRate;
+            // Calculate total price based on lot rate type and features
+            const totalPrice = selectedLot.isEV
+                ? parseFloat(duration) * selectedLot.evChargingRate
+                : selectedLot.rateType === 'Hourly'
+                    ? parseFloat(duration) * selectedLot.hourlyRate
+                    : selectedLot.semesterRate;
 
             // Prepare reservation data
             const reservationData = {
@@ -897,179 +931,270 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         switch (currentView) {
             case 'search':
                 return (
-                    <div className="w-full max-w-6xl mx-auto px-4 py-8">
-                        <h1 className={`text-3xl font-bold mb-6 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                            Find Parking
-                        </h1>
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
+                        {/* Hero Section */}
+                        <div className="relative mb-10">
+                            {/* Decorative elements */}
+                            <div className="absolute -top-10 -right-10 w-40 h-40 bg-red-600 opacity-5 rounded-full blur-2xl"></div>
+                            <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-blue-500 opacity-5 rounded-full blur-2xl"></div>
 
-                        <p className="mb-4 text-gray-900 dark:text-gray-300">
-                            Search for parking spots near your location or a specific address
-                        </p>
+                            <div className="text-center relative z-10">
+                                <div className="inline-block mb-4">
+                                    <span className={`inline-flex items-center justify-center p-3 ${darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'} rounded-xl`}>
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z" />
+                                        </svg>
+                                    </span>
+                                </div>
+                                <h1 className={`text-4xl md:text-5xl font-bold mb-4 tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                    Find Parking
+                                </h1>
+                                <p className={`text-xl md:text-2xl max-w-3xl mx-auto ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                                    Search for parking spots near your location or a specific address
+                                </p>
+                            </div>
+                        </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             {/* Search Form */}
-                            <div className={`p-6 rounded-lg ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-md`}>
-                                <form onSubmit={handleSearch} className="space-y-5">
-                                    <div>
-                                        <label htmlFor="address" className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                            Address
-                                        </label>
-                                        <div className="relative">
-                                            {/* Replace Mapbox AddressAutofill with a simple input for SBU locations */}
-                                            <input
-                                                type="text"
-                                                id="address"
-                                                name="address"
-                                                placeholder="Enter Stony Brook location"
-                                                value={address}
-                                                onChange={handleAddressChange}
-                                                className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
-                                                    ? 'bg-gray-800 text-white border-gray-700 focus:ring-red-600'
-                                                    : 'bg-gray-100 text-gray-900 border-gray-300 focus:ring-red-500'
-                                                    } border focus:outline-none focus:ring-2 ${formErrors.address ? 'border-red-500' : ''}`}
-                                                autoComplete="off"
-                                            />
+                            <div className={`rounded-2xl overflow-hidden shadow-lg ${darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'}`}>
+                                <div className="p-8 relative">
+                                    {/* Decorative accent */}
+                                    <div className="absolute top-0 right-0 h-1 w-24 bg-gradient-to-l from-red-600 to-red-400"></div>
 
-                                            {/* SBU Location Suggestions */}
-                                            {showSbuSuggestions && sbuSuggestions.length > 0 && (
-                                                <div className={`mt-1 absolute z-50 w-full max-h-40 overflow-y-auto rounded-md shadow-lg ${darkMode ? 'bg-gray-700 text-white' : 'bg-white text-gray-900'
-                                                    }`}>
-                                                    <ul className="text-sm">
-                                                        {sbuSuggestions.slice(0, 5).map((location, index) => (
-                                                            <li
-                                                                key={`sbu-${index}`}
-                                                                className={`px-2 py-1 cursor-pointer hover:${darkMode ? 'bg-gray-600' : 'bg-gray-100'
-                                                                    } transition-colors border-b ${darkMode ? 'border-gray-600' : 'border-gray-100'
-                                                                    }`}
-                                                                onClick={() => handleSbuLocationSelect(location)}
-                                                            >
-                                                                <div className="font-medium">{location.name}</div>
-                                                            </li>
-                                                        ))}
-                                                        {sbuSuggestions.length > 5 && (
-                                                            <li className="px-2 py-1 text-xs text-gray-500 italic">
-                                                                {sbuSuggestions.length - 5} more results...
-                                                            </li>
-                                                        )}
-                                                    </ul>
+                                    <form onSubmit={handleSearch} className="space-y-6">
+                                        <div>
+                                            <label htmlFor="address" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                                Address
+                                            </label>
+                                            <div className="relative">
+                                                <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                        <path fillRule="evenodd" d="M9.69 18.933l.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 00.281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 103 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 002.273 1.765 11.842 11.842 0 00.976.544l.062.029.018.008.006.003zM10 11.25a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z" clipRule="evenodd" />
+                                                    </svg>
                                                 </div>
+                                                <input
+                                                    type="text"
+                                                    id="address"
+                                                    name="address"
+                                                    placeholder="Enter Stony Brook location"
+                                                    value={address}
+                                                    onChange={handleAddressChange}
+                                                    className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} 
+                                                    border ${formErrors.address ? 'border-red-500' : ''} 
+                                                    focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-400' : 'focus:ring-red-600'}`}
+                                                    autoComplete="off"
+                                                />
+                                                {/* SBU Location Suggestions */}
+                                                {showSbuSuggestions && sbuSuggestions.length > 0 && (
+                                                    <div className={`mt-1 absolute z-50 w-full rounded-lg overflow-hidden shadow-lg ${darkMode ? 'bg-gray-700 text-white' : 'bg-white text-gray-900'}`}>
+                                                        <ul className="max-h-40 overflow-y-auto">
+                                                            {sbuSuggestions.slice(0, 5).map((location, index) => (
+                                                                <li
+                                                                    key={`sbu-${index}`}
+                                                                    className={`px-4 py-2 cursor-pointer hover:${darkMode ? 'bg-gray-600' : 'bg-gray-100'} transition-colors border-b ${darkMode ? 'border-gray-600' : 'border-gray-100'}`}
+                                                                    onClick={() => handleSbuLocationSelect(location)}
+                                                                >
+                                                                    <div className="font-medium">{location.name}</div>
+                                                                </li>
+                                                            ))}
+                                                            {sbuSuggestions.length > 5 && (
+                                                                <li className="px-4 py-2 text-xs text-gray-500 italic">
+                                                                    {sbuSuggestions.length - 5} more results...
+                                                                </li>
+                                                            )}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {formErrors.address && (
+                                                <p className="mt-1 text-sm text-red-500 flex items-center">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 mr-1">
+                                                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                                    </svg>
+                                                    {formErrors.address}
+                                                </p>
                                             )}
                                         </div>
-                                        {formErrors.address && (
-                                            <p className={`mt-1 text-sm text-red-500`}>{formErrors.address}</p>
-                                        )}
-                                    </div>
 
-                                    <div>
-                                        <label htmlFor="date" className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                            Date
-                                        </label>
-                                        <input
-                                            type="date"
-                                            id="date"
-                                            placeholder="Select date"
-                                            value={date}
-                                            onChange={(e) => {
-                                                setDate(e.target.value);
-                                                if (e.target.value) {
-                                                    setFormErrors(prev => ({ ...prev, date: '' }));
-                                                }
-                                            }}
-                                            min={new Date().toLocaleDateString('en-CA')} // Use locale-aware date string instead of ISO
-                                            className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
-                                                ? 'bg-gray-800 text-white border-gray-700 focus:ring-red-600 [color-scheme:dark]'
-                                                : 'bg-gray-100 text-gray-900 border-gray-300 focus:ring-red-500 [color-scheme:light]'
-                                                } border focus:outline-none focus:ring-2 ${formErrors.date ? 'border-red-500' : ''}`}
-                                        />
-                                        {formErrors.date && (
-                                            <p className={`mt-1 text-sm text-red-500`}>{formErrors.date}</p>
-                                        )}
-                                    </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div>
+                                                <label htmlFor="date" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                                    Date
+                                                </label>
+                                                <div className="relative">
+                                                    <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                            <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
+                                                        </svg>
+                                                    </div>
+                                                    <input
+                                                        type="date"
+                                                        id="date"
+                                                        placeholder="Select date"
+                                                        value={date}
+                                                        onChange={(e) => {
+                                                            setDate(e.target.value);
+                                                            if (e.target.value) {
+                                                                setFormErrors(prev => ({ ...prev, date: '' }));
+                                                            }
+                                                        }}
+                                                        min={new Date().toLocaleDateString('en-CA')}
+                                                        className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode
+                                                            ? 'bg-gray-700 text-white border-gray-600 focus:ring-red-400 [color-scheme:dark]'
+                                                            : 'bg-white text-gray-900 border-gray-300 focus:ring-red-600 [color-scheme:light]'
+                                                            } border focus:outline-none focus:ring-2 ${formErrors.date ? 'border-red-500' : ''}`}
+                                                    />
+                                                </div>
+                                                {formErrors.date && (
+                                                    <p className="mt-1 text-sm text-red-500 flex items-center">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 mr-1">
+                                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                                        </svg>
+                                                        {formErrors.date}
+                                                    </p>
+                                                )}
+                                            </div>
 
-                                    <div>
-                                        <label htmlFor="startTime" className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                            Start Time
-                                        </label>
-                                        <input
-                                            type="time"
-                                            id="startTime"
-                                            placeholder="Select start time"
-                                            value={startTime}
-                                            onChange={(e) => {
-                                                setStartTime(e.target.value);
-                                                if (e.target.value) {
-                                                    setFormErrors(prev => ({ ...prev, startTime: '' }));
-                                                }
-                                            }}
-                                            className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
-                                                ? 'bg-gray-800 text-white border-gray-700 focus:ring-red-600 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:invert'
-                                                : 'bg-gray-100 text-gray-900 border-gray-300 focus:ring-red-500 [color-scheme:light]'
-                                                } border focus:outline-none focus:ring-2 ${formErrors.startTime ? 'border-red-500' : ''}`}
-                                        />
-                                        {formErrors.startTime && (
-                                            <p className={`mt-1 text-sm text-red-500`}>{formErrors.startTime}</p>
-                                        )}
-                                    </div>
+                                            <div>
+                                                <label htmlFor="startTime" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                                    Start Time
+                                                </label>
+                                                <div className="relative">
+                                                    <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
+                                                        </svg>
+                                                    </div>
+                                                    <input
+                                                        type="time"
+                                                        id="startTime"
+                                                        placeholder="Select start time"
+                                                        value={startTime}
+                                                        onChange={(e) => {
+                                                            setStartTime(e.target.value);
+                                                            if (e.target.value) {
+                                                                setFormErrors(prev => ({ ...prev, startTime: '' }));
+                                                            }
+                                                        }}
+                                                        className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode
+                                                            ? 'bg-gray-700 text-white border-gray-600 focus:ring-red-400 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:invert'
+                                                            : 'bg-white text-gray-900 border-gray-300 focus:ring-red-600 [color-scheme:light]'
+                                                            } border focus:outline-none focus:ring-2 ${formErrors.startTime ? 'border-red-500' : ''}`}
+                                                    />
+                                                </div>
+                                                {formErrors.startTime && (
+                                                    <p className="mt-1 text-sm text-red-500 flex items-center">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 mr-1">
+                                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                                        </svg>
+                                                        {formErrors.startTime}
+                                                    </p>
+                                                )}
+                                            </div>
 
-                                    <div>
-                                        <label htmlFor="endTime" className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                            End Time
-                                        </label>
-                                        <input
-                                            type="time"
-                                            id="endTime"
-                                            placeholder="Select end time"
-                                            value={endTime}
-                                            onChange={(e) => {
-                                                setEndTime(e.target.value);
-                                                if (e.target.value) {
-                                                    setFormErrors(prev => ({ ...prev, endTime: '' }));
-                                                }
-                                            }}
-                                            className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
-                                                ? 'bg-gray-800 text-white border-gray-700 focus:ring-red-600 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:invert'
-                                                : 'bg-gray-100 text-gray-900 border-gray-300 focus:ring-red-500 [color-scheme:light]'
-                                                } border focus:outline-none focus:ring-2 ${formErrors.endTime ? 'border-red-500' : ''}`}
-                                        />
-                                        {formErrors.endTime && (
-                                            <p className={`mt-1 text-sm text-red-500`}>{formErrors.endTime}</p>
-                                        )}
-                                    </div>
+                                            <div>
+                                                <label htmlFor="endTime" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                                    End Time
+                                                </label>
+                                                <div className="relative">
+                                                    <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
+                                                        </svg>
+                                                    </div>
+                                                    <input
+                                                        type="time"
+                                                        id="endTime"
+                                                        placeholder="Select end time"
+                                                        value={endTime}
+                                                        onChange={(e) => {
+                                                            setEndTime(e.target.value);
+                                                            if (e.target.value) {
+                                                                setFormErrors(prev => ({ ...prev, endTime: '' }));
+                                                            }
+                                                        }}
+                                                        className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode
+                                                            ? 'bg-gray-700 text-white border-gray-600 focus:ring-red-400 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:invert'
+                                                            : 'bg-white text-gray-900 border-gray-300 focus:ring-red-600 [color-scheme:light]'
+                                                            } border focus:outline-none focus:ring-2 ${formErrors.endTime ? 'border-red-500' : ''}`}
+                                                    />
+                                                </div>
+                                                {formErrors.endTime && (
+                                                    <p className="mt-1 text-sm text-red-500 flex items-center">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 mr-1">
+                                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                                        </svg>
+                                                        {formErrors.endTime}
+                                                    </p>
+                                                )}
+                                            </div>
 
-                                    <div>
-                                        <label htmlFor="duration" className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                            Duration
-                                        </label>
-                                        <input
-                                            type="text"
-                                            id="duration"
-                                            placeholder=""
-                                            value={duration}
-                                            readOnly
-                                            className={`w-full p-3 rounded-md text-base shadow-sm ${darkMode
-                                                ? 'bg-gray-800 text-white border-gray-700'
-                                                : 'bg-gray-100 text-gray-900 border-gray-300'
-                                                } border ${formErrors.duration ? 'border-red-500' : ''}`}
-                                        />
-                                        {formErrors.duration && (
-                                            <p className={`mt-1 text-sm text-red-500`}>{formErrors.duration}</p>
-                                        )}
-                                    </div>
+                                            <div>
+                                                <label htmlFor="duration" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                                    Duration
+                                                </label>
+                                                <div className="relative">
+                                                    <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
+                                                        </svg>
+                                                    </div>
+                                                    <input
+                                                        type="text"
+                                                        id="duration"
+                                                        placeholder=""
+                                                        value={duration}
+                                                        readOnly
+                                                        className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode
+                                                            ? 'bg-gray-700 text-white border-gray-600'
+                                                            : 'bg-white text-gray-900 border-gray-300'
+                                                            } border ${formErrors.duration ? 'border-red-500' : ''}`}
+                                                    />
+                                                </div>
+                                                {formErrors.duration && (
+                                                    <p className="mt-1 text-sm text-red-500 flex items-center">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 mr-1">
+                                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                                        </svg>
+                                                        {formErrors.duration}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
 
-                                    <button
-                                        type="submit"
-                                        disabled={searching}
-                                        className="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-3 px-4 rounded-md transition-colors shadow-md"
-                                    >
-                                        {searching ? 'Searching...' : 'Search for Parking'}
-                                    </button>
-                                </form>
+                                        <button
+                                            type="submit"
+                                            disabled={searching}
+                                            className={`w-full py-3 px-4 rounded-lg text-white font-medium shadow-md transform transition-all hover:-translate-y-1 hover:shadow-lg
+                                            ${searching
+                                                    ? 'bg-gray-400 cursor-not-allowed'
+                                                    : 'bg-red-600 hover:bg-red-700'}`}
+                                        >
+                                            {searching ? (
+                                                <div className="flex items-center justify-center">
+                                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                    </svg>
+                                                    Searching...
+                                                </div>
+                                            ) : 'Search for Parking'}
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
 
                             {/* Map Section */}
-                            <div className="h-[500px] rounded-lg overflow-hidden shadow-lg relative">
-                                <div className={`absolute top-2 left-2 z-10 ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'} rounded-md shadow-md p-2 text-sm`}>
-                                    <p className="font-medium">Click on the map to select a location</p>
+                            <div className="h-[600px] rounded-2xl overflow-hidden shadow-lg relative">
+                                <div className={`absolute top-4 left-4 z-10 ${darkMode ? 'bg-gray-800/90 text-white' : 'bg-white/90 text-gray-900'} rounded-lg shadow-lg p-3 text-sm backdrop-blur-sm`}>
+                                    <p className="font-medium flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mr-2 text-red-500">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                                        </svg>
+                                        Click on the map to select a location
+                                    </p>
                                 </div>
                                 <ReactMapGL
                                     mapboxAccessToken={MAPBOX_TOKEN}
@@ -1111,28 +1236,108 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
             case 'results':
                 return (
-                    <div className="w-full max-w-6xl mx-auto px-4 py-8">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
+                        {/* Hero Section with context */}
+                        <div className="relative mb-10">
+                            {/* Decorative elements */}
+                            <div className="absolute -top-10 -right-10 w-40 h-40 bg-red-600 opacity-5 rounded-full blur-2xl"></div>
+                            <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-blue-500 opacity-5 rounded-full blur-2xl"></div>
+
+                            <div className="text-center relative z-10">
+                                <div className="inline-block mb-4">
+                                    <span className={`inline-flex items-center justify-center p-3 ${darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'} rounded-xl`}>
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                                        </svg>
+                                    </span>
+                                </div>
+                                <h1 className={`text-4xl md:text-5xl font-bold mb-4 tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                    Available Parking
+                                </h1>
+                                <p className={`text-xl md:text-2xl max-w-3xl mx-auto ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                                    {nearbyParking.length} spots near {selectedLocation ? selectedLocation.name : 'your location'}
+                                </p>
+                            </div>
+                        </div>
+
                         {renderError()}
                         {renderLoadingIndicator()}
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             {/* Left sidebar with results list */}
-                            <div className="md:col-span-1">
-                                <ResultsView
-                                    darkMode={darkMode}
-                                    locationName={selectedLocation ? selectedLocation.name : 'Selected Location'}
-                                    formattedStartDateTime={formatDateTime(date, startTime)}
-                                    formattedEndDateTime={formatDateTime(date, endTime)}
-                                    nearbyParking={nearbyParking}
-                                    selectedParkingSpot={selectedLot ? selectedLot.id : null}
-                                    setSelectedParkingSpot={handleMarkerClick}
-                                    onViewDetails={handleViewDetails}
-                                    onBackClick={handleBackClick}
-                                />
+                            <div className="lg:col-span-1">
+                                <div className={`rounded-2xl overflow-hidden shadow-lg ${darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'}`}>
+                                    <div className="relative">
+                                        {/* Decorative accent */}
+                                        <div className="absolute top-0 left-0 h-1 w-24 bg-gradient-to-r from-red-600 to-red-400"></div>
+
+                                        {/* Transport mode selector */}
+                                        <div className="flex justify-center pt-4 px-4 mb-4">
+                                            <div className={`flex border rounded-lg overflow-hidden ${darkMode ? 'border-gray-600' : 'border-gray-300'}`}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setTransportMode('driving')}
+                                                    className={`flex items-center px-4 py-2 text-sm font-medium ${transportMode === 'driving'
+                                                        ? `${darkMode ? 'bg-red-600 text-white' : 'bg-red-600 text-white'}`
+                                                        : `${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-700 hover:bg-gray-100'}`
+                                                        }`}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
+                                                        <path d="M12 1.5a.75.75 0 01.75.75V7.5h-1.5V2.25A.75.75 0 0112 1.5zM11.25 7.5v5.69l-1.72-1.72a.75.75 0 00-1.06 1.06l3 3a.75.75 0 001.06 0l3-3a.75.75 0 10-1.06-1.06l-1.72 1.72V7.5h3.75a3 3 0 013 3v9a3 3 0 01-3 3h-9a3 3 0 01-3-3v-9a3 3 0 013-3h3.75z" />
+                                                    </svg>
+                                                    Car
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setTransportMode('walking')}
+                                                    className={`flex items-center px-4 py-2 text-sm font-medium ${transportMode === 'walking'
+                                                        ? `${darkMode ? 'bg-red-600 text-white' : 'bg-red-600 text-white'}`
+                                                        : `${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-700 hover:bg-gray-100'}`
+                                                        }`}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
+                                                        <path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z" />
+                                                    </svg>
+                                                    Walk
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setTransportMode('driving-traffic')}
+                                                    className={`flex items-center px-4 py-2 text-sm font-medium ${transportMode === 'driving-traffic'
+                                                        ? `${darkMode ? 'bg-red-600 text-white' : 'bg-red-600 text-white'}`
+                                                        : `${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-700 hover:bg-gray-100'}`
+                                                        }`}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
+                                                        <path fillRule="evenodd" d="M8.25 6.75a3.75 3.75 0 117.5 0 3.75 3.75 0 01-7.5 0zM15.75 9.75a3 3 0 116 0 3 3 0 01-6 0zM2.25 9.75a3 3 0 116 0 3 3 0 01-6 0zM6.31 15.117A6.745 6.745 0 0112 12a6.745 6.745 0 016.709 7.498.75.75 0 01-.372.568A12.696 12.696 0 0112 21.75c-2.305 0-4.47-.612-6.337-1.684a.75.75 0 01-.372-.568 6.787 6.787 0 011.019-4.38z" clipRule="evenodd" />
+                                                        <path d="M5.082 14.254a8.287 8.287 0 00-1.308 5.135 9.687 9.687 0 01-1.764-.44l-.115-.04a.563.563 0 01-.373-.487l-.01-.121a3.75 3.75 0 013.57-4.047zM20.226 19.389a8.287 8.287 0 00-1.308-5.135 3.75 3.75 0 013.57 4.047l-.01.121a.563.563 0 01-.373.486l-.115.04c-.567.2-1.156.349-1.764.441z" />
+                                                    </svg>
+                                                    Bus
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <ResultsView
+                                            darkMode={darkMode}
+                                            locationName={selectedLocation ? selectedLocation.name : 'Selected Location'}
+                                            formattedStartDateTime={formatDateTime(date, startTime)}
+                                            formattedEndDateTime={formatDateTime(date, endTime)}
+                                            nearbyParking={nearbyParking}
+                                            selectedParkingSpot={selectedLot ? selectedLot.id : null}
+                                            setSelectedParkingSpot={handleMarkerClick}
+                                            onViewDetails={handleViewDetails}
+                                            onBackClick={handleBackClick}
+                                            transportMode={transportMode}
+                                        />
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Map view */}
-                            <div className="md:col-span-2 h-[700px] rounded-lg overflow-hidden shadow-lg">
+                            <div className="lg:col-span-2 h-[700px] rounded-2xl overflow-hidden shadow-lg relative">
+                                {/* Remove the redundant overlay info box that was here */}
+
                                 <ReactMapGL
                                     mapboxAccessToken={MAPBOX_TOKEN}
                                     initialViewState={{
@@ -1141,7 +1346,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                         zoom: 14
                                     }}
                                     style={{ width: '100%', height: '100%' }}
-                                    mapStyle="mapbox://styles/mapbox/outdoors-v12" // Terrain view
+                                    mapStyle="mapbox://styles/mapbox/outdoors-v12"
                                 >
                                     <GeolocateControl position="top-right" />
                                     <NavigationControl position="top-right" />
@@ -1167,9 +1372,14 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                                 id="route-line"
                                                 type="line"
                                                 paint={{
-                                                    'line-color': '#3b82f6',
-                                                    'line-width': 3,
-                                                    'line-opacity': 0.8
+                                                    'line-color': transportMode === 'walking'
+                                                        ? '#10b981' // green for walking
+                                                        : transportMode === 'driving-traffic'
+                                                            ? '#ef4444' // red for bus
+                                                            : '#3b82f6', // blue for car (driving)
+                                                    'line-width': 4,
+                                                    'line-opacity': 0.8,
+                                                    'line-dasharray': transportMode === 'walking' ? [0.5, 1.5] : [1, 0]
                                                 }}
                                             />
                                         </Source>
@@ -1180,16 +1390,48 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                             key={lot.id}
                                             longitude={parseFloat(lot.coordinates[1])}
                                             latitude={parseFloat(lot.coordinates[0])}
-                                            color={selectedLot?.id === lot.id ? "#dc2626" : "#3b82f6"} // Red for selected, blue for others
+                                            color={selectedLot?.id === lot.id ? "#dc2626" : "#3b82f6"}
                                             onClick={() => handleMarkerClick(lot)}
                                         />
                                     ))}
+
+                                    {/* Add popup for selected parking lot */}
+                                    {selectedLot && (
+                                        <Popup
+                                            longitude={parseFloat(selectedLot.coordinates[1])}
+                                            latitude={parseFloat(selectedLot.coordinates[0])}
+                                            anchor="bottom"
+                                            closeButton={false}
+                                            closeOnClick={false}
+                                            offset={25}
+                                        >
+                                            <div className={`p-4 ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'} rounded-lg shadow-md border ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                                                <p className="font-bold text-base mb-3 flex items-center">
+                                                    <div className="bg-red-100 dark:bg-red-900/30 p-1.5 rounded-full mr-2.5">
+                                                        <FaParking className="text-red-600 dark:text-red-400" />
+                                                    </div>
+                                                    {selectedLot.name}
+                                                </p>
+                                                <div className="flex justify-between items-center gap-3">
+                                                    <div className="flex items-center">
+                                                        <span className={`${darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700'} text-xs font-medium px-2.5 py-1.5 rounded-full`}>
+                                                            {selectedLot.availableSpaces} spaces
+                                                        </span>
+                                                    </div>
+                                                    <div className={`${darkMode ? 'bg-blue-900 text-blue-100 border-blue-800' : 'bg-blue-50 text-blue-700 border-blue-200'} px-3 py-1.5 rounded-md text-xs font-bold border flex items-center`}>
+                                                        <FaDollarSign className="mr-1" />
+                                                        {selectedLot.price.replace("$", "")}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </Popup>
+                                    )}
 
                                     {selectedLocation && (
                                         <Marker
                                             longitude={selectedLocation.coordinates[1]}
                                             latitude={selectedLocation.coordinates[0]}
-                                            color="#16a34a" // Green for destination
+                                            color="#16a34a"
                                         />
                                     )}
                                 </ReactMapGL>
@@ -1214,6 +1456,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                 endDateTime={formatDateTime(date, endTime)}
                                 duration={duration}
                                 destination={selectedLocation}
+                                transportMode={transportMode}
                             />
                         )}
                     </div>
@@ -1239,14 +1482,21 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                         <PaymentPage
                             darkMode={darkMode}
                             lotName={selectedLot?.name}
-                            price={selectedLot?.rateType === 'Hourly'
-                                ? `$${(parseFloat(duration) * selectedLot.hourlyRate).toFixed(2)}`
-                                : `$${selectedLot.semesterRate.toFixed(2)}`}
+                            price={selectedLot?.isEV
+                                ? `$${(parseFloat(duration) * selectedLot.evChargingRate).toFixed(2)}`
+                                : selectedLot?.rateType === 'Hourly'
+                                    ? `$${(parseFloat(duration) * selectedLot.hourlyRate).toFixed(2)}`
+                                    : `$${selectedLot.semesterRate.toFixed(2)}`}
                             vehicleInfo={vehicleInfo}
                             onBackClick={handlePaymentBackClick}
                             onCompletePayment={handlePaymentComplete}
                             hasValidPermit={hasValidPermit}
                             validPermitDetails={validPermitDetails}
+                            priceDetails={selectedLot?.isEV
+                                ? `$${selectedLot.evChargingRate}/hour × ${duration.replace(' hours', '')}`
+                                : selectedLot?.rateType === 'Hourly'
+                                    ? `$${selectedLot.hourlyRate}/hour × ${duration.replace(' hours', '')}`
+                                    : 'Semester permit rate'}
                         />
                     </div>
                 );
@@ -1320,9 +1570,11 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                         {paymentInfo?.paymentMethod === 'card' ? 'Credit Card' : 'SOLAR Account'}
                                     </p>
                                     <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                        {selectedLot?.rateType === 'Hourly'
-                                            ? `$${(parseFloat(duration) * selectedLot.hourlyRate).toFixed(2)}`
-                                            : `$${selectedLot.semesterRate.toFixed(2)}`} • Transaction #{paymentInfo?.transactionId}
+                                        {selectedLot?.isEV
+                                            ? `$${(parseFloat(duration) * selectedLot.evChargingRate).toFixed(2)}`
+                                            : selectedLot?.rateType === 'Hourly'
+                                                ? `$${(parseFloat(duration) * selectedLot.hourlyRate).toFixed(2)}`
+                                                : `$${selectedLot.semesterRate.toFixed(2)}`} • Transaction #{paymentInfo?.transactionId}
                                     </p>
                                 </div>
                             </div>
