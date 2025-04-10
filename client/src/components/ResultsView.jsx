@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { FaArrowLeft, FaParking, FaFilter, FaChevronDown, FaChevronUp, FaWalking, FaCar, FaBus, FaMapMarkerAlt, FaClock, FaRoute } from 'react-icons/fa';
+import { FaArrowLeft, FaParking, FaFilter, FaChevronDown, FaChevronUp, FaWalking, FaCar, FaBus, FaMapMarkerAlt, FaClock, FaRoute, FaArrowUp, FaArrowDown, FaPlug } from 'react-icons/fa';
+import { AuthService } from '../utils/api';
 
 const ResultsView = ({
     darkMode,
@@ -10,19 +11,69 @@ const ResultsView = ({
     selectedParkingSpot,
     setSelectedParkingSpot,
     onViewDetails,
-    onBackClick
+    onBackClick,
+    transportMode = 'driving'
 }) => {
     // Add state for filters
     const [priceFilter, setPriceFilter] = useState('all');
+    const [distanceFilter, setDistanceFilter] = useState('all');
     const [permitFilter, setPermitFilter] = useState([]);
     const [filteredParking, setFilteredParking] = useState([]);
     const [showFilters, setShowFilters] = useState(false);
+    const [userType, setUserType] = useState(null);
+
+    // Get current user type on component mount
+    useEffect(() => {
+        const currentUser = AuthService.getCurrentUser();
+        if (currentUser) {
+            setUserType(currentUser.userType);
+        }
+    }, []);
 
     // CSS for dashed line
     const dashedLineStyle = {
         backgroundImage: `linear-gradient(${darkMode ? '#6B7280' : '#9CA3AF'} 50%, transparent 50%)`,
         backgroundSize: '1px 4px',
         backgroundRepeat: 'repeat-y'
+    };
+
+    // Get transport icon based on mode
+    const getTransportIcon = () => {
+        switch (transportMode) {
+            case 'walking':
+                return <FaWalking className="mr-1" />;
+            case 'driving-traffic':
+                return <FaBus className="mr-1" />;
+            case 'driving':
+            default:
+                return <FaCar className="mr-1" />;
+        }
+    };
+
+    // Get transport text based on mode
+    const getTransportText = () => {
+        switch (transportMode) {
+            case 'walking':
+                return 'walk';
+            case 'driving-traffic':
+                return 'bus';
+            case 'driving':
+            default:
+                return 'drive';
+        }
+    };
+
+    // Get transport color class based on mode
+    const getTransportColorClass = () => {
+        switch (transportMode) {
+            case 'walking':
+                return darkMode ? 'bg-green-900/30 text-green-300' : 'bg-green-50 text-green-700';
+            case 'driving-traffic':
+                return darkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-50 text-red-700';
+            case 'driving':
+            default:
+                return darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-700';
+        }
     };
 
     // Extract unique permit types from all parking lots
@@ -35,8 +86,12 @@ const ResultsView = ({
         // Apply price filter
         if (priceFilter === 'hourly') {
             filtered = filtered.filter(spot => spot.rateType === 'Hourly');
+            // Reset permit filter when hourly is selected
+            if (permitFilter.length > 0) {
+                setPermitFilter([]);
+            }
         } else if (priceFilter === 'semester') {
-            filtered = filtered.filter(spot => spot.rateType === 'Semester');
+            filtered = filtered.filter(spot => spot.rateType === 'Permit-based');
         } else if (priceFilter === 'low-to-high') {
             filtered.sort((a, b) => {
                 const aValue = a.rateType === 'Hourly' ? a.hourlyRate : a.semesterRate;
@@ -51,6 +106,13 @@ const ResultsView = ({
             });
         }
 
+        // Apply distance filter
+        if (distanceFilter === 'closest-first') {
+            filtered.sort((a, b) => a.distanceInFeet - b.distanceInFeet);
+        } else if (distanceFilter === 'farthest-first') {
+            filtered.sort((a, b) => b.distanceInFeet - a.distanceInFeet);
+        }
+
         // Apply permit filter (if any permits are selected)
         if (permitFilter.length > 0) {
             filtered = filtered.filter(spot =>
@@ -59,7 +121,22 @@ const ResultsView = ({
         }
 
         setFilteredParking(filtered);
-    }, [nearbyParking, priceFilter, permitFilter]);
+    }, [nearbyParking, priceFilter, distanceFilter, permitFilter]);
+
+    // Price filter dropdown section
+    const renderPriceFilterOptions = () => {
+        return (
+            <>
+                <option value="all">All Prices</option>
+                <option value="hourly">Hourly Rates Only</option>
+                {userType !== 'visitor' && (
+                    <option value="semester">Semester Rates Only</option>
+                )}
+                <option value="low-to-high">Price: Low to High</option>
+                <option value="high-to-low">Price: High to Low</option>
+            </>
+        );
+    };
 
     // Handler for permit filter changes
     const handlePermitFilterChange = (permit) => {
@@ -212,35 +289,23 @@ const ResultsView = ({
                                 const selectedSpot = getSelectedSpot();
                                 if (!selectedSpot) return null;
 
+                                // Calculate travel time based on transport mode and distance
+                                let travelTime;
+                                if (typeof selectedSpot.distanceInFeet === 'number') {
+                                    if (transportMode === 'walking') {
+                                        travelTime = Math.ceil(selectedSpot.distanceInFeet / 275); // walking pace
+                                    } else if (transportMode === 'driving-traffic') {
+                                        travelTime = Math.ceil(selectedSpot.distanceInFeet / 900); // bus pace
+                                    } else {
+                                        travelTime = Math.ceil(selectedSpot.distanceInFeet / 4400); // driving pace
+                                    }
+                                }
+
                                 return (
-                                    <>
-                                        {/* Walking option */}
-                                        {(typeof selectedSpot.distanceInFeet === 'number' && selectedSpot.distanceInFeet < 3000) && (
-                                            <div className={`flex items-center px-2 py-1 rounded-md text-xs font-medium ${darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-700'
-                                                }`}>
-                                                <FaWalking className="mr-1" />
-                                                <span>{Math.ceil(selectedSpot.distanceInFeet / 275)} min walk</span>
-                                            </div>
-                                        )}
-
-                                        {/* Bus option */}
-                                        {(typeof selectedSpot.distanceInFeet === 'number' && selectedSpot.distanceInFeet >= 1500) && (
-                                            <div className={`flex items-center px-2 py-1 rounded-md text-xs font-medium ${darkMode ? 'bg-orange-900/30 text-orange-300' : 'bg-orange-50 text-orange-700'
-                                                }`}>
-                                                <FaBus className="mr-1" />
-                                                <span>{Math.ceil(selectedSpot.distanceInFeet / 900)} min bus</span>
-                                            </div>
-                                        )}
-
-                                        {/* Car option */}
-                                        {(typeof selectedSpot.distanceInFeet === 'number' && selectedSpot.distanceInFeet >= 5280) && (
-                                            <div className={`flex items-center px-2 py-1 rounded-md text-xs font-medium ${darkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-50 text-purple-700'
-                                                }`}>
-                                                <FaCar className="mr-1" />
-                                                <span>{selectedSpot.calculatedDistance ? Math.ceil(selectedSpot.calculatedDistance * 5280 / 4400) : '?'} min drive</span>
-                                            </div>
-                                        )}
-                                    </>
+                                    <div className={`flex items-center px-2 py-1 rounded-md text-xs font-medium ${getTransportColorClass()}`}>
+                                        {getTransportIcon()}
+                                        <span>{travelTime || '?'} min {getTransportText()}</span>
+                                    </div>
                                 );
                             })()}
                         </div>
@@ -265,30 +330,52 @@ const ResultsView = ({
                                     : 'bg-gray-50 text-gray-900 border-gray-200'
                                     }`}
                             >
-                                <option value="all">All Prices</option>
-                                <option value="hourly">Hourly Rates Only</option>
-                                <option value="semester">Semester Rates Only</option>
-                                <option value="low-to-high">Price: Low to High</option>
-                                <option value="high-to-low">Price: High to Low</option>
+                                {renderPriceFilterOptions()}
+                            </select>
+                        </div>
+
+                        {/* Distance Filter */}
+                        <div>
+                            <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                Sort by Distance
+                            </label>
+                            <select
+                                value={distanceFilter}
+                                onChange={(e) => setDistanceFilter(e.target.value)}
+                                className={`w-full p-2 rounded border focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode
+                                    ? 'bg-gray-700 text-white border-gray-600'
+                                    : 'bg-gray-50 text-gray-900 border-gray-200'
+                                    }`}
+                            >
+                                <option value="all">No Distance Sorting</option>
+                                <option value="closest-first">Nearest Parking First</option>
+                                <option value="farthest-first">Farthest Parking First</option>
                             </select>
                         </div>
 
                         {/* Permit Types Filter */}
                         {uniquePermitTypes.length > 0 && (
                             <div>
-                                <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                    Permit Types
+                                <label className={`block mb-2 text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'} flex items-center justify-between`}>
+                                    <span>Permit Types</span>
+                                    {priceFilter === 'hourly' && (
+                                        <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            (Disabled for hourly lots)
+                                        </span>
+                                    )}
                                 </label>
                                 <div className="flex flex-wrap gap-2">
                                     {uniquePermitTypes.map((permit) => (
                                         <div
                                             key={permit}
-                                            onClick={() => handlePermitFilterChange(permit)}
-                                            className={`px-3 py-1 rounded-full text-sm font-medium cursor-pointer transition-colors ${permitFilter.includes(permit)
-                                                ? 'bg-red-600 text-white'
-                                                : darkMode
-                                                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                                                    : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                                            onClick={() => priceFilter !== 'hourly' && handlePermitFilterChange(permit)}
+                                            className={`px-3 py-1 rounded-full text-sm font-medium cursor-pointer transition-colors ${priceFilter === 'hourly'
+                                                    ? (darkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed')
+                                                    : permitFilter.includes(permit)
+                                                        ? 'bg-red-600 text-white'
+                                                        : darkMode
+                                                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                                            : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
                                                 }`}
                                         >
                                             {permit}
@@ -299,11 +386,12 @@ const ResultsView = ({
                         )}
 
                         {/* Reset Filters */}
-                        {(priceFilter !== 'all' || permitFilter.length > 0) && (
+                        {(priceFilter !== 'all' || distanceFilter !== 'all' || permitFilter.length > 0) && (
                             <div className="text-right">
                                 <button
                                     onClick={() => {
                                         setPriceFilter('all');
+                                        setDistanceFilter('all');
                                         setPermitFilter([]);
                                     }}
                                     className="text-sm text-red-600 hover:text-red-700 font-medium"
@@ -332,6 +420,7 @@ const ResultsView = ({
                     <button
                         onClick={() => {
                             setPriceFilter('all');
+                            setDistanceFilter('all');
                             setPermitFilter([]);
                         }}
                         className="mt-2 text-sm text-red-600 hover:text-red-700 font-medium"
@@ -344,7 +433,7 @@ const ResultsView = ({
                     {filteredParking.map((spot) => (
                         <div
                             key={spot.id}
-                            className={`rounded-lg transition-all duration-200 cursor-pointer overflow-hidden ${selectedParkingSpot === spot.id
+                            className={`rounded-lg transition-all duration-200 ${spot.availableSpots > 0 ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'} overflow-hidden ${selectedParkingSpot === spot.id
                                 ? `${darkMode ? 'ring-2 ring-red-500' : 'ring-2 ring-red-500'} shadow-md`
                                 : `shadow-sm`
                                 }`}
@@ -355,7 +444,7 @@ const ResultsView = ({
                                     ? darkMode ? 'bg-gray-700' : 'bg-white'
                                     : darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'
                                     }`}
-                                onClick={() => setSelectedParkingSpot(spot.id)}
+                                onClick={() => spot.availableSpots > 0 && setSelectedParkingSpot(spot.id)}
                             >
                                 <div className="flex justify-between items-start">
                                     <div className="flex-grow">
@@ -366,39 +455,35 @@ const ResultsView = ({
                                                     Selected
                                                 </span>
                                             )}
+                                            {spot.isEV && (
+                                                <span className={`ml-2 px-1.5 py-0.5 text-xs rounded-sm ${darkMode ? 'bg-green-900/50 text-green-200' : 'bg-green-50 text-green-700'} flex items-center`}>
+                                                    <FaPlug className="mr-1" /> EV
+                                                </span>
+                                            )}
                                         </div>
                                         <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} mt-0.5`}>{spot.address}</p>
 
                                         {/* Transportation recommendation */}
                                         <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                                            {typeof spot.distanceInFeet === 'number' && spot.distanceInFeet < 1500 ? (
-                                                <div className={`flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-700'
-                                                    }`}>
-                                                    <FaWalking className="mr-1" />
-                                                    <span>{Math.ceil(spot.distanceInFeet / 275)} min walk</span>
-                                                </div>
-                                            ) : typeof spot.distanceInFeet === 'number' && spot.distanceInFeet < 5280 ? (
-                                                <div className={`flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${darkMode ? 'bg-orange-900/30 text-orange-300' : 'bg-orange-50 text-orange-700'
-                                                    }`}>
-                                                    <FaBus className="mr-1" />
-                                                    <span>{Math.ceil(spot.distanceInFeet / 900)} min bus</span>
-                                                </div>
-                                            ) : (
-                                                <div className={`flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${darkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-50 text-purple-700'
-                                                    }`}>
-                                                    <FaCar className="mr-1" />
-                                                    <span>{spot.calculatedDistance ? Math.ceil(spot.calculatedDistance * 5280 / 4400) : '?'} min drive</span>
-                                                </div>
-                                            )}
-
-                                            {/* Show bus option for longer distances */}
-                                            {typeof spot.distanceInFeet === 'number' && spot.distanceInFeet >= 5280 && (
-                                                <div className={`flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${darkMode ? 'bg-orange-900/30 text-orange-300' : 'bg-orange-50 text-orange-700'
-                                                    }`}>
-                                                    <FaBus className="mr-1" />
-                                                    <span>{Math.ceil(spot.distanceInFeet / 900)} min bus</span>
-                                                </div>
-                                            )}
+                                            <div className={`flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${getTransportColorClass()}`}>
+                                                {getTransportIcon()}
+                                                <span>
+                                                    {(() => {
+                                                        // Calculate travel time based on transport mode and spot's distance
+                                                        if (typeof spot.distanceInFeet === 'number') {
+                                                            if (transportMode === 'walking') {
+                                                                return `${Math.ceil(spot.distanceInFeet / 275)} min ${getTransportText()}`;
+                                                            } else if (transportMode === 'driving-traffic') {
+                                                                return `${Math.ceil(spot.distanceInFeet / 900)} min ${getTransportText()}`;
+                                                            } else {
+                                                                return `${Math.ceil(spot.distanceInFeet / 4400)} min ${getTransportText()}`;
+                                                            }
+                                                        } else {
+                                                            return `? min ${getTransportText()}`;
+                                                        }
+                                                    })()}
+                                                </span>
+                                            </div>
 
                                             <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                                 {spot.distance}
@@ -423,11 +508,14 @@ const ResultsView = ({
 
                                     {/* Price and availability */}
                                     <div className="text-center ml-4 flex-shrink-0">
-                                        <div className="w-16 h-16 rounded-full bg-red-600 text-white flex flex-col items-center justify-center shadow-md">
+                                        <div className={`w-16 h-16 rounded-full ${spot.availableSpots > 0 ? 'bg-red-600' : 'bg-gray-500'} text-white flex flex-col items-center justify-center shadow-md`}>
                                             <span className="font-bold text-lg">{spot.availableSpots}</span>
                                             <span className="text-xs">spots</span>
                                         </div>
                                         <p className="text-sm font-semibold mt-1">{spot.price}</p>
+                                        {spot.availableSpots === 0 && (
+                                            <p className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>Currently Full</p>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -435,15 +523,20 @@ const ResultsView = ({
                             {/* View details button */}
                             <button
                                 onClick={(e) => {
-                                    e.stopPropagation();
-                                    onViewDetails(spot.id);
+                                    if (spot.availableSpots > 0) {
+                                        e.stopPropagation();
+                                        onViewDetails(spot.id);
+                                    }
                                 }}
-                                className={`w-full py-2 text-white font-medium text-sm flex items-center justify-center transition-colors shadow-sm ${selectedParkingSpot === spot.id
-                                    ? 'bg-red-700 hover:bg-red-800'
-                                    : 'bg-red-600 hover:bg-red-700'
+                                disabled={spot.availableSpots === 0}
+                                className={`w-full py-2 text-white font-medium text-sm flex items-center justify-center transition-colors shadow-sm ${spot.availableSpots === 0
+                                    ? 'bg-gray-500 cursor-not-allowed'
+                                    : selectedParkingSpot === spot.id
+                                        ? 'bg-red-700 hover:bg-red-800'
+                                        : 'bg-red-600 hover:bg-red-700'
                                     }`}
                             >
-                                <FaParking className="mr-2" /> View Details
+                                <FaParking className="mr-2" /> {spot.availableSpots > 0 ? 'View Details' : 'No Spots Available'}
                             </button>
                         </div>
                     ))}
