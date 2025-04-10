@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/users');
 const PermitType = require('../models/permit_types');
+const Reservation = require('../models/reservation');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const NotificationHelper = require('../utils/notificationHelper');
 
 // Get Pending Users
 router.get('/pending-users', verifyToken, isAdmin, async (req, res) => {
@@ -31,6 +33,20 @@ router.put('/approve-user/:userId', verifyToken, isAdmin, async (req, res) => {
 
         if (!updatedUser) {
             return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Create a notification for the user about their account approval
+        try {
+            await NotificationHelper.createSystemNotification(
+                userId,
+                'Account Approved',
+                'Your account has been approved. You now have full access to all features.',
+                '/dashboard'
+            );
+            console.log('Account approval notification created for user:', userId);
+        } catch (notificationError) {
+            console.error('Error creating account approval notification:', notificationError);
+            // Continue even if notification creation fails
         }
 
         res.status(200).json({
@@ -346,6 +362,131 @@ router.delete('/permit-types/:permitTypeId', verifyToken, isAdmin, async (req, r
         });
     } catch (error) {
         console.error('Error deleting permit type:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Get all reservations (admin only)
+router.get('/reservations', verifyToken, isAdmin, async (req, res) => {
+    try {
+        // Support filtering and pagination
+        const { status, startDate, endDate, userId, search, page = 1, limit = 10 } = req.query;
+        const skip = (page - 1) * limit;
+
+        // Build query based on filters
+        const query = {};
+
+        if (status) {
+            query.status = status;
+        }
+
+        if (startDate || endDate) {
+            query.startTime = {};
+            if (startDate) {
+                query.startTime.$gte = new Date(startDate);
+            }
+            if (endDate) {
+                const endDateObj = new Date(endDate);
+                endDateObj.setHours(23, 59, 59, 999); // Set to end of day
+                query.startTime.$lte = endDateObj;
+            }
+        }
+
+        if (userId) {
+            query.user = userId;
+        }
+
+        if (search) {
+            // Search in reservation ID or populate and search in user fields
+            query.$or = [
+                { reservationId: { $regex: search, $options: 'i' } }
+                // We'll handle user and lot name search after fetching the data
+            ];
+        }
+
+        // Get total count for pagination
+        const total = await Reservation.countDocuments(query);
+
+        // Get reservations with pagination and populate related fields
+        const reservations = await Reservation.find(query)
+            .populate('user', 'firstName lastName email')
+            .populate('lotId', 'name address location')
+            .populate('vehicleInfo', 'plateNumber stateProv make model color')
+            .sort({ startTime: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        // If there was a search term and we want to search in populated fields,
+        // we need to filter the results after populating
+        let filteredReservations = reservations;
+        if (search && reservations.length > 0) {
+            const searchRegex = new RegExp(search, 'i');
+            filteredReservations = reservations.filter(reservation => {
+                // Check if search matches user name or email
+                const userMatch = reservation.user && (
+                    (reservation.user.firstName && searchRegex.test(reservation.user.firstName)) ||
+                    (reservation.user.lastName && searchRegex.test(reservation.user.lastName)) ||
+                    (reservation.user.email && searchRegex.test(reservation.user.email))
+                );
+
+                // Check if search matches lot name or address
+                const lotMatch = reservation.lotId && (
+                    (reservation.lotId.name && searchRegex.test(reservation.lotId.name)) ||
+                    (reservation.lotId.address && searchRegex.test(reservation.lotId.address))
+                );
+
+                // Check if search matches vehicle info
+                const vehicleMatch = reservation.vehicleInfo && (
+                    (reservation.vehicleInfo.plateNumber && searchRegex.test(reservation.vehicleInfo.plateNumber)) ||
+                    (reservation.vehicleInfo.make && searchRegex.test(reservation.vehicleInfo.make)) ||
+                    (reservation.vehicleInfo.model && searchRegex.test(reservation.vehicleInfo.model))
+                );
+
+                return userMatch || lotMatch || vehicleMatch || searchRegex.test(reservation.reservationId);
+            });
+        }
+
+        // Calculate total pages based on filtered count
+        const filteredTotal = search ? filteredReservations.length : total;
+        const totalPages = Math.ceil(filteredTotal / limit);
+
+        res.status(200).json({
+            reservations: filteredReservations,
+            pagination: {
+                total: filteredTotal,
+                currentPage: parseInt(page),
+                totalPages
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching reservations:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Get active reservations count
+router.get('/reservations/count', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const { status = 'active' } = req.query;
+
+        // Build query based on status
+        const query = { status };
+
+        // For active status, ensure we only count reservations that haven't ended
+        if (status === 'active') {
+            const now = new Date();
+            query.endTime = { $gte: now };
+        }
+
+        // Get count of reservations matching the query
+        const count = await Reservation.countDocuments(query);
+
+        res.status(200).json({
+            count,
+            status
+        });
+    } catch (error) {
+        console.error('Error fetching reservation count:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
