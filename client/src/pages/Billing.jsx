@@ -68,7 +68,8 @@ const Billing = ({ darkMode, isAuthenticated }) => {
 
         const matchesType = filterType === 'all' ||
             (filterType === 'paid' && bill.status === 'Paid') ||
-            (filterType === 'permits' && bill.description.includes('Permit'));
+            (filterType === 'permits' && bill.description.includes('Permit')) ||
+            (filterType === 'metered' && bill.description.includes('Metered Parking'));
 
         const matchesDate = (!dateRange.start || new Date(bill.date) >= new Date(dateRange.start)) &&
             (!dateRange.end || new Date(bill.date) <= new Date(dateRange.end));
@@ -166,6 +167,7 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                             >
                                 <option value="all">All Transactions</option>
                                 <option value="permits">Permits Only</option>
+                                <option value="metered">Metered Parking Only</option>
                                 <option value="paid">Paid Only</option>
                             </select>
                         </div>
