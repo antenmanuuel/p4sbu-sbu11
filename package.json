@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "Parking Management System",
   "engines": {
-    "node": ">=20.0.0",
-    "npm": ">=10.0.0"
+    "node": "20.x",
+    "npm": "10.x"
   },
   "scripts": {
     "start": "cd server && npm start",
