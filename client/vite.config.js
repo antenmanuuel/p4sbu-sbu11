@@ -1,18 +1,22 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist',
     commonjsOptions: {
-      include: []
+      include: [/node_modules/]
     }
   },
   optimizeDeps: {
-    disabled: false
+    include: [
+      'react',
+      'react-dom',
+      'react-icons',
+      'react-router',
+      'react-router-dom'
+    ]
   },
-  // Add this to ensure assets are loaded correctly on Heroku
-  base: '/'
+  base: './'  // for Heroku deployment
 })
