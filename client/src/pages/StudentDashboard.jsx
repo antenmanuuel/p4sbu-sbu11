@@ -268,7 +268,7 @@ const StudentDashboard = ({ darkMode }) => {
     fetchCars();
   }, []);
 
-  // Fetch billing history - We need to check how payment data is structured
+  // Fetch billing history
   useEffect(() => {
     const fetchBillingHistory = async () => {
       setLoadingBilling(true);
@@ -283,7 +283,8 @@ const StudentDashboard = ({ darkMode }) => {
             date: new Date(item.date).toISOString().split('T')[0], // Format as YYYY-MM-DD
             description: item.description,
             amount: `$${item.amount}`,
-            status: item.status
+            status: item.status,
+            type: item.type || 'unknown' // Include transaction type
           }));
           setBillingHistory(formattedBillingHistory);
         } else {
@@ -1728,6 +1729,16 @@ const StudentDashboard = ({ darkMode }) => {
                     </span>
                     <h3 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                       {bill.description}
+                      {bill.type && (
+                        <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium 
+                          ${bill.type === 'permit' ? 'bg-blue-100 text-blue-800' :
+                            bill.type === 'metered' ? 'bg-purple-100 text-purple-800' :
+                              'bg-gray-100 text-gray-800'}`}>
+                          {bill.type === 'permit' ? 'Permit' :
+                            bill.type === 'metered' ? 'Metered' :
+                              'Other'}
+                        </span>
+                      )}
                     </h3>
                   </div>
                   <div className="flex items-center mt-2 md:mt-0">
@@ -1788,208 +1799,27 @@ const StudentDashboard = ({ darkMode }) => {
                   {selectedBill.status}
                 </span>
               </div>
-            </div>
 
-            <div className="flex justify-end space-x-3">
-              <button
-                className={`px-4 py-2 rounded-lg font-medium text-sm ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
-                onClick={closeAllModals}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Citation Payment Modal */}
-      {showCitationPaymentModal && selectedCitation && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
-          <div className={`relative w-full max-w-md ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'} rounded-lg shadow-xl p-6`}>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold">Pay Citation</h3>
-              <button
-                onClick={() => setShowCitationPaymentModal(false)}
-                className={`p-1 rounded-full ${darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-200 text-gray-500'}`}
-              >
-                <FaTimes />
-              </button>
-            </div>
-
-            <div className="mb-4">
-              <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Citation Details</p>
-              <div className={`mt-2 p-3 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                <p className="font-medium">{selectedCitation.name}</p>
-                <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  Date: {new Date(selectedCitation.date_posted).toLocaleDateString('en-US', {
-                    year: 'numeric', month: 'short', day: 'numeric'
-                  })}
-                </p>
-                <p className="font-bold mt-2">Amount Due: ${selectedCitation.amount.toFixed(2)}</p>
+              <div>
+                <p className="text-sm font-medium mb-1">Type</p>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
+                  ${selectedBill.type === 'permit' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                    selectedBill.type === 'metered' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                      'bg-gray-100 text-gray-800 border border-gray-200'}`}>
+                  {selectedBill.type === 'permit' ? 'Permit' :
+                    selectedBill.type === 'metered' ? 'Metered Parking' :
+                      'Unknown'}
+                </span>
               </div>
             </div>
-
-            {billingError && (
-              <div className="mb-4 p-3 bg-red-100 border border-red-300 text-red-800 rounded-lg text-sm">
-                {billingError}
-              </div>
-            )}
-
-            <div className="mb-4">
-              <p className={`text-sm mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Select Payment Method</p>
-              <div className="space-y-2">
-                {/* Credit/Debit Card Option */}
-                <label className={`flex items-center p-3 rounded-lg border ${darkMode
-                  ? paymentMethod === 'credit-card' ? 'border-blue-500 bg-gray-700' : 'border-gray-600 bg-gray-700'
-                  : paymentMethod === 'credit-card' ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'
-                  }`}>
-                  <input
-                    type="radio"
-                    name="payment-method"
-                    value="credit-card"
-                    checked={paymentMethod === 'credit-card'}
-                    onChange={() => setPaymentMethod('credit-card')}
-                    className="mr-3"
-                  />
-                  <div className="flex-grow">
-                    <p className="font-medium">Credit/Debit Card</p>
-                    {hasStoredCard && selectedPaymentMethod ? (
-                      <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Using card ending in {selectedPaymentMethod.last4}
-                      </p>
-                    ) : (
-                      <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Add a payment card
-                      </p>
-                    )}
-                  </div>
-                </label>
-
-                {/* Display saved payment methods if any */}
-                {paymentMethod === 'credit-card' && savedPaymentMethods.length > 0 && (
-                  <div className={`mt-2 ml-8 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    <p className="text-sm font-medium mb-2">Your saved cards:</p>
-                    <div className="space-y-2">
-                      {savedPaymentMethods.map((method) => (
-                        <div
-                          key={method.id}
-                          onClick={() => handleSelectPaymentMethod(method)}
-                          className={`flex items-center justify-between p-2 rounded cursor-pointer ${selectedPaymentMethod && selectedPaymentMethod.id === method.id
-                            ? darkMode ? 'bg-blue-800' : 'bg-blue-100'
-                            : darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-gray-100 hover:bg-gray-200'
-                            }`}
-                        >
-                          <div className="flex items-center">
-                            <FaCreditCard className="mr-2" />
-                            <div>
-                              <p className="text-sm">{method.brand} •••• {method.last4}</p>
-                              <p className="text-xs">Expires {method.exp_month}/{method.exp_year}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center">
-                            {method.isDefault && (
-                              <span className={`mr-2 px-1.5 py-0.5 text-xs rounded-full ${darkMode ? 'bg-green-800 text-green-200' : 'bg-green-100 text-green-800'
-                                }`}>
-                                Default
-                              </span>
-                            )}
-                            <button
-                              onClick={(e) => handleDeletePaymentMethod(method.id, e)}
-                              className={`p-1 rounded-full ${darkMode ? 'hover:bg-red-900 text-gray-400' : 'hover:bg-red-100 text-gray-500'
-                                }`}
-                            >
-                              <FaTrash size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <button
-                      onClick={() => setShowAddCardForm(true)}
-                      className={`mt-3 flex items-center px-2 py-1 rounded text-xs ${darkMode
-                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                        : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
-                        }`}
-                    >
-                      <FaPlus className="mr-1" /> Add New Card
-                    </button>
-                  </div>
-                )}
-
-                {/* Add a new card button if no saved cards */}
-                {paymentMethod === 'credit-card' && !savedPaymentMethods.length && !showAddCardForm && (
-                  <div className="mt-2 ml-8">
-                    <button
-                      onClick={() => setShowAddCardForm(true)}
-                      className={`flex items-center px-2 py-1 rounded text-xs ${darkMode
-                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                        : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
-                        }`}
-                    >
-                      <FaPlus className="mr-1" /> Add Payment Card
-                    </button>
-                  </div>
-                )}
-
-                <label className={`flex items-center p-3 rounded-lg border ${darkMode
-                  ? paymentMethod === 'student-account' ? 'border-blue-500 bg-gray-700' : 'border-gray-600 bg-gray-700'
-                  : paymentMethod === 'student-account' ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'
-                  }`}>
-                  <input
-                    type="radio"
-                    name="payment-method"
-                    value="student-account"
-                    checked={paymentMethod === 'student-account'}
-                    onChange={() => setPaymentMethod('student-account')}
-                    className="mr-3"
-                  />
-                  <div>
-                    <p className="font-medium">Student Account</p>
-                    <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Charge to your student account</p>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            {/* Stripe Card Element */}
-            {paymentMethod === 'credit-card' && !hasStoredCard && (
-              <div className="mb-4">
-                <StripeProvider>
-                  <StripeCardElement
-                    darkMode={darkMode}
-                    onPaymentMethodCreated={handlePaymentMethodCreated}
-                    buttonText="Save Card & Pay"
-                  />
-                </StripeProvider>
-              </div>
-            )}
-
-            {/* Manual Credit Card Form is replaced by Stripe Elements */}
 
             <div className="flex justify-end">
               <button
-                onClick={() => setShowCitationPaymentModal(false)}
-                className={`px-4 py-2 rounded-lg font-medium text-sm mr-2 ${darkMode
-                  ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                  : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
-                  }`}
+                onClick={closeAllModals}
+                className={`px-4 py-2 rounded-md ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
               >
-                Cancel
+                Close
               </button>
-
-              {/* Only show this button if we have a stored card or using student account */}
-              {(hasStoredCard || paymentMethod === 'student-account') && (
-                <button
-                  onClick={handleProcessTicketPayment}
-                  disabled={isProcessingPayment}
-                  className={`px-4 py-2 rounded-lg font-medium text-sm ${isProcessingPayment
-                    ? 'bg-blue-400 cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-700'
-                    } text-white`}
-                >
-                  {isProcessingPayment ? 'Processing...' : `Pay $${selectedCitation.amount.toFixed(2)}`}
-                </button>
-              )}
             </div>
           </div>
         </div>
