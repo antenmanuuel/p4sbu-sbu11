@@ -11,7 +11,8 @@ export default defineConfig({
     }
   },
   optimizeDeps: {
-    disabled: false
+    disabled: false,
+    include: ['react', 'react-dom', 'react-router-dom']
   },
   // Add this to ensure assets are loaded correctly on Heroku
   base: '/'
