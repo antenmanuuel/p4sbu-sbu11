@@ -11,9 +11,5 @@
     "install-server": "cd server && npm install",
     "install-client": "cd client && npm install --include=dev --force",
     "heroku-postbuild": "NPM_CONFIG_PRODUCTION=false npm run install-server && npm run install-client && npm run build"
-  },
-  "resolutions": {
-    "react": "18.2.0",
-    "react-dom": "18.2.0"
   }
 }
