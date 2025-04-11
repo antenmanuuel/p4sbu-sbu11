@@ -370,12 +370,12 @@ const ResultsView = ({
                                             key={permit}
                                             onClick={() => priceFilter !== 'hourly' && handlePermitFilterChange(permit)}
                                             className={`px-3 py-1 rounded-full text-sm font-medium cursor-pointer transition-colors ${priceFilter === 'hourly'
-                                                    ? (darkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed')
-                                                    : permitFilter.includes(permit)
-                                                        ? 'bg-red-600 text-white'
-                                                        : darkMode
-                                                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                                                            : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                                                ? (darkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed')
+                                                : permitFilter.includes(permit)
+                                                    ? 'bg-red-600 text-white'
+                                                    : darkMode
+                                                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                                        : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
                                                 }`}
                                         >
                                             {permit}
