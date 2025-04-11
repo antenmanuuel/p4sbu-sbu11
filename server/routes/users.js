@@ -239,20 +239,81 @@ router.get('/billing-history', verifyToken, async (req, res) => {
                     date: '$permits.createdAt',
                     description: { $concat: ['$permits.permitName', ' Permit'] },
                     amount: '$permits.price',
-                    status: '$permits.paymentStatus'
+                    status: '$permits.paymentStatus',
+                    type: { $literal: 'permit' }
                 }
             },
             { $sort: { date: -1 } }
         ]);
 
+        // Find completed metered parking reservations (hourly) for this user
+        const Reservation = mongoose.model('Reservation');
+        const Lot = mongoose.model('Lot');
+
+        const meteredReservations = await Reservation.aggregate([
+            {
+                $match: {
+                    user: new mongoose.Types.ObjectId(userId),
+                    paymentStatus: 'completed'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'lots',
+                    localField: 'lotId',
+                    foreignField: '_id',
+                    as: 'lot'
+                }
+            },
+            { $unwind: { path: '$lot', preserveNullAndEmptyArrays: true } },
+            {
+                $match: {
+                    $or: [
+                        { 'lot.rateType': 'Hourly' },
+                        { 'lot.features.isMetered': true }
+                    ]
+                }
+            },
+            {
+                $project: {
+                    _id: '$_id',
+                    date: '$createdAt',
+                    description: {
+                        $concat: [
+                            'Metered Parking at ',
+                            { $ifNull: ['$lot.name', 'Unknown Lot'] },
+                            ' (Reservation #',
+                            { $substr: ['$reservationId', 0, 8] },
+                            ')'
+                        ]
+                    },
+                    amount: '$totalPrice',
+                    status: {
+                        $cond: {
+                            if: { $eq: ['$paymentStatus', 'completed'] },
+                            then: 'Paid',
+                            else: '$paymentStatus'
+                        }
+                    },
+                    type: { $literal: 'metered' }
+                }
+            },
+            { $sort: { date: -1 } }
+        ]);
+
+        // Combine both types of transactions and sort by date
+        const combinedHistory = [...permits, ...meteredReservations]
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+
         res.status(200).json({
             success: true,
-            billingHistory: permits.map(item => ({
-                _id: item._id,
+            billingHistory: combinedHistory.map(item => ({
+                _id: item._id.toString(),
                 date: item.date,
                 description: item.description,
                 amount: item.amount,
-                status: item.status === 'paid' ? 'Paid' : item.status
+                status: item.status === 'paid' ? 'Paid' : item.status,
+                type: item.type
             }))
         });
     } catch (error) {
