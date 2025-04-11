@@ -31,6 +31,9 @@ try {
     const carRoutes = require('./routes/cars');
     const revenueStatisticsRoutes = require('./routes/statistics');
 
+    // Import path module for serving static files
+    const path = require('path');
+
     // Import permit utility to check expired permits
     const { updateExpiredPermits } = require('./utils/permitUtils');
     const { updateExpiredReservations } = require('./utils/reservationUtils');
@@ -68,7 +71,9 @@ try {
             const allowedOrigins = [
                 'http://localhost:3000',
                 'http://localhost:5173',
-            ];
+                process.env.CLIENT_URL, // Add Heroku app URL from environment variable
+                process.env.NODE_ENV === 'production' ? 'https://p4sbu-parking-app.herokuapp.com' : null, // Default Heroku app name
+            ].filter(Boolean); // Remove null/undefined values
 
             // Allow requests with no origin (like mobile apps or curl requests)
             if (!origin || allowedOrigins.indexOf(origin) !== -1) {
@@ -91,7 +96,7 @@ try {
 
     // Stripe webhook endpoint for handling payment events
     // Must be defined before the express.json() middleware
-    app.post('/webhook/stripe', express.raw({ type: 'application/json' }), async (req, res) => { 
+    app.post('/webhook/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
         let event;
 
         try {
@@ -192,7 +197,18 @@ try {
         res.status(200).json({ status: 'OK', message: 'Server is running' });
     });
 
-    // Handle 404 errors
+    // Serve static files from React app in production
+    if (process.env.NODE_ENV === 'production') {
+        // Serve static files from the React build folder
+        app.use(express.static(path.join(__dirname, '../client/dist')));
+
+        // Handle React routing, return all requests to React app
+        app.get('*', (req, res) => {
+            res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+        });
+    }
+
+    // Handle 404 errors - this should only apply to API routes in production
     app.use((req, res) => {
         console.log(`404 Not Found: ${req.originalUrl}`);
         res.status(404).json({ message: 'Route not found' });
