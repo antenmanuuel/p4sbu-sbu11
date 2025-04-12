@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaArrowLeft, FaSearch, FaFilter, FaFileDownload, FaTimes, FaInfoCircle, FaReceipt, FaExclamationTriangle } from 'react-icons/fa';
 import { UserService } from '../utils/api';
@@ -14,6 +14,7 @@ const Billing = ({ darkMode, isAuthenticated }) => {
     // State management
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('all');
+    const [sortDirection, setSortDirection] = useState('desc'); // 'asc' or 'desc'
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
     const [showFilters, setShowFilters] = useState(false);
     const [selectedBill, setSelectedBill] = useState(null);
@@ -61,28 +62,47 @@ const Billing = ({ darkMode, isAuthenticated }) => {
         fetchBillingHistory();
     }, []);
 
-    // Filter the billing history
-    const filteredBillingHistory = billingHistory.filter(bill => {
-        const matchesSearch = bill.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            bill.id.toLowerCase().includes(searchTerm.toLowerCase());
+    // Filter and sort billing history
+    const filteredBillingHistory = useMemo(() => {
+        return billingHistory
+            .filter(bill => {
+                // Apply search term filter
+                const searchLower = searchTerm.toLowerCase();
+                const matchesSearch =
+                    bill.description.toLowerCase().includes(searchLower) ||
+                    bill.amount.toString().includes(searchLower) ||
+                    bill.date.includes(searchLower) ||
+                    (bill.status && bill.status.toLowerCase().includes(searchLower));
 
-        const matchesType = filterType === 'all' ||
-            (filterType === 'paid' && bill.status === 'Paid') ||
-            (filterType === 'permits' && bill.description.includes('Permit')) ||
-            (filterType === 'metered' && bill.description.includes('Metered Parking'));
+                // Apply type filter
+                let matchesType = true;
+                if (filterType !== 'all') {
+                    if (filterType === 'permit') {
+                        matchesType = bill.type === 'permit';
+                    } else if (filterType === 'reservation') {
+                        matchesType = bill.type === 'reservation';
+                    } else if (filterType === 'refund') {
+                        matchesType = bill.type === 'refund';
+                    }
+                }
 
-        const matchesDate = (!dateRange.start || new Date(bill.date) >= new Date(dateRange.start)) &&
-            (!dateRange.end || new Date(bill.date) <= new Date(dateRange.end));
-
-        return matchesSearch && matchesType && matchesDate;
-    });
+                return matchesSearch && matchesType;
+            })
+            .sort((a, b) => {
+                // Sort by date
+                const dateA = new Date(a.date);
+                const dateB = new Date(b.date);
+                return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+            });
+    }, [billingHistory, searchTerm, filterType, sortDirection]);
 
     // Format currency
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat('en-US', {
             style: 'currency',
             currency: 'USD',
-            minimumFractionDigits: 2
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
         }).format(amount);
     };
 
@@ -108,43 +128,42 @@ const Billing = ({ darkMode, isAuthenticated }) => {
 
             {/* Search and filter controls */}
             <div className={`mb-6 p-4 rounded-lg shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border border-gray-100'}`}>
-                <div className="flex flex-col md:flex-row gap-4">
-                    {/* Search */}
-                    <div className="flex-grow">
-                        <div className={`flex items-center px-3 py-2 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                            <FaSearch className={`mr-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                            <input
-                                type="text"
-                                placeholder="Search by description or ID..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className={`w-full bg-transparent focus:outline-none ${darkMode ? 'text-white placeholder-gray-500' : 'text-gray-900 placeholder-gray-500'}`}
-                            />
-                        </div>
+                <div className="flex flex-col md:flex-row justify-between mb-6">
+                    <div className="flex flex-col md:flex-row space-y-3 md:space-y-0 md:space-x-3 mb-3 md:mb-0">
+                        <input
+                            type="text"
+                            placeholder="Search billing history..."
+                            className={`border rounded-lg py-2 px-3 ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                        <select
+                            className={`border rounded-lg py-2 px-3 ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
+                            value={filterType}
+                            onChange={(e) => setFilterType(e.target.value)}
+                        >
+                            <option value="all">All Transactions</option>
+                            <option value="permit">Permits Only</option>
+                            <option value="reservation">Reservations Only</option>
+                            <option value="refund">Refunds Only</option>
+                        </select>
+                        <select
+                            className={`border rounded-lg py-2 px-3 ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
+                            value={sortDirection}
+                            onChange={(e) => setSortDirection(e.target.value)}
+                        >
+                            <option value="desc">Newest First</option>
+                            <option value="asc">Oldest First</option>
+                        </select>
                     </div>
-
-                    {/* Filter Toggle Button */}
-                    <button
-                        onClick={() => setShowFilters(!showFilters)}
-                        className={`flex items-center px-4 py-2 rounded-lg
-                     ${darkMode
-                                ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                                : 'bg-gray-100 hover:bg-gray-200 text-gray-900'}`}
-                    >
-                        <FaFilter className="mr-2" />
-                        Filters
-                    </button>
-
-                    {/* Export Button */}
-                    <button
-                        className={`flex items-center px-4 py-2 rounded-lg
-                     ${darkMode
-                                ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                                : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
-                    >
-                        <FaFileDownload className="mr-2" />
-                        Export
-                    </button>
+                    <div>
+                        <button
+                            onClick={() => fetchBillingHistory()}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200"
+                        >
+                            Refresh
+                        </button>
+                    </div>
                 </div>
 
                 {/* Expanded Filters */}
@@ -166,9 +185,9 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                          focus:outline-none`}
                             >
                                 <option value="all">All Transactions</option>
-                                <option value="permits">Permits Only</option>
-                                <option value="metered">Metered Parking Only</option>
-                                <option value="paid">Paid Only</option>
+                                <option value="permit">Permits Only</option>
+                                <option value="reservation">Reservations Only</option>
+                                <option value="refund">Refunds Only</option>
                             </select>
                         </div>
 
@@ -347,7 +366,9 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                             </div>
                             <div className="flex justify-between mb-2">
                                 <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Amount:</span>
-                                <span className="font-bold">{formatCurrency(selectedBill.amount)}</span>
+                                <span className={`font-bold ${selectedBill.description.includes('Refund') ? 'text-green-500' : ''}`}>
+                                    {formatCurrency(selectedBill.amount)}
+                                </span>
                             </div>
                         </div>
 

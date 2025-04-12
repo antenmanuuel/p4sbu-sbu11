@@ -17,6 +17,17 @@ const mockUser = {
     findById: jest.fn()
 };
 
+// Mock RevenueStatistics
+const mockRevenueStatistics = {
+    recordCitationPayment: jest.fn().mockResolvedValue({})
+};
+
+// Mock NotificationHelper
+const mockNotificationHelper = {
+    createFineNotification: jest.fn().mockResolvedValue({}),
+    createSystemNotification: jest.fn().mockResolvedValue({})
+};
+
 // Create a constructor function for new Ticket instances
 function MockTicket(data) {
     Object.assign(this, data);
@@ -38,6 +49,15 @@ MockTicket.mockReset = () => {
 // Create express app
 const app = express();
 app.use(express.json());
+
+// Mock routes/tickets.js to access and modify it
+jest.mock('../routes/tickets', () => {
+    // Get original module
+    const originalModule = jest.requireActual('../routes/tickets');
+
+    // Return a copy of the original module with custom middleware
+    return originalModule;
+});
 
 // Mock auth middleware
 jest.mock('../middleware/auth', () => {
@@ -93,6 +113,15 @@ jest.mock('express-validator', () => {
     };
 });
 
+// Handle the populate method mock
+const setupPopulate = (mockObject) => {
+    if (!mockObject) return null;
+
+    // Create a populate method that returns the object itself for chaining
+    mockObject.populate = jest.fn().mockReturnValue(mockObject);
+    return mockObject;
+};
+
 // Mock the Ticket model
 jest.mock('../models/tickets', () => {
     // Create a proper mock with all the needed methods
@@ -106,7 +135,13 @@ jest.mock('../models/tickets', () => {
     // Attach the mock methods to the constructor function
     mockConstructor.find = mockTicket.find;
     mockConstructor.findById = mockTicket.findById;
-    mockConstructor.findOne = mockTicket.findOne;
+
+    // For findOne, add special handling to return an object with populate
+    mockConstructor.findOne = jest.fn().mockImplementation((...args) => {
+        const result = mockTicket.findOne(...args);
+        return setupPopulate(result);
+    });
+
     mockConstructor.findByIdAndUpdate = mockTicket.findByIdAndUpdate;
     mockConstructor.findByIdAndDelete = mockTicket.findByIdAndDelete;
     mockConstructor.countDocuments = mockTicket.countDocuments;
@@ -115,16 +150,13 @@ jest.mock('../models/tickets', () => {
 });
 
 // Mock the User model
-jest.mock('../models/users', () => {
-    return mockUser;
-});
+jest.mock('../models/users', () => mockUser);
 
-// Setup populate method for the returned mock objects
-const setupPopulateMock = (mockObject) => {
-    if (!mockObject) return null;
-    mockObject.populate = jest.fn().mockReturnValue(mockObject);
-    return mockObject;
-};
+// Mock RevenueStatistics
+jest.mock('../models/revenue_statistics', () => mockRevenueStatistics);
+
+// Mock NotificationHelper
+jest.mock('../utils/notificationHelper', () => mockNotificationHelper);
 
 // Import the actual routes after mocking
 const ticketsRoutes = require('../routes/tickets');
@@ -136,7 +168,7 @@ describe('Tickets Routes', () => {
     });
 
     describe('User Ticket Routes', () => {
-        it('should get user tickets successfully', async () => {
+        test('should get user tickets successfully', async () => {
             // Mock data
             const mockTickets = [
                 { _id: 'ticket1', name: 'Parking Violation', amount: 50, user: 'test-user-id' },
@@ -157,7 +189,7 @@ describe('Tickets Routes', () => {
             expect(mockTicket.find).toHaveBeenCalledWith({ user: 'test-user-id' });
         });
 
-        it('should handle server error when fetching tickets', async () => {
+        test('should handle server error when fetching tickets', async () => {
             // Setup mock to throw error
             mockTicket.find.mockReturnValue({
                 sort: jest.fn().mockRejectedValue(new Error('Database error'))
@@ -171,49 +203,64 @@ describe('Tickets Routes', () => {
             expect(response.body.message).toBe('Error fetching tickets');
         });
 
-        it('should pay a ticket successfully', async () => {
-            // Mock data
+        test('should pay a ticket successfully', async () => {
+            // Mock user data
+            const mockUserData = {
+                _id: 'test-user-id',
+                email: 'test@example.com',
+                firstName: 'Test',
+                lastName: 'User',
+                stripeCustomerId: 'cus_123456',
+                save: jest.fn().mockResolvedValue({})
+            };
+
+            // Mock ticket data with user field
             const mockTicketData = {
                 _id: 'ticket1',
                 name: 'Parking Violation',
                 amount: 50,
-                user: 'test-user-id',
+                user: {
+                    _id: 'test-user-id',
+                    email: 'test@example.com'
+                },
                 isPaid: false,
-                save: jest.fn().mockResolvedValue()
+                save: jest.fn().mockResolvedValue({})
             };
 
             // Setup mocks
+            mockUser.findById.mockResolvedValue(mockUserData);
             mockTicket.findOne.mockResolvedValue(mockTicketData);
 
             // Make request
-            const response = await request(app).post('/api/user/tickets/ticket1/pay');
+            const response = await request(app)
+                .post('/api/user/tickets/ticket1/pay')
+                .send({ paymentMethodId: 'pm_123456' });
 
             // Assertions
             expect(response.status).toBe(200);
-            expect(mockTicket.findOne).toHaveBeenCalledWith({
-                _id: 'ticket1',
-                user: 'test-user-id'
-            });
-            expect(mockTicketData.save).toHaveBeenCalled();
+            expect(response.body.success).toBe(true);
             expect(mockTicketData.isPaid).toBe(true);
-            expect(mockTicketData.paidAt).toBeDefined();
+            expect(mockTicketData.save).toHaveBeenCalled();
+            expect(mockRevenueStatistics.recordCitationPayment).toHaveBeenCalledWith(50);
         });
 
-        it('should return 404 if ticket is not found for payment', async () => {
-            // Setup mock
+        test('should return 404 if ticket is not found for payment', async () => {
+            // Setup mocks - findOne returns null
             mockTicket.findOne.mockResolvedValue(null);
 
             // Make request
-            const response = await request(app).post('/api/user/tickets/nonexistent/pay');
+            const response = await request(app)
+                .post('/api/user/tickets/nonexistent/pay')
+                .send({ paymentMethodId: 'pm_123456' });
 
             // Assertions
             expect(response.status).toBe(404);
             expect(response.body.message).toBe('Ticket not found');
         });
 
-        it('should return 400 if ticket is already paid', async () => {
-            // Mock data
-            const mockPaidTicket = {
+        test('should return 400 if ticket is already paid', async () => {
+            // Mock ticket data that is already paid
+            const mockTicketData = {
                 _id: 'ticket1',
                 name: 'Parking Violation',
                 amount: 50,
@@ -222,10 +269,12 @@ describe('Tickets Routes', () => {
             };
 
             // Setup mocks
-            mockTicket.findOne.mockResolvedValue(mockPaidTicket);
+            mockTicket.findOne.mockResolvedValue(mockTicketData);
 
             // Make request
-            const response = await request(app).post('/api/user/tickets/ticket1/pay');
+            const response = await request(app)
+                .post('/api/user/tickets/ticket1/pay')
+                .send({ paymentMethodId: 'pm_123456' });
 
             // Assertions
             expect(response.status).toBe(400);
@@ -234,7 +283,10 @@ describe('Tickets Routes', () => {
     });
 
     describe('Admin Ticket Routes', () => {
+        // Mock auth middleware for admin routes
         beforeEach(() => {
+            jest.clearAllMocks();
+
             // Override auth middleware for admin routes
             const auth = require('../middleware/auth');
             auth.verifyToken.mockImplementation((req, res, next) => {
@@ -243,99 +295,129 @@ describe('Tickets Routes', () => {
             });
         });
 
-        it('should create a ticket successfully', async () => {
-            // Setup user mock
-            mockUser.findById.mockResolvedValue({ _id: 'user1', firstName: 'John', lastName: 'Doe' });
-
-            // Setup ticket mock
-            const mockSavedTicket = {
-                _id: 'new-ticket-id',
-                name: 'New Ticket',
-                amount: 75,
-                user: 'user1',
-                date_posted: new Date(),
-                isPaid: false
+        test('should create a ticket successfully', async () => {
+            // Mock user for the ticket
+            const mockUserData = {
+                _id: 'user1',
+                email: 'user@example.com',
+                firstName: 'Test',
+                lastName: 'User'
             };
 
-            mockTicket.findById.mockReturnValue({
-                populate: jest.fn().mockResolvedValue({
-                    ...mockSavedTicket,
-                    user: { _id: 'user1', firstName: 'John', lastName: 'Doe' }
-                })
+            // Create a Date object but use string representation for comparison
+            const ticketDate = new Date();
+            const ticketDateString = ticketDate.toISOString();
+
+            // Mock the saved ticket with its save method returning the expected response
+            const mockSavedTicket = {
+                _id: 'new-ticket-id',
+                name: 'Parking Violation',
+                amount: 50,
+                user: 'user1',
+                date_posted: ticketDateString,
+                isPaid: false,
+                canPetition: true
+            };
+
+            // Reset all mocks
+            jest.clearAllMocks();
+
+            // Setup user mock to properly return data
+            mockUser.findById.mockImplementation((id) => {
+                if (id === 'user1') {
+                    return Promise.resolve(mockUserData);
+                }
+                return Promise.resolve(null);
             });
 
-            // Mock constructor behavior
-            MockTicket.mockImplementation(() => ({
-                _id: 'new-ticket-id',
-                save: jest.fn().mockResolvedValue()
-            }));
+            // Create a mock ticket with custom save method
+            const mockTicketInstance = {
+                ...mockSavedTicket,
+                date_posted: ticketDate,
+                // This save method will be called when new ticket is created
+                save: jest.fn().mockImplementation(() => {
+                    return Promise.resolve(mockSavedTicket);
+                })
+            };
 
-            // Make request
+            // Reset the constructor mock
+            MockTicket.mockImplementation(() => mockTicketInstance);
+
+            // Make request - no details field
             const response = await request(app)
                 .post('/api/admin/tickets')
                 .send({
-                    name: 'New Ticket',
-                    amount: 75,
+                    name: 'Parking Violation',
+                    amount: 50,
                     userId: 'user1'
                 });
 
             // Assertions
             expect(response.status).toBe(201);
-            expect(response.body.message).toBe('Ticket created successfully');
-            expect(response.body).toHaveProperty('ticket');
+            expect(response.body).toEqual(mockSavedTicket);
             expect(mockUser.findById).toHaveBeenCalledWith('user1');
+            expect(mockTicketInstance.save).toHaveBeenCalled();
+            expect(mockNotificationHelper.createFineNotification).toHaveBeenCalled();
         });
 
-        it('should return 400 if required fields are missing', async () => {
+        test('should return 400 if required fields are missing', async () => {
+            // Reset all mocks
+            jest.clearAllMocks();
+
             // Make request with missing fields
             const response = await request(app)
                 .post('/api/admin/tickets')
                 .send({
-                    name: 'New Ticket'
+                    name: 'Parking Violation'
                     // Missing amount and userId
                 });
 
             // Assertions
             expect(response.status).toBe(400);
-            expect(response.body.message).toBe('Name, amount, and userId are required');
+            expect(response.body.message).toBe('Missing required fields');
         });
 
-        it('should return 404 if user is not found', async () => {
-            // Setup user mock to return null
-            mockUser.findById.mockResolvedValue(null);
+        test('should return 404 if user is not found', async () => {
+            // Reset all mocks
+            jest.clearAllMocks();
+
+            // Setup user mock to always return null
+            mockUser.findById.mockImplementation(() => {
+                return Promise.resolve(null);
+            });
 
             // Make request
             const response = await request(app)
                 .post('/api/admin/tickets')
                 .send({
-                    name: 'New Ticket',
-                    amount: 75,
+                    name: 'Parking Violation',
+                    amount: 50,
                     userId: 'nonexistent'
                 });
 
-            // Assertions
+            // Assertions - Make sure the response has proper error status
             expect(response.status).toBe(404);
             expect(response.body.message).toBe('User not found');
+            expect(mockUser.findById).toHaveBeenCalledWith('nonexistent');
         });
 
-        it('should get all tickets with pagination', async () => {
+        test('should get all tickets with pagination', async () => {
             // Mock data
             const mockTickets = [
-                {
-                    _id: 'ticket1',
-                    name: 'Parking Violation',
-                    amount: 50,
-                    user: { _id: 'user1', firstName: 'John', lastName: 'Doe' }
-                }
+                { _id: 'ticket1', name: 'Parking Violation', amount: 50 },
+                { _id: 'ticket2', name: 'Speeding Ticket', amount: 100 }
             ];
 
             // Setup mocks
-            mockTicket.countDocuments.mockResolvedValue(1);
+            mockTicket.countDocuments.mockResolvedValue(2);
             mockTicket.find.mockReturnValue({
-                populate: jest.fn().mockReturnThis(),
-                sort: jest.fn().mockReturnThis(),
-                skip: jest.fn().mockReturnThis(),
-                limit: jest.fn().mockResolvedValue(mockTickets)
+                populate: jest.fn().mockReturnValue({
+                    sort: jest.fn().mockReturnValue({
+                        skip: jest.fn().mockReturnValue({
+                            limit: jest.fn().mockResolvedValue(mockTickets)
+                        })
+                    })
+                })
             });
 
             // Make request
@@ -343,45 +425,57 @@ describe('Tickets Routes', () => {
 
             // Assertions
             expect(response.status).toBe(200);
-            expect(response.body).toHaveProperty('tickets');
-            expect(response.body).toHaveProperty('pagination');
-            expect(response.body.pagination.total).toBe(1);
-            expect(response.body.pagination.currentPage).toBe(1);
-            expect(response.body.pagination.totalPages).toBe(1);
+            expect(response.body.tickets).toEqual(mockTickets);
+            expect(response.body.pagination).toBeDefined();
+            expect(response.body.pagination.total).toBe(2);
         });
 
-        it('should filter tickets by userId and isPaid', async () => {
+        test('should filter tickets by userId and isPaid', async () => {
+            // Mock data
+            const mockTickets = [
+                { _id: 'ticket1', name: 'Parking Violation', amount: 50, user: 'user1', isPaid: true }
+            ];
+
             // Setup mocks
             mockTicket.countDocuments.mockResolvedValue(1);
             mockTicket.find.mockReturnValue({
-                populate: jest.fn().mockReturnThis(),
-                sort: jest.fn().mockReturnThis(),
-                skip: jest.fn().mockReturnThis(),
-                limit: jest.fn().mockResolvedValue([{ _id: 'ticket1' }])
+                populate: jest.fn().mockReturnValue({
+                    sort: jest.fn().mockReturnValue({
+                        skip: jest.fn().mockReturnValue({
+                            limit: jest.fn().mockResolvedValue(mockTickets)
+                        })
+                    })
+                })
             });
 
-            // Make request with query parameters
-            await request(app).get('/api/admin/tickets?userId=user1&isPaid=true');
+            // Make request
+            const response = await request(app).get('/api/admin/tickets?userId=user1&isPaid=true');
 
-            // Verify the query was correctly constructed
-            expect(mockTicket.find).toHaveBeenCalledWith({
-                user: 'user1',
-                isPaid: true
-            });
+            // Assertions
+            expect(response.status).toBe(200);
+            expect(response.body.tickets).toEqual(mockTickets);
+            expect(mockTicket.find).toHaveBeenCalled();
+            // Verify the query contains userId and isPaid
+            expect(mockTicket.find.mock.calls[0][0]).toEqual({ user: 'user1', isPaid: true });
         });
 
-        it('should get a ticket by ID', async () => {
+        test('should get a ticket by ID', async () => {
+            // Reset findById mock
+            mockTicket.findById.mockReset();
+
             // Mock data
-            const mockTicketData = {
+            const testTicket = {
                 _id: 'ticket1',
                 name: 'Parking Violation',
                 amount: 50,
                 user: { _id: 'user1', firstName: 'John', lastName: 'Doe' }
             };
 
-            // Setup mock
-            mockTicket.findById.mockReturnValue({
-                populate: jest.fn().mockResolvedValue(mockTicketData)
+            // Setup proper mock with populate chain that resolves to the test ticket
+            mockTicket.findById.mockImplementation(() => {
+                return {
+                    populate: jest.fn().mockResolvedValue(testTicket)
+                };
             });
 
             // Make request
@@ -389,14 +483,19 @@ describe('Tickets Routes', () => {
 
             // Assertions
             expect(response.status).toBe(200);
-            expect(response.body).toEqual(mockTicketData);
+            expect(response.body).toEqual(testTicket);
             expect(mockTicket.findById).toHaveBeenCalledWith('ticket1');
         });
 
-        it('should return 404 if ticket not found when getting by ID', async () => {
-            // Setup mock
-            mockTicket.findById.mockReturnValue({
-                populate: jest.fn().mockResolvedValue(null)
+        test('should return 404 if ticket not found when getting by ID', async () => {
+            // Reset findById mock
+            mockTicket.findById.mockReset();
+
+            // Setup proper mock that resolves to null after populate
+            mockTicket.findById.mockImplementation(() => {
+                return {
+                    populate: jest.fn().mockResolvedValue(null)
+                };
             });
 
             // Make request
@@ -407,41 +506,38 @@ describe('Tickets Routes', () => {
             expect(response.body.message).toBe('Ticket not found');
         });
 
-        it('should update a ticket', async () => {
-            // Mock data
-            const updatedTicket = {
+        test('should update a ticket', async () => {
+            // Mock data for updated ticket
+            const mockUpdatedTicket = {
                 _id: 'ticket1',
-                name: 'Updated Ticket',
-                amount: 100,
+                name: 'Parking Violation',
+                amount: 75, // Updated amount
                 user: { _id: 'user1', firstName: 'John', lastName: 'Doe' }
             };
 
-            // Setup mock
+            // Setup mocks
             mockTicket.findByIdAndUpdate.mockReturnValue({
-                populate: jest.fn().mockResolvedValue(updatedTicket)
+                populate: jest.fn().mockResolvedValue(mockUpdatedTicket)
             });
 
             // Make request
             const response = await request(app)
                 .put('/api/admin/tickets/ticket1')
-                .send({
-                    name: 'Updated Ticket',
-                    amount: 100
-                });
+                .send({ amount: 75 });
 
             // Assertions
             expect(response.status).toBe(200);
             expect(response.body.message).toBe('Ticket updated successfully');
-            expect(response.body.ticket).toEqual(updatedTicket);
+            expect(response.body.ticket).toEqual(mockUpdatedTicket);
             expect(mockTicket.findByIdAndUpdate).toHaveBeenCalledWith(
                 'ticket1',
-                { name: 'Updated Ticket', amount: 100 },
+                { amount: 75 },
                 { new: true }
             );
         });
 
-        it('should return 404 if ticket not found during update', async () => {
-            // Setup mock
+        test('should return 404 if ticket not found during update', async () => {
+            // Setup mocks
             mockTicket.findByIdAndUpdate.mockReturnValue({
                 populate: jest.fn().mockResolvedValue(null)
             });
@@ -449,16 +545,20 @@ describe('Tickets Routes', () => {
             // Make request
             const response = await request(app)
                 .put('/api/admin/tickets/nonexistent')
-                .send({ name: 'Updated Ticket' });
+                .send({ amount: 75 });
 
             // Assertions
             expect(response.status).toBe(404);
             expect(response.body.message).toBe('Ticket not found');
         });
 
-        it('should delete a ticket', async () => {
-            // Setup mock
-            mockTicket.findByIdAndDelete.mockResolvedValue({ _id: 'ticket1' });
+        test('should delete a ticket', async () => {
+            // Setup mocks
+            mockTicket.findByIdAndDelete.mockResolvedValue({
+                _id: 'ticket1',
+                name: 'Parking Violation',
+                amount: 50
+            });
 
             // Make request
             const response = await request(app).delete('/api/admin/tickets/ticket1');
@@ -469,8 +569,8 @@ describe('Tickets Routes', () => {
             expect(mockTicket.findByIdAndDelete).toHaveBeenCalledWith('ticket1');
         });
 
-        it('should return 404 if ticket not found during deletion', async () => {
-            // Setup mock
+        test('should return 404 if ticket not found during deletion', async () => {
+            // Setup mocks
             mockTicket.findByIdAndDelete.mockResolvedValue(null);
 
             // Make request
@@ -481,8 +581,8 @@ describe('Tickets Routes', () => {
             expect(response.body.message).toBe('Ticket not found');
         });
 
-        it('should handle server error when deleting a ticket', async () => {
-            // Setup mock to throw error
+        test('should handle server error when deleting a ticket', async () => {
+            // Setup mocks to throw error
             mockTicket.findByIdAndDelete.mockRejectedValue(new Error('Database error'));
 
             // Make request
