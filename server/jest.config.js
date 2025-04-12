@@ -12,7 +12,7 @@ module.exports = {
         '!**/node_modules/**',
         '!**/tests/**',
         '!routes/lot.js',
-        '!routes/permits.js',
+        '!routes/statistics.js',
     ],
     coverageDirectory: 'coverage',
     coverageReporters: ['text', 'lcov', 'clover'],
