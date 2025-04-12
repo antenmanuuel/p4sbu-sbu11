@@ -237,7 +237,13 @@ router.get('/billing-history', verifyToken, async (req, res) => {
                 $project: {
                     _id: '$permits._id',
                     date: '$permits.createdAt',
-                    description: { $concat: ['$permits.permitName', ' Permit'] },
+                    description: {
+                        $cond: {
+                            if: { $regexMatch: { input: '$permits.permitName', regex: /Permit$/ } },
+                            then: '$permits.permitName',
+                            else: { $concat: ['$permits.permitName', ' Permit'] }
+                        }
+                    },
                     amount: '$permits.price',
                     status: '$permits.paymentStatus',
                     type: { $literal: 'permit' }
@@ -301,8 +307,47 @@ router.get('/billing-history', verifyToken, async (req, res) => {
             { $sort: { date: -1 } }
         ]);
 
-        // Combine both types of transactions and sort by date
-        const combinedHistory = [...permits, ...meteredReservations]
+        // Find refunds for cancelled or refunded reservations
+        const refunds = await Reservation.aggregate([
+            {
+                $match: {
+                    user: new mongoose.Types.ObjectId(userId),
+                    paymentStatus: 'refunded',
+                    'refundInfo.amount': { $gt: 0 }
+                }
+            },
+            {
+                $lookup: {
+                    from: 'lots',
+                    localField: 'lotId',
+                    foreignField: '_id',
+                    as: 'lot'
+                }
+            },
+            { $unwind: { path: '$lot', preserveNullAndEmptyArrays: true } },
+            {
+                $project: {
+                    _id: { $concat: [{ $toString: '$_id' }, '_refund'] },
+                    date: '$refundInfo.refundedAt',
+                    description: {
+                        $concat: [
+                            'Refund: Cancelled Reservation at ',
+                            { $ifNull: ['$lot.name', 'Unknown Lot'] },
+                            ' (Reservation #',
+                            { $substr: ['$reservationId', 0, 8] },
+                            ')'
+                        ]
+                    },
+                    amount: { $multiply: ['$refundInfo.amount', -1] }, // Negative amount for refunds
+                    status: 'Refunded',
+                    type: { $literal: 'refund' }
+                }
+            },
+            { $sort: { date: -1 } }
+        ]);
+
+        // Combine all types of transactions and sort by date
+        const combinedHistory = [...permits, ...meteredReservations, ...refunds]
             .sort((a, b) => new Date(b.date) - new Date(a.date));
 
         res.status(200).json({
@@ -311,7 +356,7 @@ router.get('/billing-history', verifyToken, async (req, res) => {
                 _id: item._id.toString(),
                 date: item.date,
                 description: item.description,
-                amount: item.amount,
+                amount: parseFloat(item.amount.toFixed(2)),
                 status: item.status === 'paid' ? 'Paid' : item.status,
                 type: item.type
             }))
