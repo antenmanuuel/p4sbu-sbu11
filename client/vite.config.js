@@ -7,6 +7,14 @@ export default defineConfig({
     outDir: 'dist',
     commonjsOptions: {
       include: [/node_modules/]
+    },
+    rollupOptions: {
+      output: {
+        manualChunks: undefined,
+        entryFileNames: 'assets/[name].[hash].js',
+        chunkFileNames: 'assets/[name].[hash].js',
+        assetFileNames: 'assets/[name].[hash].[ext]'
+      }
     }
   },
   optimizeDeps: {
@@ -18,5 +26,5 @@ export default defineConfig({
       'react-router-dom'
     ]
   },
-  base: './'  // for Heroku deployment
+  base: '/'  // changed from './' for proper absolute paths in production
 })
