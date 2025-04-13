@@ -61,11 +61,11 @@ const PermitSchema = new mongoose.Schema(
       required: true,
       min: 0
     },
-    // Payment status as seen in ManagePermits.jsx (paid, unpaid, refunded)
+    // Payment status as seen in ManagePermits.jsx (paid or refunded)
     paymentStatus: {
       type: String,
-      required: true,
-      enum: ['paid', 'unpaid', 'refunded']
+      enum: ['paid', 'refunded'],
+      default: 'paid'
     },
     // Payment ID (could be a reference to an external payment system)
     paymentId: {
