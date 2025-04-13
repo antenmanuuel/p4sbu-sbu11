@@ -1160,39 +1160,16 @@ export const PermitService = {
     // Update a permit
     update: async (permitId, permitData) => {
         try {
+            console.log('Updating permit with ID:', permitId);
+            console.log('Update data:', permitData);
             const response = await API.put(`/permits/${permitId}`, permitData);
-            return { success: true, data: response.data };
-        } catch (error) {
             return {
-                success: false,
-                error: error.response?.data?.message || 'Failed to update permit'
+                success: true,
+                permit: response.data.permit
             };
-        }
-    },
-
-    // Toggle permit status (active/inactive)
-    toggleStatus: async (permitId, newStatus) => {
-        if (!permitId) {
-            throw new Error('Permit ID is required');
-        }
-        try {
-            const response = await API.put(`/permits/${permitId}/toggle-status`, { status: newStatus });
-            return response.data;
         } catch (error) {
-            throw handleApiError(error);
-        }
-    },
-
-    // Update payment status
-    updatePaymentStatus: async (permitId, newPaymentStatus) => {
-        if (!permitId) {
-            throw new Error('Permit ID is required');
-        }
-        try {
-            const response = await API.put(`/permits/${permitId}/payment-status`, { paymentStatus: newPaymentStatus });
-            return response.data;
-        } catch (error) {
-            throw handleApiError(error);
+            console.error('Error updating permit:', error);
+            throw new Error(error.response?.data?.message || error.message || 'Failed to update permit');
         }
     },
 
