@@ -60,6 +60,39 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
+// GET /api/permit-types/:id - Get a single permit type by ID
+router.get('/:id', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const permitTypeId = req.params.id;
+
+    // Try to find the permit type by MongoDB _id first, then by custom id if not found
+    let permitType;
+
+    // Check if the ID is a valid MongoDB ObjectId
+    const isValidObjectId = permitTypeId.match(/^[0-9a-fA-F]{24}$/);
+
+    if (isValidObjectId) {
+      // First try to find by MongoDB _id
+      permitType = await PermitType.findById(permitTypeId);
+    }
+
+    // If not found by _id or not a valid ObjectId, try to find by custom id
+    if (!permitType) {
+      permitType = await PermitType.findOne({ id: permitTypeId });
+    }
+
+    if (!permitType) {
+      console.log(`Permit type not found with ID: ${permitTypeId}`);
+      return res.status(404).json({ message: 'Permit type not found' });
+    }
+
+    res.status(200).json(permitType);
+  } catch (error) {
+    console.error("Error fetching permit type:", error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // POST /api/permit-types - Create a new permit type
 router.post('/', verifyToken, isAdmin, async (req, res) => {
   try {
@@ -101,10 +134,36 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     const permitTypeId = req.params.id;
     const updateData = req.body;
-    const updatedPermitType = await PermitType.findOneAndUpdate({ id: permitTypeId }, updateData, { new: true });
+
+    // Try to find the permit type by MongoDB _id first, then by custom id if not found
+    let updatedPermitType;
+
+    // Check if the ID is a valid MongoDB ObjectId
+    const isValidObjectId = permitTypeId.match(/^[0-9a-fA-F]{24}$/);
+
+    if (isValidObjectId) {
+      // First try to find by MongoDB _id
+      updatedPermitType = await PermitType.findByIdAndUpdate(
+        permitTypeId,
+        updateData,
+        { new: true }
+      );
+    }
+
+    // If not found by _id or not a valid ObjectId, try to find by custom id
     if (!updatedPermitType) {
+      updatedPermitType = await PermitType.findOneAndUpdate(
+        { id: permitTypeId },
+        updateData,
+        { new: true }
+      );
+    }
+
+    if (!updatedPermitType) {
+      console.log(`Permit type not found with ID: ${permitTypeId}`);
       return res.status(404).json({ message: 'Permit type not found' });
     }
+
     res.status(200).json({ message: 'Permit type updated successfully', permitType: updatedPermitType });
   } catch (error) {
     console.error("Error updating permit type:", error);
@@ -116,10 +175,28 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     const permitTypeId = req.params.id;
-    const deletedPermitType = await PermitType.findOneAndDelete({ id: permitTypeId });
+
+    // Try to delete by MongoDB _id first, then by custom id if not found
+    let deletedPermitType;
+
+    // Check if the ID is a valid MongoDB ObjectId
+    const isValidObjectId = permitTypeId.match(/^[0-9a-fA-F]{24}$/);
+
+    if (isValidObjectId) {
+      // First try to find by MongoDB _id
+      deletedPermitType = await PermitType.findByIdAndDelete(permitTypeId);
+    }
+
+    // If not found by _id or not a valid ObjectId, try to find by custom id
     if (!deletedPermitType) {
+      deletedPermitType = await PermitType.findOneAndDelete({ id: permitTypeId });
+    }
+
+    if (!deletedPermitType) {
+      console.log(`Permit type not found with ID: ${permitTypeId}`);
       return res.status(404).json({ message: 'Permit type not found' });
     }
+
     res.status(200).json({ message: 'Permit type deleted successfully' });
   } catch (error) {
     console.error("Error deleting permit type:", error);
