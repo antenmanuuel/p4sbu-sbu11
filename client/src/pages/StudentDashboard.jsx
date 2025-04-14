@@ -2122,5 +2122,3 @@ const StudentDashboard = ({ darkMode }) => {
 };
 
 export default StudentDashboard;
-
-
