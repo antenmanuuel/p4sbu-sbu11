@@ -73,6 +73,35 @@ const ReservationSchema = new Schema({
 
     cancelledAt: { type: Date },
     cancelReason: { type: String },
+    usedExistingPermit: {
+        type: Boolean,
+        default: false
+    },
+    extensionHistory: [{
+        extendedAt: {
+            type: Date,
+            default: Date.now
+        },
+        additionalHours: {
+            type: Number,
+            required: true
+        },
+        additionalPrice: {
+            type: Number,
+            default: 0
+        },
+        extensionFee: {
+            type: Number,
+            default: 0
+        },
+        paymentIntentId: {
+            type: String
+        },
+        isSemesterRate: {
+            type: Boolean,
+            default: false
+        }
+    }]
 }, {
     timestamps: true
 });
@@ -97,10 +126,29 @@ ReservationSchema.pre('save', async function (next) {
         // Combine to form the reservation ID
         this.reservationId = `RES-${dateStr}-${randomSuffix}`;
 
+        // Ensure all dates are stored as UTC
+        // This helps prevent timezone issues when retrieving data
+        if (this.startTime && this.isModified('startTime')) {
+            // Ensure it's a true Date object
+            this.startTime = new Date(this.startTime);
+        }
+
+        if (this.endTime && this.isModified('endTime')) {
+            // Ensure it's a true Date object
+            this.endTime = new Date(this.endTime);
+        }
+
         next();
     } catch (error) {
         next(error);
     }
 });
+
+// Create index for quick lookups
+ReservationSchema.index({ reservationId: 1 });
+ReservationSchema.index({ user: 1 });
+ReservationSchema.index({ status: 1 });
+ReservationSchema.index({ paymentStatus: 1 });
+ReservationSchema.index({ lotId: 1 });
 
 module.exports = mongoose.model('Reservation', ReservationSchema); 
