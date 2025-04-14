@@ -1434,8 +1434,8 @@ const StudentDashboard = ({ darkMode }) => {
                           return (
                             <>
                               <span className="font-medium text-green-500">Free extension after 7PM!</span><br />
-                              Hourly cost: ${((selectedReservation.hourlyRate || 0) * additionalHours).toFixed(2)}<br />
-                              Estimated total cost: ${((selectedReservation.hourlyRate || 0) * additionalHours).toFixed(2)}
+                              <span className="text-xs">Metered parking is free after 7PM</span><br />
+                              <span className="font-medium text-green-500">Estimated total cost: $0.00</span>
                             </>
                           );
                         } else {
