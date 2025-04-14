@@ -58,17 +58,67 @@ router.post('/', verifyToken, async (req, res) => {
             }
         }
 
+        // Check if user already has an active reservation
+        const existingActiveReservations = await Reservation.find({
+            user: req.user.userId,
+            status: { $in: ['active', 'pending'] },
+            endTime: { $gt: new Date() }
+        });
+
+        if (existingActiveReservations.length > 0) {
+            console.log(`User ${req.user.userId} attempted to create a new reservation while having ${existingActiveReservations.length} active reservations.`);
+            console.log('Active reservation details:', existingActiveReservations.map(r => ({
+                id: r.reservationId,
+                lot: r.lotId,
+                status: r.status,
+                startTime: r.startTime,
+                endTime: r.endTime
+            })));
+            return res.status(400).json({
+                message: 'You already have an active reservation. Please complete or cancel your existing reservation before creating a new one.'
+            });
+        }
+
         // Calculate total price based on duration for hourly lots
         let totalPrice = 0;
         if (lot.rateType === 'Hourly') {
             const start = new Date(startTime);
             const end = new Date(endTime);
-            const durationHours = (end - start) / (1000 * 60 * 60);
-            totalPrice = durationHours * lot.hourlyRate;
+
+            // Check if the reservation extends past 7PM (19:00)
+            const sevenPM = new Date(startTime);
+            sevenPM.setHours(19, 0, 0, 0); // Set to 7:00 PM of the same day
+
+            let billableDurationHours;
+
+            if (start.getHours() >= 19) {
+                // If starting after 7PM, no charge for metered parking
+                billableDurationHours = 0;
+                console.log('Reservation starts after 7PM - free metered parking');
+            } else if (end > sevenPM) {
+                // If ending after 7PM, only charge until 7PM
+                billableDurationHours = (sevenPM - start) / (1000 * 60 * 60);
+                console.log(`Reservation extends past 7PM - charging only until 7PM: ${billableDurationHours} hours`);
+            } else {
+                // If entirely before 7PM, charge the full duration
+                billableDurationHours = (end - start) / (1000 * 60 * 60);
+                console.log(`Reservation entirely before 7PM - charging full duration: ${billableDurationHours} hours`);
+            }
+
+            totalPrice = billableDurationHours * lot.hourlyRate;
         } else if (lot.rateType === 'Permit-based') {
-            // For permit-based lots, the price depends on the permit type
-            // This would typically be handled by the permit type system
-            totalPrice = lot.semesterRate || 0; // Default to semester rate
+            // For permit-based lots, check if it's after 4PM (free after 4PM)
+            const start = new Date(startTime);
+
+            if (start.getHours() >= 16) {
+                // If starting after 4PM, permit-based lots are free
+                totalPrice = 0;
+                console.log('Reservation starts after 4PM - free permit-based parking');
+            } else {
+                // Otherwise, use the semester rate
+                totalPrice = lot.semesterRate || 0;
+                console.log(`Reservation before 4PM - charging semester rate: $${totalPrice}`);
+            }
         }
 
         // Check if the reservation starts after 4PM for free access with permit
@@ -792,8 +842,32 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
         const freeAfter4PMExtension = await isAfter4PM();
 
         if (reservation.lotId && reservation.lotId.rateType === 'Hourly') {
-            // For hourly rates, charge based on additional hours
-            additionalPrice = additionalHours * reservation.lotId.hourlyRate;
+            // For hourly rates, calculate billable hours considering 7PM cutoff
+            let billableAdditionalHours = additionalHours;
+            const currentEndDateTime = new Date(reservation.endTime);
+
+            // Check if the current endTime is already after 7PM
+            if (currentEndDateTime.getHours() >= 19) {
+                // If already past 7PM, no charge for any extension
+                billableAdditionalHours = 0;
+                console.log('Current end time already past 7PM - extension is free');
+            }
+            // Check if extension crosses 7PM boundary
+            else {
+                // Create a 7PM timestamp for comparison
+                const sevenPM = new Date(currentEndDateTime);
+                sevenPM.setHours(19, 0, 0, 0);
+
+                // If the new end time is after 7PM, only charge until 7PM
+                if (newEndTime > sevenPM) {
+                    // Calculate billable hours only until 7PM
+                    billableAdditionalHours = (sevenPM - currentEndDateTime) / (1000 * 60 * 60);
+                    console.log(`Extension crosses 7PM - charging only until 7PM: ${billableAdditionalHours.toFixed(2)} billable hours`);
+                }
+            }
+
+            // For hourly rates, charge based on billable additional hours (respecting 7PM cutoff)
+            additionalPrice = billableAdditionalHours * reservation.lotId.hourlyRate;
 
             // Add extension fee for metered lots only if extension is not after 7PM
             if ((isMetered || (reservation.lotId.features && reservation.lotId.features.isMetered)) && !isAfter7PM()) {
@@ -940,6 +1014,23 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
         });
 
         await reservation.save();
+
+        // Create a notification for the user about their extended reservation
+        try {
+            const formattedOldEndTime = new Date(currentEndTime).toLocaleString();
+            const formattedNewEndTime = new Date(newEndTime).toLocaleString();
+
+            await NotificationHelper.createSystemNotification(
+                req.user.userId,
+                'Reservation Extended',
+                `Your reservation at ${reservation.lotId.name} has been extended from ${formattedOldEndTime} to ${formattedNewEndTime}.`,
+                '/past-reservations'
+            );
+            console.log('Reservation extension notification sent to user:', req.user.userId);
+        } catch (notificationError) {
+            console.error('Error creating reservation extension notification:', notificationError);
+            // Continue even if notification creation fails
+        }
 
         const successMessage = isSemesterRate
             ? 'Reservation extended successfully at no additional cost (semester rate)'

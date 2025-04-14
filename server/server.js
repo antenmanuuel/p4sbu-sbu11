@@ -199,11 +199,27 @@ try {
 
     // Serve static files from React app in production
     if (process.env.NODE_ENV === 'production') {
+        console.log(`Serving static files from: ${path.join(__dirname, '../client/dist')}`);
         // Serve static files from the React build folder
-        app.use(express.static(path.join(__dirname, '../client/dist')));
+        app.use(express.static(path.join(__dirname, '../client/dist'), {
+            setHeaders: (res, path) => {
+                // Set proper MIME types for JavaScript modules
+                if (path.endsWith('.js')) {
+                    res.set('Content-Type', 'application/javascript');
+                    console.log(`Setting Content-Type for JS file: ${path}`);
+                } else if (path.endsWith('.mjs')) {
+                    res.set('Content-Type', 'application/javascript');
+                    console.log(`Setting Content-Type for MJS file: ${path}`);
+                } else if (path.endsWith('.css')) {
+                    res.set('Content-Type', 'text/css');
+                    console.log(`Setting Content-Type for CSS file: ${path}`);
+                }
+            }
+        }));
 
         // Handle React routing, return all requests to React app
         app.get('*', (req, res) => {
+            console.log(`Serving index.html for path: ${req.originalUrl}`);
             res.sendFile(path.join(__dirname, '../client/dist/index.html'));
         });
     }

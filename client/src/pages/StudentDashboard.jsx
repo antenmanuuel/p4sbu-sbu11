@@ -484,7 +484,10 @@ const StudentDashboard = ({ darkMode }) => {
   // Format date and time
   const formatDateTime = (dateString) => {
     const date = new Date(dateString);
+
+    // Use NY timezone to display the exact time stored in the database
     return date.toLocaleString('en-US', {
+      timeZone: 'America/New_York',
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -1087,7 +1090,7 @@ const StudentDashboard = ({ darkMode }) => {
                       <div className="flex items-center mb-2">
                         <FaClock className={`mr-2 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
                         <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                          {formatDateTime(reservation.reservationStart)} - {formatDateTime(reservation.reservationEnd).split(',')[1]}
+                          {formatDateTime(reservation.reservationStart)} - {formatDateTime(reservation.reservationEnd)}
                         </p>
                       </div>
 
@@ -1434,8 +1437,8 @@ const StudentDashboard = ({ darkMode }) => {
                           return (
                             <>
                               <span className="font-medium text-green-500">Free extension after 7PM!</span><br />
-                              Hourly cost: ${((selectedReservation.hourlyRate || 0) * additionalHours).toFixed(2)}<br />
-                              Estimated total cost: ${((selectedReservation.hourlyRate || 0) * additionalHours).toFixed(2)}
+                              <span className="text-xs">Metered parking is free after 7PM</span><br />
+                              <span className="font-medium text-green-500">Estimated total cost: $0.00</span>
                             </>
                           );
                         } else {
@@ -2122,5 +2125,3 @@ const StudentDashboard = ({ darkMode }) => {
 };
 
 export default StudentDashboard;
-
-
