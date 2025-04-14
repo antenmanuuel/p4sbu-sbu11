@@ -24,7 +24,8 @@ const PaymentPage = ({
     onBackClick,
     onCompletePayment,
     hasValidPermit,
-    validPermitDetails
+    validPermitDetails,
+    hasReservationError = false
 }) => {
     return (
         <Elements stripe={stripePromise}>
@@ -37,6 +38,7 @@ const PaymentPage = ({
                 onCompletePayment={onCompletePayment}
                 hasValidPermit={hasValidPermit}
                 validPermitDetails={validPermitDetails}
+                hasReservationError={hasReservationError}
             />
         </Elements>
     );
@@ -51,7 +53,8 @@ const PaymentForm = ({
     onBackClick,
     onCompletePayment,
     hasValidPermit,
-    validPermitDetails
+    validPermitDetails,
+    hasReservationError = false
 }) => {
     const stripe = useStripe();
     const elements = useElements();
@@ -70,6 +73,13 @@ const PaymentForm = ({
             setPaymentMethod('existingPermit');
         }
     }, [hasValidPermit, validPermitDetails]);
+
+    // Reset payment status when reservation error appears
+    useEffect(() => {
+        if (hasReservationError) {
+            setPaymentStatus(null);
+        }
+    }, [hasReservationError]);
 
     // Fetch saved payment methods
     useEffect(() => {
@@ -147,34 +157,32 @@ const PaymentForm = ({
         // If using existing permit, process free reservation
         if (paymentMethod === 'existingPermit') {
             setIsProcessing(true);
-            setTimeout(() => {
+            try {
+                // Call onCompletePayment immediately without setting success state first
+                onCompletePayment({
+                    paymentMethod: 'existingPermit',
+                    transactionId: 'FREE-' + Math.floor(Math.random() * 1000000000),
+                    timestamp: new Date().toISOString()
+                });
+            } finally {
                 setIsProcessing(false);
-                setPaymentStatus('success');
-                setTimeout(() => {
-                    onCompletePayment({
-                        paymentMethod: 'existingPermit',
-                        transactionId: 'FREE-' + Math.floor(Math.random() * 1000000000),
-                        timestamp: new Date().toISOString()
-                    });
-                }, 1500);
-            }, 1000);
+            }
             return;
         }
 
         // For SOLAR payment method, just simulate a successful transaction
         if (paymentMethod === 'solar') {
             setIsProcessing(true);
-            setTimeout(() => {
+            try {
+                // Call onCompletePayment immediately without setting success state first
+                onCompletePayment({
+                    paymentMethod: 'solar',
+                    transactionId: 'SOLAR-' + Math.floor(Math.random() * 1000000000),
+                    timestamp: new Date().toISOString()
+                });
+            } finally {
                 setIsProcessing(false);
-                setPaymentStatus('success');
-                setTimeout(() => {
-                    onCompletePayment({
-                        paymentMethod: 'solar',
-                        transactionId: 'SOLAR-' + Math.floor(Math.random() * 1000000000),
-                        timestamp: new Date().toISOString()
-                    });
-                }, 1500);
-            }, 2000);
+            }
             return;
         }
 
@@ -191,16 +199,13 @@ const PaymentForm = ({
             if (selectedSavedCard && !showNewCardForm) {
                 console.log('Using saved payment method:', selectedSavedCard.id);
 
-                // Display success and complete payment with the saved card
-                setPaymentStatus('success');
-                setTimeout(() => {
-                    onCompletePayment({
-                        paymentMethod: 'card',
-                        paymentMethodId: selectedSavedCard.id,
-                        transactionId: 'TRX-' + Math.floor(Math.random() * 1000000000),
-                        timestamp: new Date().toISOString()
-                    });
-                }, 1500);
+                // Call onCompletePayment immediately without setting success state first
+                onCompletePayment({
+                    paymentMethod: 'card',
+                    paymentMethodId: selectedSavedCard.id,
+                    transactionId: 'TRX-' + Math.floor(Math.random() * 1000000000),
+                    timestamp: new Date().toISOString()
+                });
                 return;
             }
 
@@ -222,16 +227,13 @@ const PaymentForm = ({
             // Payment method created successfully
             console.log('Payment method created:', stripePaymentMethod);
 
-            // Display success and complete payment
-            setPaymentStatus('success');
-            setTimeout(() => {
-                onCompletePayment({
-                    paymentMethod: 'card',
-                    paymentMethodId: stripePaymentMethod.id,
-                    transactionId: 'TRX-' + Math.floor(Math.random() * 1000000000),
-                    timestamp: new Date().toISOString()
-                });
-            }, 1500);
+            // Call onCompletePayment immediately without setting success state first
+            onCompletePayment({
+                paymentMethod: 'card',
+                paymentMethodId: stripePaymentMethod.id,
+                transactionId: 'TRX-' + Math.floor(Math.random() * 1000000000),
+                timestamp: new Date().toISOString()
+            });
 
         } catch (err) {
             console.error('Payment processing error:', err);
@@ -264,6 +266,9 @@ const PaymentForm = ({
         setSelectedSavedCard(null);
         setShowNewCardForm(true);
     };
+
+    // Hide success message if there's a reservation error
+    const showPaymentStatus = !hasReservationError && paymentStatus;
 
     return (
         <div className="w-full animate-fadeIn">
@@ -315,9 +320,15 @@ const PaymentForm = ({
                 <div className="pt-3 border-t border-gray-600">
                     <div className="flex justify-between">
                         <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>Total:</p>
-                        <p className={`font-bold text-lg ${hasValidPermit ? 'line-through' : ''} ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                            {price}
-                        </p>
+                        {price === '$0.00' ? (
+                            <p className={`font-bold text-lg text-green-500`}>
+                                FREE {lotName?.toLowerCase().includes('metered') && '(after 7:00 PM)'}
+                            </p>
+                        ) : (
+                            <p className={`font-bold text-lg ${hasValidPermit ? 'line-through' : ''} ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                {price}
+                            </p>
+                        )}
                     </div>
                     {hasValidPermit && (
                         <div className="flex justify-between mt-1">
@@ -328,23 +339,31 @@ const PaymentForm = ({
                 </div>
             </div>
 
-            {/* Payment status messages */}
-            {paymentStatus === 'success' && (
-                <div className={`p-4 rounded-lg mb-6 bg-green-600 text-white flex items-center`}>
-                    <FaCheckCircle className="mr-2 text-xl" />
-                    <div>
-                        <p className="font-semibold">Payment Successful!</p>
-                        <p className="text-sm">Your parking reservation has been confirmed.</p>
+            {/* Payment status notification */}
+            {showPaymentStatus && (
+                <div className={`mb-6 px-4 py-5 rounded-lg flex items-center ${paymentStatus === 'success'
+                    ? `${darkMode ? 'bg-green-900/50 text-green-200' : 'bg-green-100 text-green-800'}`
+                    : `${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-100 text-red-800'}`
+                    }`}>
+                    <div className="flex-shrink-0 mr-3">
+                        {paymentStatus === 'success' ? (
+                            <FaCheckCircle className="h-6 w-6 text-green-500" />
+                        ) : (
+                            <FaExclamationCircle className="h-6 w-6 text-red-500" />
+                        )}
                     </div>
-                </div>
-            )}
-
-            {paymentStatus === 'error' && (
-                <div className={`p-4 rounded-lg mb-6 bg-red-600 text-white flex items-center`}>
-                    <FaExclamationCircle className="mr-2 text-xl" />
                     <div>
-                        <p className="font-semibold">Payment Failed</p>
-                        <p className="text-sm">There was an issue processing your payment. Please try again.</p>
+                        {paymentStatus === 'success' ? (
+                            <p className="font-semibold">Payment Successful!</p>
+                        ) : (
+                            <p className="font-semibold">Payment Failed</p>
+                        )}
+                        <p className="text-sm">
+                            {paymentStatus === 'success'
+                                ? 'Your parking reservation has been confirmed.'
+                                : 'Please check your payment details and try again.'
+                            }
+                        </p>
                     </div>
                 </div>
             )}

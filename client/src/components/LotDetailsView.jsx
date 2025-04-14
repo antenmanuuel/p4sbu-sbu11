@@ -20,15 +20,24 @@ const LotDetailsView = ({
     console.log("Rendering lot details from backend:", lot);
     console.log("Current transport mode:", transportMode);
 
+    // Add local state for transport mode selection
+    const [localTransportMode, setLocalTransportMode] = useState(transportMode);
+
     // State for route between parking and destination
     const [route, setRoute] = useState(null);
     const [routeDistance, setRouteDistance] = useState(null);
     const [routeDuration, setRouteDuration] = useState(null);
     const [isLoadingRoute, setIsLoadingRoute] = useState(false);
 
+    // Handle transport mode change
+    const handleTransportModeChange = (mode) => {
+        console.log(`Changing transport mode to: ${mode}`);
+        setLocalTransportMode(mode);
+    };
+
     // Get route color based on transport mode
     const getRouteColor = () => {
-        switch (transportMode) {
+        switch (localTransportMode) {
             case 'walking':
                 return '#10b981'; // green
             case 'driving-traffic':
@@ -41,7 +50,7 @@ const LotDetailsView = ({
 
     // Fetch directions from MapBox API based on transport mode
     useEffect(() => {
-        console.log(`Transport mode changed to: ${transportMode}, fetching new route...`);
+        console.log(`Transport mode changed to: ${localTransportMode}, fetching new route...`);
 
         const fetchRoute = async () => {
             if (!destination || !lot) return;
@@ -52,11 +61,11 @@ const LotDetailsView = ({
                 const start = `${lot.coordinates[1]},${lot.coordinates[0]}`;
                 const end = `${destination.coordinates[1]},${destination.coordinates[0]}`;
 
-                console.log(`Fetching route with transport mode: ${transportMode}`);
+                console.log(`Fetching route with transport mode: ${localTransportMode}`);
 
                 // Call the MapBox Directions API with the current transport mode
                 const response = await fetch(
-                    `https://api.mapbox.com/directions/v5/mapbox/${transportMode}/${start};${end}?` +
+                    `https://api.mapbox.com/directions/v5/mapbox/${localTransportMode}/${start};${end}?` +
                     `alternatives=false&geometries=geojson&overview=full&steps=false&` +
                     `access_token=${MAPBOX_TOKEN}`
                 );
@@ -65,7 +74,7 @@ const LotDetailsView = ({
 
                 if (data.routes && data.routes.length > 0) {
                     const routeData = data.routes[0];
-                    console.log(`Route received for ${transportMode}:`, {
+                    console.log(`Route received for ${localTransportMode}:`, {
                         distance: routeData.distance,
                         duration: routeData.duration,
                         points: routeData.geometry.coordinates.length
@@ -97,7 +106,7 @@ const LotDetailsView = ({
                     setRouteDuration(durationInMinutes);
                 }
             } catch (error) {
-                console.error(`Error fetching ${transportMode} route:`, error);
+                console.error(`Error fetching ${localTransportMode} route:`, error);
                 // Fallback to simple line
                 const fallbackRoute = {
                     type: 'Feature',
@@ -117,7 +126,7 @@ const LotDetailsView = ({
         };
 
         fetchRoute();
-    }, [lot, destination, MAPBOX_TOKEN, transportMode]); // Add transportMode as dependency
+    }, [lot, destination, MAPBOX_TOKEN, localTransportMode]); // Add localTransportMode as dependency
 
     // Create fallback GeoJSON line between parking lot and destination
     const simpleLine = useMemo(() => {
@@ -149,7 +158,7 @@ const LotDetailsView = ({
 
     // Get appropriate transport icon based on mode
     const getTransportIcon = () => {
-        switch (transportMode) {
+        switch (localTransportMode) {
             case 'walking':
                 return <FaWalking className={`mr-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />;
             case 'driving-traffic':
@@ -162,7 +171,7 @@ const LotDetailsView = ({
 
     // Get transport mode display text
     const getTransportText = () => {
-        switch (transportMode) {
+        switch (localTransportMode) {
             case 'walking':
                 return 'walk';
             case 'driving-traffic':
@@ -191,14 +200,53 @@ const LotDetailsView = ({
             return `$${(chargingHours * evRate).toFixed(2)}`;
         }
 
-        // For regular hourly rates
+        // For regular hourly rates with time-based cutoff
         if (lot.rateType === 'Hourly') {
+            // If we don't have start/end datetime, use simple calculation
+            if (!startDateTime || !endDateTime) {
+                return `$${(parseFloat(duration) * lot.hourlyRate).toFixed(2)}`;
+            }
+
+            // Convert to Date objects
+            const start = new Date(startDateTime);
+            const end = new Date(endDateTime);
+
+            // Check if the reservation extends past 7PM (19:00) for metered lots
+            if (lot.features && lot.features.includes('Metered Parking')) {
+                // Create 7PM timestamp of the same day
+                const sevenPM = new Date(start);
+                sevenPM.setHours(19, 0, 0, 0);
+
+                // Calculate billable duration respecting the 7PM cutoff
+                let billableDurationHours;
+
+                if (start.getHours() >= 19) {
+                    // If starting after 7PM, no charge for metered parking
+                    return "$0.00";
+                } else if (end > sevenPM) {
+                    // If ending after 7PM, only charge until 7PM
+                    billableDurationHours = (sevenPM - start) / (1000 * 60 * 60);
+                    return `$${(billableDurationHours * lot.hourlyRate).toFixed(2)}`;
+                }
+            }
+
+            // Normal case: charge for full duration
             return `$${(parseFloat(duration) * lot.hourlyRate).toFixed(2)}`;
         }
 
-        // For permit-based rates
+        // For permit-based rates with 4PM cutoff
+        if (lot.rateType === 'Permit-based' && startDateTime) {
+            const start = new Date(startDateTime);
+
+            // If starting after 4PM, permit-based lots are free
+            if (start.getHours() >= 16) {
+                return "$0.00";
+            }
+        }
+
+        // For other cases, use the price directly
         return lot.price;
-    }, [lot, duration]);
+    }, [lot, duration, startDateTime, endDateTime]);
 
     if (!lot) return null;
 
@@ -308,6 +356,17 @@ const LotDetailsView = ({
                                         <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                                             {lot.rateType}
                                         </p>
+                                        {/* Time-based pricing rules */}
+                                        {lot.rateType === 'Hourly' && lot.features?.includes('Metered Parking') && (
+                                            <p className={`text-xs mt-1 ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
+                                                Free after 7:00 PM
+                                            </p>
+                                        )}
+                                        {lot.rateType === 'Permit-based' && (
+                                            <p className={`text-xs mt-1 ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
+                                                Free after 4:00 PM with valid permit
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -368,10 +427,52 @@ const LotDetailsView = ({
 
                 {/* Right content - Map and Reservation */}
                 <div className="lg:col-span-2">
+                    {/* Transport Mode Selector */}
+                    {destination && (
+                        <div className={`mb-8 flex items-center justify-center`}>
+                            <div className={`inline-flex rounded-lg p-1 shadow-md ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                                <button
+                                    type="button"
+                                    onClick={() => handleTransportModeChange('driving')}
+                                    className={`flex items-center px-4 py-2 rounded-lg ${localTransportMode === 'driving'
+                                        ? `bg-red-600 text-white`
+                                        : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100'
+                                        } transition-colors focus:outline-none`}
+                                >
+                                    <FaCar className="mr-2" />
+                                    Car
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleTransportModeChange('walking')}
+                                    className={`flex items-center px-4 py-2 rounded-lg ${localTransportMode === 'walking'
+                                        ? `bg-red-600 text-white`
+                                        : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100'
+                                        } transition-colors focus:outline-none`}
+                                >
+                                    <FaWalking className="mr-2" />
+                                    Walk
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleTransportModeChange('driving-traffic')}
+                                    className={`flex items-center px-4 py-2 rounded-lg ${localTransportMode === 'driving-traffic'
+                                        ? `bg-red-600 text-white`
+                                        : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100'
+                                        } transition-colors focus:outline-none`}
+                                >
+                                    <FaBus className="mr-2" />
+                                    Bus
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Main Map */}
                     <div className={`rounded-2xl overflow-hidden shadow-lg mb-8 ${darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'}`}>
                         <div className="h-[500px] relative">
                             <ReactMapGL
+                                key={`lot-map-${lot.id}-${localTransportMode}`}
                                 mapboxAccessToken={MAPBOX_TOKEN}
                                 initialViewState={{
                                     longitude: lot.coordinates[1],
@@ -387,22 +488,33 @@ const LotDetailsView = ({
                                 {destination && (
                                     <>
                                         {route ? (
-                                            <Source id="walking-route" type="geojson" data={route}>
+                                            <Source
+                                                key={`route-source-${localTransportMode}`}
+                                                id={`${localTransportMode}-route`}
+                                                type="geojson"
+                                                data={route}
+                                            >
                                                 <Layer
-                                                    id="route-line"
+                                                    id={`${localTransportMode}-route-line`}
                                                     type="line"
                                                     paint={{
                                                         'line-color': getRouteColor(),
                                                         'line-width': 4,
                                                         'line-opacity': 0.8,
-                                                        'line-dasharray': transportMode === 'walking' ? [0.5, 1.5] : [1, 0]
+                                                        'line-dasharray': localTransportMode === 'walking' ? [0.5, 1.5] : [1, 0]
                                                     }}
                                                 />
                                             </Source>
-                                        ) : !isLoadingRoute && (
-                                            <Source id="simple-route" type="geojson" data={simpleLine}>
+                                        ) : (
+                                            // Always show a simple fallback line if route is not available
+                                            <Source
+                                                key={`simple-source-${localTransportMode}`}
+                                                id={`${localTransportMode}-simple-route`}
+                                                type="geojson"
+                                                data={simpleLine}
+                                            >
                                                 <Layer
-                                                    id="route-line"
+                                                    id={`${localTransportMode}-simple-line`}
                                                     type="line"
                                                     paint={{
                                                         'line-color': getRouteColor(),
@@ -480,16 +592,21 @@ const LotDetailsView = ({
                                     <h4 className={`font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                                         Reservation Cost
                                     </h4>
-                                    <span className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                        {estimatedCost}
+                                    <span className={`text-xl font-bold ${estimatedCost === "$0.00" ? 'text-green-500' : darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        {estimatedCost === "$0.00" ? "FREE" : estimatedCost}
                                     </span>
                                 </div>
                                 <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                    {lot.isEV
-                                        ? `$${lot.evChargingRate}/hour × ${duration.replace(' hours', '')}`
-                                        : lot.rateType === 'Hourly'
-                                            ? `$${lot.hourlyRate}/hour × ${duration.replace(' hours', '')}`
-                                            : 'Semester permit rate'}
+                                    {estimatedCost === "$0.00" && lot.rateType === 'Hourly' && lot.features?.includes('Metered Parking') && startDateTime && new Date(startDateTime).getHours() >= 19
+                                        ? "Free after 7:00 PM for metered parking"
+                                        : estimatedCost === "$0.00" && lot.rateType === 'Permit-based' && startDateTime && new Date(startDateTime).getHours() >= 16
+                                            ? "Free after 4:00 PM for permit-based lots"
+                                            : lot.isEV
+                                                ? `$${lot.evChargingRate}/hour × ${duration.replace(' hours', '')}`
+                                                : lot.rateType === 'Hourly'
+                                                    ? `$${lot.hourlyRate}/hour × ${duration.replace(' hours', '')}`
+                                                    : 'Semester permit rate'
+                                    }
                                 </p>
                             </div>
 
