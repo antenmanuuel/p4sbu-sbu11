@@ -4,7 +4,7 @@
     "description": "SBU Parking Management System API Server",
     "main": "server.js",
     "scripts": {
-        "start": "node server.js",
+        "start": "node -r newrelic server.js",
         "dev": "nodemon server.js",
         "debug": "nodemon --inspect server.js",
         "test": "jest --detectOpenHandles",
