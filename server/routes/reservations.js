@@ -9,13 +9,34 @@ const User = require('../models/users');
 const { verifyToken } = require('../middleware/auth');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const RevenueStatistics = require('../models/revenue_statistics');
-const { updateExpiredReservations } = require('../utils/reservationUtils');
+const {
+    updateExpiredReservations,
+    prepareReservationResponse
+} = require('../utils/reservationUtils');
 const NotificationHelper = require('../utils/notificationHelper');
+const {
+    toEasternTime,
+    nowInEasternTime,
+    isAfterHourET,
+    formatETDate,
+    setHourET,
+    startOfDayET
+} = require('../utils/dateUtils');
+
+// Helper function to check if the current time is after 4PM in Eastern Time
+const isCurrentTimeAfter4PM = () => {
+    return isAfterHourET(nowInEasternTime(), 16); // 4PM = 16:00
+};
+
+// Helper function to check if a specific time is after 7PM in Eastern Time
+const isTimeAfter7PM = (time) => {
+    return isAfterHourET(time, 19); // 7PM = 19:00
+};
 
 // Helper function to generate a unique reservation ID
 const generateReservationId = () => {
     // Generate a reservation ID in format: RES-YYYYMMDD-XXXX
-    const date = new Date();
+    const date = nowInEasternTime(); // Use Eastern Time for ID generation
     const dateStr = date.getFullYear().toString() +
         (date.getMonth() + 1).toString().padStart(2, '0') +
         date.getDate().toString().padStart(2, '0');
@@ -82,16 +103,15 @@ router.post('/', verifyToken, async (req, res) => {
         // Calculate total price based on duration for hourly lots
         let totalPrice = 0;
         if (lot.rateType === 'Hourly') {
-            const start = new Date(startTime);
-            const end = new Date(endTime);
+            const start = toEasternTime(new Date(startTime));
+            const end = toEasternTime(new Date(endTime));
 
             // Check if the reservation extends past 7PM (19:00)
-            const sevenPM = new Date(startTime);
-            sevenPM.setHours(19, 0, 0, 0); // Set to 7:00 PM of the same day
+            const sevenPM = setHourET(new Date(startTime), 19);
 
             let billableDurationHours;
 
-            if (start.getHours() >= 19) {
+            if (isAfterHourET(start, 19)) {
                 // If starting after 7PM, no charge for metered parking
                 billableDurationHours = 0;
                 console.log('Reservation starts after 7PM - free metered parking');
@@ -108,9 +128,9 @@ router.post('/', verifyToken, async (req, res) => {
             totalPrice = billableDurationHours * lot.hourlyRate;
         } else if (lot.rateType === 'Permit-based') {
             // For permit-based lots, check if it's after 4PM (free after 4PM)
-            const start = new Date(startTime);
+            const start = toEasternTime(new Date(startTime));
 
-            if (start.getHours() >= 16) {
+            if (isAfterHourET(start, 16)) {
                 // If starting after 4PM, permit-based lots are free
                 totalPrice = 0;
                 console.log('Reservation starts after 4PM - free permit-based parking');
@@ -122,10 +142,7 @@ router.post('/', verifyToken, async (req, res) => {
         }
 
         // Check if the reservation starts after 4PM for free access with permit
-        const isFreeAfter4PM = () => {
-            const start = new Date(startTime);
-            return start.getHours() >= 16; // 4PM = 16:00
-        };
+        const isFreeAfter4PM = () => isAfterHourET(startTime, 16);
 
         // Check if user already has an active permit for this permit type
         let existingPermit = null;
@@ -313,8 +330,8 @@ router.post('/', verifyToken, async (req, res) => {
                     metadata: {
                         lotId: lotId.toString(),
                         permitType: permitType || 'N/A',
-                        startTime: new Date(startTime).toISOString(),
-                        endTime: new Date(endTime).toISOString()
+                        startTime: formatETDate(new Date(startTime)),
+                        endTime: formatETDate(new Date(endTime))
                     },
                     automatic_payment_methods: {
                         enabled: true,
@@ -444,8 +461,9 @@ router.post('/', verifyToken, async (req, res) => {
                 // Set time to end of day (23:59:59.999) to be consistent with expiration checks
                 endDateTime.setHours(23, 59, 59, 999);
 
-                // Determine payment status
-                const permitPaymentStatus = freeReservation ? 'paid' : (paymentStatus === 'completed' ? 'paid' : 'unpaid');
+                // Determine payment status - must be either 'paid' or 'refunded' according to model
+                // Default to 'paid' since we're creating a new permit
+                const permitPaymentStatus = 'paid';
 
                 newPermit = new Permit({
                     permitNumber,
@@ -502,7 +520,7 @@ router.post('/', verifyToken, async (req, res) => {
             await NotificationHelper.createSystemNotification(
                 req.user.userId,
                 'New Reservation Confirmed',
-                `Your reservation at ${lot.name} has been confirmed from ${new Date(startTime).toLocaleString()} to ${new Date(endTime).toLocaleString()}.`,
+                `Your reservation at ${lot.name} has been confirmed from ${formatETDate(startTime)} to ${formatETDate(endTime)}.`,
                 '/dashboard'
             );
             console.log('Reservation creation notification sent to user:', req.user.userId);
@@ -578,9 +596,12 @@ router.get('/', verifyToken, async (req, res) => {
             .populate('vehicleInfo', 'plateNumber stateProv make model color bodyType')
             .sort({ startTime: -1 });
 
+        // Convert all dates to Eastern Time
+        const reservationsInET = prepareReservationResponse(reservations);
+
         res.status(200).json({
             success: true,
-            data: { reservations }
+            data: { reservations: reservationsInET }
         });
     } catch (error) {
         console.error('Error fetching reservations:', error);
@@ -612,9 +633,12 @@ router.get('/:id', verifyToken, async (req, res) => {
             });
         }
 
+        // Convert all dates to Eastern Time
+        const reservationInET = prepareReservationResponse(reservation);
+
         res.status(200).json({
             success: true,
-            data: { reservation }
+            data: { reservation: reservationInET }
         });
     } catch (error) {
         console.error('Error fetching reservation:', error);
@@ -727,6 +751,83 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             );
         }
 
+        // If the reservation used a permit, cancel the permit as well
+        if (reservation.usedExistingPermit || (reservation.lotId && reservation.lotId.rateType === 'Permit-based')) {
+            try {
+                console.log(`Looking for permits to cancel for reservation ${reservationId} in lot ${reservation.lotId._id}`);
+
+                // Get the start of the day for the reservation
+                const reservationDay = startOfDayET(reservation.startTime);
+
+                // Find permits associated with this reservation - improved query to find same-day permits
+                const associatedPermits = await Permit.find({
+                    userId: req.user.userId,
+                    status: 'active',
+                    'lots.lotId': reservation.lotId._id.toString(),
+                    startDate: { $gte: reservationDay } // Find permits created on or after the reservation day
+                });
+
+                console.log(`Found ${associatedPermits.length} permits to cancel for reservation ${reservationId}`);
+
+                // Cancel each found permit
+                for (const permit of associatedPermits) {
+                    permit.status = 'cancelled'; // Change to 'cancelled' instead of 'inactive'
+                    permit.endDate = new Date(); // End immediately
+                    await permit.save();
+                    console.log(`Cancelled permit ${permit._id} associated with reservation ${reservationId}`);
+
+                    // Create a notification about the cancelled permit
+                    try {
+                        await NotificationHelper.createSystemNotification(
+                            req.user.userId,
+                            'Permit Cancelled',
+                            `Your permit ${permit.permitName || 'parking permit'} has been cancelled along with your reservation at ${reservation.lotId.name}.`,
+                            '/past-permits'
+                        );
+                    } catch (permitNotificationError) {
+                        console.error('Error creating permit cancellation notification:', permitNotificationError);
+                    }
+                }
+
+                // If no permits were found with the previous query, try a more general search
+                if (associatedPermits.length === 0) {
+                    console.log('No permits found with specific criteria, trying broader search');
+
+                    // More general search for active permits for this lot
+                    const activePermits = await Permit.find({
+                        userId: req.user.userId,
+                        status: 'active',
+                        'lots.lotId': reservation.lotId._id.toString()
+                    });
+
+                    console.log(`Found ${activePermits.length} active permits with broader criteria`);
+
+                    // Cancel these permits too
+                    for (const permit of activePermits) {
+                        permit.status = 'cancelled';
+                        permit.endDate = new Date();
+                        await permit.save();
+                        console.log(`Cancelled active permit ${permit._id} using broader criteria`);
+
+                        // Create notification
+                        try {
+                            await NotificationHelper.createSystemNotification(
+                                req.user.userId,
+                                'Permit Cancelled',
+                                `Your permit ${permit.permitName || 'parking permit'} has been cancelled along with your reservation at ${reservation.lotId.name}.`,
+                                '/past-permits'
+                            );
+                        } catch (permitNotificationError) {
+                            console.error('Error creating permit cancellation notification:', permitNotificationError);
+                        }
+                    }
+                }
+            } catch (permitError) {
+                console.error('Error cancelling associated permits:', permitError);
+                // Continue even if permit cancellation fails
+            }
+        }
+
         // Create notification for the user about the cancellation
         try {
             await NotificationHelper.createReservationNotification(
@@ -741,11 +842,14 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             // Continue even if notification creation fails
         }
 
+        // Convert dates to Eastern Time before sending the response
+        const reservationInET = prepareReservationResponse(reservation);
+
         res.status(200).json({
             success: true,
             message: refundResult ? 'Reservation cancelled successfully and refund processed' : 'Reservation cancelled successfully',
             data: {
-                reservation,
+                reservation: reservationInET,
                 refund: refundResult
             }
         });
@@ -804,11 +908,7 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
         let hasExtensionFee = false;
 
         // Check if the extension goes beyond 7PM (19:00)
-        const isAfter7PM = () => {
-            // Get the new end time's hours in local time
-            const newEndHour = newEndTime.getHours();
-            return newEndHour >= 19; // 7PM or later
-        };
+        const isAfter7PM = () => isAfterHourET(newEndTime, 19);
 
         // Check if the extension starts after 4PM for permit holders
         const isAfter4PM = async () => {
@@ -816,7 +916,7 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
             const currentTime = new Date();
 
             // If the current time is after 4PM
-            if (currentTime.getHours() >= 16) {
+            if (isAfterHourET(currentTime, 16)) {
                 // Check if the user has any valid permits
                 const userPermits = await Permit.find({
                     userId: req.user.userId,
@@ -847,7 +947,7 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
             const currentEndDateTime = new Date(reservation.endTime);
 
             // Check if the current endTime is already after 7PM
-            if (currentEndDateTime.getHours() >= 19) {
+            if (isTimeAfter7PM(currentEndDateTime)) {
                 // If already past 7PM, no charge for any extension
                 billableAdditionalHours = 0;
                 console.log('Current end time already past 7PM - extension is free');
@@ -855,8 +955,7 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
             // Check if extension crosses 7PM boundary
             else {
                 // Create a 7PM timestamp for comparison
-                const sevenPM = new Date(currentEndDateTime);
-                sevenPM.setHours(19, 0, 0, 0);
+                const sevenPM = setHourET(currentEndDateTime, 19);
 
                 // If the new end time is after 7PM, only charge until 7PM
                 if (newEndTime > sevenPM) {
@@ -1017,8 +1116,8 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
 
         // Create a notification for the user about their extended reservation
         try {
-            const formattedOldEndTime = new Date(currentEndTime).toLocaleString();
-            const formattedNewEndTime = new Date(newEndTime).toLocaleString();
+            const formattedOldEndTime = formatETDate(currentEndTime);
+            const formattedNewEndTime = formatETDate(newEndTime);
 
             await NotificationHelper.createSystemNotification(
                 req.user.userId,
@@ -1042,14 +1141,17 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
                         ? 'Reservation extended successfully at no additional cost (free after 4PM with permit)'
                         : 'Reservation extended successfully';
 
+        // Convert dates to Eastern Time before sending the response
+        const reservationInET = prepareReservationResponse(reservation);
+
         res.status(200).json({
             success: true,
             message: successMessage,
             data: {
-                reservation,
+                reservation: reservationInET,
                 extension: {
-                    previousEndTime: currentEndTime,
-                    newEndTime,
+                    previousEndTime: formatETDate(currentEndTime),
+                    newEndTime: formatETDate(newEndTime),
                     additionalHours,
                     additionalPrice,
                     extensionFee: hasExtensionFee ? METERED_EXTENSION_FEE : 0,
