@@ -485,7 +485,7 @@ const StudentDashboard = ({ darkMode }) => {
   const formatDateTime = (dateString) => {
     const date = new Date(dateString);
 
-    // Use UTC timezone to display the exact time stored in the database
+    // Use NY timezone to display the exact time stored in the database
     return date.toLocaleString('en-US', {
       timeZone: 'America/New_York',
       month: 'short',
