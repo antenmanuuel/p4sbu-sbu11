@@ -243,8 +243,8 @@ const Notifications = ({ darkMode }) => {
                                 <button
                                     onClick={handleMarkAllAsRead}
                                     className={`flex items-center px-3 py-1.5 rounded-md text-sm ${darkMode
-                                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                        : 'bg-blue-600 hover:bg-blue-700 text-white'
                                         }`}
                                 >
                                     <FaCheckDouble className="mr-2" />
@@ -283,12 +283,12 @@ const Notifications = ({ darkMode }) => {
                                 >
                                     <div className="flex items-start gap-4">
                                         <div className={`flex-shrink-0 mt-1 rounded-full p-2 ${notification.type === 'fine'
-                                                ? 'bg-red-100 text-red-600'
-                                                : notification.type === 'permit'
-                                                    ? 'bg-yellow-100 text-yellow-600'
-                                                    : notification.type === 'reservation'
-                                                        ? 'bg-blue-100 text-blue-600'
-                                                        : 'bg-gray-100 text-gray-600'
+                                            ? 'bg-red-100 text-red-600'
+                                            : notification.type === 'permit'
+                                                ? 'bg-yellow-100 text-yellow-600'
+                                                : notification.type === 'reservation'
+                                                    ? 'bg-blue-100 text-blue-600'
+                                                    : 'bg-gray-100 text-gray-600'
                                             }`}
                                         >
                                             {getNotificationIcon(notification.type)}
@@ -345,42 +345,87 @@ const Notifications = ({ darkMode }) => {
                                 onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
                                 disabled={currentPage === 1}
                                 className={`px-3 py-1 rounded-md ${currentPage === 1
-                                        ? darkMode
-                                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                                            : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                                        : darkMode
-                                            ? 'bg-gray-700 text-white hover:bg-gray-600'
-                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                    ? darkMode
+                                        ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                        : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                    : darkMode
+                                        ? 'bg-gray-700 text-white hover:bg-gray-600'
+                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                     }`}
                             >
                                 Previous
                             </button>
 
-                            {[...Array(totalPages)].map((_, index) => (
-                                <button
-                                    key={index}
-                                    onClick={() => setCurrentPage(index + 1)}
-                                    className={`px-3 py-1 rounded-md ${currentPage === index + 1
-                                            ? 'bg-red-600 text-white'
-                                            : darkMode
-                                                ? 'bg-gray-700 text-white hover:bg-gray-600'
-                                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                        }`}
-                                >
-                                    {index + 1}
-                                </button>
-                            ))}
+                            {/* First Page */}
+                            {currentPage > 3 && (
+                                <>
+                                    <button
+                                        onClick={() => setCurrentPage(1)}
+                                        className={`px-3 py-1 rounded-md ${darkMode
+                                            ? 'bg-gray-700 text-white hover:bg-gray-600'
+                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                                    >
+                                        1
+                                    </button>
+                                    {currentPage > 4 && (
+                                        <span className={`px-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>...</span>
+                                    )}
+                                </>
+                            )}
+
+                            {/* Page Numbers */}
+                            {[...Array(totalPages)].map((_, index) => {
+                                const pageNumber = index + 1;
+                                // Show current page and one page before and after
+                                if (
+                                    pageNumber === currentPage ||
+                                    pageNumber === currentPage - 1 ||
+                                    pageNumber === currentPage + 1
+                                ) {
+                                    return (
+                                        <button
+                                            key={index}
+                                            onClick={() => setCurrentPage(pageNumber)}
+                                            className={`px-3 py-1 rounded-md ${currentPage === pageNumber
+                                                ? 'bg-red-600 text-white'
+                                                : darkMode
+                                                    ? 'bg-gray-700 text-white hover:bg-gray-600'
+                                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                                        >
+                                            {pageNumber}
+                                        </button>
+                                    );
+                                }
+                                return null;
+                            })}
+
+                            {/* Last Page */}
+                            {currentPage < totalPages - 2 && (
+                                <>
+                                    {currentPage < totalPages - 3 && (
+                                        <span className={`px-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>...</span>
+                                    )}
+                                    <button
+                                        onClick={() => setCurrentPage(totalPages)}
+                                        className={`px-3 py-1 rounded-md ${darkMode
+                                            ? 'bg-gray-700 text-white hover:bg-gray-600'
+                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                                    >
+                                        {totalPages}
+                                    </button>
+                                </>
+                            )}
 
                             <button
                                 onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
                                 disabled={currentPage === totalPages}
                                 className={`px-3 py-1 rounded-md ${currentPage === totalPages
-                                        ? darkMode
-                                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                                            : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                                        : darkMode
-                                            ? 'bg-gray-700 text-white hover:bg-gray-600'
-                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                    ? darkMode
+                                        ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                        : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                    : darkMode
+                                        ? 'bg-gray-700 text-white hover:bg-gray-600'
+                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                     }`}
                             >
                                 Next
