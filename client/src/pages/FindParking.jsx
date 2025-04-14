@@ -4,13 +4,14 @@
 // Additionally, ChatGPT (with project and code context) modified the initial/previous iteration of code to be maximized for code readability as well as descriptive comments (for Instructor understanding). 
 // It can be credited that AI played a crucial role in heavily contributing/modifying/optimizing this entire file's code (after the initial changes were written by Student). 
 // Commits and pushes are executed after the final version have been made for the specific implementation changes during that coding session. 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { LotService, ReservationService, PermitService, CarService, AuthService } from '../utils/api';
 import ResultsView from '../components/ResultsView';
 import LotDetailsView from '../components/LotDetailsView';
 import CarInfoForm from '../components/CarInfoForm';
 import PaymentPage from '../components/PaymentPage';
-import { LotService, ReservationService, PermitService, CarService, AuthService } from '../utils/api';
+import ParkingMap from '../components/ParkingMap';
 // Import Mapbox components
 import ReactMapGL, { Marker, NavigationControl, GeolocateControl, Source, Layer, Popup } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -29,14 +30,9 @@ if (!MAPBOX_TOKEN) {
 }
 
 const FindParking = ({ darkMode, isAuthenticated }) => {
-    // Add useNavigate hook
     const navigate = useNavigate();
-
     // View states: 'search', 'results', 'details', 'car-info', 'payment', 'confirmation'
     const [currentView, setCurrentView] = useState('search');
-
-    // Search states
-    const [searching, setSearching] = useState(false);
 
     // Form states
     const [address, setAddress] = useState('');
@@ -99,6 +95,9 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
     const [userCars, setUserCars] = useState([]);
     const [loadingCars, setLoadingCars] = useState(false);
     const [carError, setCarError] = useState(null);
+
+    // Add state for search in progress
+    const [searching, setSearching] = useState(false);
 
     // Effect to restore reservation data from sessionStorage if present
     useEffect(() => {
@@ -474,9 +473,14 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         setSearching(true);
         setCurrentView('results');
 
-        // Fetch real parking lot data from the API
-        await fetchParkingLots(locationToUse.coordinates[0], locationToUse.coordinates[1]);
-        setSearching(false);
+        try {
+            // Fetch real parking lot data from the API
+            await fetchParkingLots(locationToUse.coordinates[0], locationToUse.coordinates[1]);
+        } catch (error) {
+            console.error('Error during search:', error);
+        } finally {
+            setSearching(false);
+        }
     };
 
     // Handle clicking back button
@@ -811,11 +815,50 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
         try {
             // Calculate total price based on lot rate type and features
-            const totalPrice = selectedLot.isEV
-                ? parseFloat(duration) * selectedLot.evChargingRate
-                : selectedLot.rateType === 'Hourly'
-                    ? parseFloat(duration) * selectedLot.hourlyRate
-                    : selectedLot.semesterRate;
+            let totalPrice = 0;
+
+            // Convert string times to Date objects for time-based pricing
+            const startDateTime = new Date(`${date}T${startTime}:00`);
+
+            if (selectedLot.rateType === 'Hourly') {
+                const endDateTime = new Date(`${date}T${endTime}:00`);
+
+                // Check if the reservation extends past 7PM (19:00)
+                const sevenPM = new Date(`${date}T19:00:00`);
+
+                // Calculate billable duration respecting the 7PM cutoff
+                let billableDurationHours;
+
+                if (startDateTime >= sevenPM) {
+                    // If starting after 7PM, no charge for metered parking
+                    billableDurationHours = 0;
+                } else if (endDateTime > sevenPM) {
+                    // If ending after 7PM, only charge until 7PM
+                    billableDurationHours = (sevenPM - startDateTime) / (1000 * 60 * 60);
+                } else {
+                    // If entirely before 7PM, charge the full duration
+                    billableDurationHours = (endDateTime - startDateTime) / (1000 * 60 * 60);
+                }
+
+                // Calculate price based on rate type and EV status
+                totalPrice = selectedLot.isEV
+                    ? billableDurationHours * selectedLot.evChargingRate
+                    : billableDurationHours * selectedLot.hourlyRate;
+            } else if (selectedLot.rateType === 'Permit-based') {
+                // For permit-based lots, check if it's after 4PM (16:00)
+                const fourPM = new Date(`${date}T16:00:00`);
+
+                if (startDateTime >= fourPM) {
+                    // If starting after 4PM, permit-based lots are free
+                    totalPrice = 0;
+                } else {
+                    // Otherwise, use the semester rate
+                    totalPrice = selectedLot.semesterRate || 0;
+                }
+            } else {
+                // For other rate types, use the semester rate
+                totalPrice = selectedLot.semesterRate || 0;
+            }
 
             // Prepare reservation data
             const reservationData = {
@@ -843,20 +886,24 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 // Use real reservation ID from backend if available
                 setReservationId(result.data.reservationId || 'RES' + Math.floor(Math.random() * 1000000));
                 setError('');
+                // Only show confirmation on success
+                setCurrentView('confirmation');
             } else {
                 setError(result.error || 'Failed to create reservation');
-                // Use a fake ID for demo purposes if backend call fails
-                setReservationId('RES' + Math.floor(Math.random() * 1000000));
+                // Stay on payment page when there's an error
+                setCurrentView('payment');
+                // Clear the payment info so success message doesn't show
+                setPaymentInfo(null);
             }
         } catch (err) {
             console.error('Error creating reservation:', err);
             setError('An unexpected error occurred while creating your reservation');
-            // Use a fake ID for demo purposes if there's an error
-            setReservationId('RES' + Math.floor(Math.random() * 1000000));
+            // Stay on payment page when there's an error
+            setCurrentView('payment');
+            // Clear the payment info so success message doesn't show
+            setPaymentInfo(null);
         } finally {
             setIsLoading(false);
-            // Show confirmation regardless of backend success (for demo)
-            setCurrentView('confirmation');
         }
     };
 
@@ -907,6 +954,31 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
     // Add a function to render the error message
     const renderError = () => {
         if (!error) return null;
+
+        // Check if it's the already has active reservation error
+        const hasActiveReservationError = error.includes('already have an active reservation');
+
+        if (hasActiveReservationError) {
+            return (
+                <div className={`p-6 rounded-lg ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-50 text-red-800'} mb-4`}>
+                    <div className="flex flex-col items-center text-center space-y-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <h3 className="text-lg font-medium">You Already Have an Active Reservation</h3>
+                        <p>{error}</p>
+                        <div className="flex space-x-4 mt-2">
+                            <button
+                                onClick={() => navigate('/dashboard')}
+                                className={`px-4 py-2 rounded-md ${darkMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-500 hover:bg-blue-600'} text-white font-medium transition-colors`}
+                            >
+                                View My Reservations
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
 
         return (
             <div className={`p-4 rounded-lg ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-50 text-red-800'} mb-4`}>
@@ -1186,22 +1258,13 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                             </div>
 
                             {/* Map Section */}
-                            <div className="h-[600px] rounded-2xl overflow-hidden shadow-lg relative">
-                                <div className={`absolute top-4 left-4 z-10 ${darkMode ? 'bg-gray-800/90 text-white' : 'bg-white/90 text-gray-900'} rounded-lg shadow-lg p-3 text-sm backdrop-blur-sm`}>
-                                    <p className="font-medium flex items-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mr-2 text-red-500">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
-                                        </svg>
-                                        Click on the map to select a location
-                                    </p>
-                                </div>
+                            <div className="h-[600px] rounded-lg overflow-hidden shadow-md">
                                 <ReactMapGL
+                                    key={`map-${currentView}-${transportMode}-${Date.now()}`}
                                     mapboxAccessToken={MAPBOX_TOKEN}
                                     initialViewState={mapCenter}
                                     style={{ width: '100%', height: '100%' }}
-                                    mapStyle="mapbox://styles/mapbox/outdoors-v12" // Terrain view
-                                    onClick={handleMapClick}
+                                    mapStyle="mapbox://styles/mapbox/outdoors-v12"
                                 >
                                     <GeolocateControl position="top-right" />
                                     <NavigationControl position="top-right" />
@@ -1339,6 +1402,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                 {/* Remove the redundant overlay info box that was here */}
 
                                 <ReactMapGL
+                                    key={`map-${currentView}-${transportMode}-${Date.now()}`}
                                     mapboxAccessToken={MAPBOX_TOKEN}
                                     initialViewState={{
                                         longitude: selectedLot ? selectedLot.coordinates[1] : (selectedLocation?.coordinates[1] || mapCenter.longitude),
@@ -1354,7 +1418,8 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                     {/* Create path from selected lot to destination */}
                                     {selectedLot && selectedLocation && (
                                         <Source
-                                            id="route"
+                                            key={`main-route-${transportMode}`}
+                                            id="main-route"
                                             type="geojson"
                                             data={selectedLotRoute || {
                                                 type: 'Feature',
@@ -1369,7 +1434,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                             }}
                                         >
                                             <Layer
-                                                id="route-line"
+                                                id="main-route-line"
                                                 type="line"
                                                 paint={{
                                                     'line-color': transportMode === 'walking'
@@ -1477,31 +1542,117 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 );
 
             case 'payment':
+                // Calculate price with time cutoffs for display
+                let displayPrice;
+
+                // Convert string times to Date objects
+                const startDateTime = new Date(`${date}T${startTime}:00`);
+                const endDateTime = new Date(`${date}T${endTime}:00`);
+
+                if (selectedLot?.rateType === 'Hourly') {
+                    // Check if the reservation extends past 7PM (19:00)
+                    const sevenPM = new Date(`${date}T19:00:00`);
+
+                    // Calculate billable duration respecting the 7PM cutoff
+                    let billableDurationHours;
+
+                    if (startDateTime >= sevenPM) {
+                        // If starting after 7PM, no charge for metered parking
+                        billableDurationHours = 0;
+                    } else if (endDateTime > sevenPM) {
+                        // If ending after 7PM, only charge until 7PM
+                        billableDurationHours = (sevenPM - startDateTime) / (1000 * 60 * 60);
+                    } else {
+                        // If entirely before 7PM, charge the full duration
+                        billableDurationHours = (endDateTime - startDateTime) / (1000 * 60 * 60);
+                    }
+
+                    // Calculate price based on rate type and EV status
+                    const calculatedPrice = selectedLot.isEV
+                        ? billableDurationHours * selectedLot.evChargingRate
+                        : billableDurationHours * selectedLot.hourlyRate;
+
+                    displayPrice = `$${calculatedPrice.toFixed(2)}`;
+                } else if (selectedLot?.rateType === 'Permit-based') {
+                    // For permit-based lots, check if it's after 4PM (16:00)
+                    const fourPM = new Date(`${date}T16:00:00`);
+
+                    if (startDateTime >= fourPM) {
+                        // If starting after 4PM, permit-based lots are free
+                        displayPrice = '$0.00';
+                    } else {
+                        // Otherwise, use the semester rate
+                        displayPrice = `$${selectedLot?.semesterRate || 0}`;
+                    }
+                } else {
+                    // For other rate types, use the semester rate
+                    displayPrice = `$${selectedLot?.semesterRate || 0}`;
+                }
+
                 return (
                     <div className="w-full max-w-6xl mx-auto px-4">
+                        {renderError()}
+                        {renderLoadingIndicator()}
                         <PaymentPage
                             darkMode={darkMode}
                             lotName={selectedLot?.name}
-                            price={selectedLot?.isEV
-                                ? `$${(parseFloat(duration) * selectedLot.evChargingRate).toFixed(2)}`
-                                : selectedLot?.rateType === 'Hourly'
-                                    ? `$${(parseFloat(duration) * selectedLot.hourlyRate).toFixed(2)}`
-                                    : `$${selectedLot.semesterRate.toFixed(2)}`}
+                            price={displayPrice}
                             vehicleInfo={vehicleInfo}
                             onBackClick={handlePaymentBackClick}
                             onCompletePayment={handlePaymentComplete}
                             hasValidPermit={hasValidPermit}
                             validPermitDetails={validPermitDetails}
-                            priceDetails={selectedLot?.isEV
-                                ? `$${selectedLot.evChargingRate}/hour × ${duration.replace(' hours', '')}`
-                                : selectedLot?.rateType === 'Hourly'
-                                    ? `$${selectedLot.hourlyRate}/hour × ${duration.replace(' hours', '')}`
-                                    : 'Semester permit rate'}
+                            hasReservationError={!!error}
                         />
                     </div>
                 );
 
             case 'confirmation':
+                // Calculate the final price with time cutoffs for display
+                let confirmationPrice;
+
+                // Convert string times to Date objects
+                const confirmStartDateTime = new Date(`${date}T${startTime}:00`);
+                const confirmEndDateTime = new Date(`${date}T${endTime}:00`);
+
+                if (selectedLot?.rateType === 'Hourly') {
+                    // Check if the reservation extends past 7PM (19:00)
+                    const sevenPM = new Date(`${date}T19:00:00`);
+
+                    // Calculate billable duration respecting the 7PM cutoff
+                    let billableDurationHours;
+
+                    if (confirmStartDateTime >= sevenPM) {
+                        // If starting after 7PM, no charge for metered parking
+                        billableDurationHours = 0;
+                    } else if (confirmEndDateTime > sevenPM) {
+                        // If ending after 7PM, only charge until 7PM
+                        billableDurationHours = (sevenPM - confirmStartDateTime) / (1000 * 60 * 60);
+                    } else {
+                        // If entirely before 7PM, charge the full duration
+                        billableDurationHours = (confirmEndDateTime - confirmStartDateTime) / (1000 * 60 * 60);
+                    }
+
+                    // Calculate price based on rate type and EV status
+                    confirmationPrice = selectedLot.isEV
+                        ? (billableDurationHours * selectedLot.evChargingRate).toFixed(2)
+                        : (billableDurationHours * selectedLot.hourlyRate).toFixed(2);
+                } else if (selectedLot?.rateType === 'Permit-based') {
+                    // For permit-based lots, check if it's after 4PM (16:00)
+                    const fourPM = new Date(`${date}T16:00:00`);
+
+                    if (confirmStartDateTime >= fourPM) {
+                        // If starting after 4PM, permit-based lots are free
+                        confirmationPrice = '0.00';
+                    } else {
+                        // Otherwise, use the semester rate
+                        confirmationPrice = selectedLot.semesterRate.toFixed(2);
+                    }
+                } else {
+                    // For other rate types, use the semester rate
+                    confirmationPrice = selectedLot.semesterRate.toFixed(2);
+                }
+
                 return (
                     <div className="w-full max-w-6xl mx-auto px-4 py-8 animate-fadeIn">
                         <div className={`p-8 rounded-lg shadow-md ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
@@ -1567,14 +1718,11 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                         Payment
                                     </p>
                                     <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                        {paymentInfo?.paymentMethod === 'card' ? 'Credit Card' : 'SOLAR Account'}
+                                        {paymentInfo?.paymentMethod === 'card' ? 'Credit Card' :
+                                            paymentInfo?.paymentMethod === 'solar' ? 'SOLAR Account' : 'Existing Permit'}
                                     </p>
                                     <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                        {selectedLot?.isEV
-                                            ? `$${(parseFloat(duration) * selectedLot.evChargingRate).toFixed(2)}`
-                                            : selectedLot?.rateType === 'Hourly'
-                                                ? `$${(parseFloat(duration) * selectedLot.hourlyRate).toFixed(2)}`
-                                                : `$${selectedLot.semesterRate.toFixed(2)}`} • Transaction #{paymentInfo?.transactionId}
+                                        ${confirmationPrice} • Transaction #{paymentInfo?.transactionId}
                                     </p>
                                 </div>
                             </div>
