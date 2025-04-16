@@ -11,6 +11,7 @@ import ResultsView from '../components/ResultsView';
 import LotDetailsView from '../components/LotDetailsView';
 import CarInfoForm from '../components/CarInfoForm';
 import PaymentPage from '../components/PaymentPage';
+import ParkingForecast from '../components/ParkingForecast';
 import ParkingMap from '../components/ParkingMap';
 // Import Mapbox components
 import ReactMapGL, { Marker, NavigationControl, GeolocateControl, Source, Layer, Popup } from 'react-map-gl';
@@ -1593,6 +1594,12 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                     <div className="w-full max-w-6xl mx-auto px-4">
                         {renderError()}
                         {renderLoadingIndicator()}
+                        <div className="mb-6">
+                            <ParkingForecast
+                                darkMode={darkMode}
+                                lot={selectedLot}
+                            />
+                        </div>
                         <PaymentPage
                             darkMode={darkMode}
                             lotName={selectedLot?.name}

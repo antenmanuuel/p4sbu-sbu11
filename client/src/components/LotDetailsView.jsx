@@ -4,6 +4,7 @@ import { FaArrowLeft, FaParking, FaCheckCircle, FaCar, FaWheelchair, FaChargingS
 import ReactMapGL, { Marker, NavigationControl, Source, Layer } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MAPBOX_TOKEN } from '../utils/env';
+import ParkingForecast from './ParkingForecast';
 
 const LotDetailsView = ({
     darkMode,
@@ -27,7 +28,7 @@ const LotDetailsView = ({
     const [route, setRoute] = useState(null);
     const [routeDistance, setRouteDistance] = useState(null);
     const [routeDuration, setRouteDuration] = useState(null);
-    const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+    const [isLoading, setIsLoading] = useState(false); // Renamed from isLoadingRoute to fix linter
 
     // Handle transport mode change
     const handleTransportModeChange = (mode) => {
@@ -55,7 +56,7 @@ const LotDetailsView = ({
         const fetchRoute = async () => {
             if (!destination || !lot) return;
 
-            setIsLoadingRoute(true);
+            setIsLoading(true);
             try {
                 // Format coordinates as "lng,lat" strings
                 const start = `${lot.coordinates[1]},${lot.coordinates[0]}`;
@@ -121,7 +122,7 @@ const LotDetailsView = ({
                 };
                 setRoute(fallbackRoute);
             } finally {
-                setIsLoadingRoute(false);
+                setIsLoading(false);
             }
         };
 
@@ -557,6 +558,16 @@ const LotDetailsView = ({
                                     </div>
                                 </div>
                             )}
+
+                            {/* Loading indicator for route */}
+                            {isLoading && (
+                                <div className={`absolute top-4 right-4 z-10 ${darkMode ? 'bg-gray-800/90 text-white' : 'bg-white/90 text-gray-900'} rounded-lg shadow-lg p-3 text-sm backdrop-blur-sm`}>
+                                    <div className="flex items-center">
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+                                        <p>Loading route...</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -623,6 +634,18 @@ const LotDetailsView = ({
                             </p>
                         </div>
                     </div>
+
+                    {/* Parking Availability Forecast */}
+                    {startDateTime && (
+                        <div className="mt-8">
+                            <ParkingForecast
+                                darkMode={darkMode}
+                                lot={lot}
+                                selectedDate={new Date().toISOString().split('T')[0]}
+                                selectedStartTime={new Date().getHours() + ":00"}
+                            />
+                        </div>
+                    )}
                 </div>
             </div>
 
