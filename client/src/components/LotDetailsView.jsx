@@ -254,7 +254,7 @@ const LotDetailsView = ({
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 animate-fadeIn">
             {/* Hero Section */}
-            <div className="relative mb-10">
+            <div className="relative mb-6">
                 {/* Decorative elements */}
                 <div className="absolute -top-10 -right-10 w-40 h-40 bg-red-600 opacity-5 rounded-full blur-2xl"></div>
                 <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-blue-500 opacity-5 rounded-full blur-2xl"></div>
@@ -290,7 +290,6 @@ const LotDetailsView = ({
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left sidebar - Lot Information */}
                 <div className="lg:col-span-1 space-y-6">
-                    {/* Map Preview Card - REMOVED */}
                     <div className={`rounded-2xl overflow-hidden shadow-lg ${darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'}`}>
                         <div className="p-6 relative">
                             {/* Decorative accent */}
@@ -424,13 +423,50 @@ const LotDetailsView = ({
                             </div>
                         </div>
                     </div>
+
+                    {/* EV Charging Information - Only show if lot has EV features */}
+                    {lot.features && lot.features.isEV && (
+                        <div className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-blue-50 border-blue-200'}`}>
+                            <div className="flex items-start">
+                                <FaChargingStation className={`text-xl mr-3 mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+                                <div>
+                                    <h3 className={`font-bold text-lg mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        EV Charging Information
+                                    </h3>
+
+                                    <div className="grid grid-cols-1 gap-y-3 mb-3">
+                                        <div>
+                                            <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Charging Rate</p>
+                                            <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                                ${lot.evChargingRate || 1.86}/hour ({lot.evMinimumHours || 1}-Hour Minimum, {lot.evMaximumHours || 24}-Hour Maximum)
+                                            </p>
+                                        </div>
+
+                                        <div>
+                                            <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Idle Charging Fee</p>
+                                            <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                                ${lot.idleChargingFee || 2.50}/hour after {lot.evGracePeriodMinutes || 30} minute grace period
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                        <p className="mb-2">
+                                            <span className="font-medium">Note: </span>
+                                            EV Charging Station payment is required instead of metered parking payment.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Right content - Map and Reservation */}
                 <div className="lg:col-span-2">
                     {/* Transport Mode Selector */}
                     {destination && (
-                        <div className={`mb-8 flex items-center justify-center`}>
+                        <div className={`mb-6 flex items-center justify-center`}>
                             <div className={`inline-flex rounded-lg p-1 shadow-md ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                 <button
                                     type="button"
@@ -641,101 +677,11 @@ const LotDetailsView = ({
                             <ParkingForecast
                                 darkMode={darkMode}
                                 lot={lot}
-                                selectedDate={new Date().toISOString().split('T')[0]}
-                                selectedStartTime={new Date().getHours() + ":00"}
                             />
                         </div>
                     )}
                 </div>
             </div>
-
-            {/* Feature list */}
-            <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                {/* Price */}
-                <div className="flex items-center">
-                    <FaDollarSign className="text-lg mr-2 text-green-600" />
-                    <div>
-                        <p className="text-xs">Price</p>
-                        <p className="font-medium">{lot.price}</p>
-                    </div>
-                </div>
-
-                {/* Available spaces */}
-                <div className="flex items-center">
-                    <FaParking className="text-lg mr-2 text-blue-600" />
-                    <div>
-                        <p className="text-xs">Available Spots</p>
-                        <p className="font-medium">{lot.availableSpots} of {lot.totalSpaces}</p>
-                    </div>
-                </div>
-
-                {/* Distance */}
-                <div className="flex items-center">
-                    <FaLocationArrow className="text-lg mr-2 text-purple-600" />
-                    <div>
-                        <p className="text-xs">Distance</p>
-                        <p className="font-medium">{lot.distance || routeDistance || "Unknown"}</p>
-                    </div>
-                </div>
-
-                {/* Travel Time */}
-                <div className="flex items-center">
-                    <FaClock className="text-lg mr-2 text-orange-600" />
-                    <div>
-                        <p className="text-xs">Travel Time</p>
-                        <p className="font-medium">
-                            {routeDuration ? `${routeDuration} min ${getTransportText()}` : "Calculating..."}
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            {/* EV Charging Information - Only show if lot has EV features */}
-            {lot.features && lot.features.isEV && (
-                <div className={`mb-6 p-4 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-blue-50 border-blue-200'}`}>
-                    <div className="flex items-start">
-                        <FaChargingStation className={`text-xl mr-3 mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
-                        <div>
-                            <h3 className={`font-bold text-lg mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                EV Charging Information
-                            </h3>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mb-3">
-                                <div>
-                                    <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Charging Rate</p>
-                                    <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                        ${lot.evChargingRate || 1.86}/hour ({lot.evMinimumHours || 1}-Hour Minimum, {lot.evMaximumHours || 24}-Hour Maximum)
-                                    </p>
-                                </div>
-
-                                <div>
-                                    <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Idle Charging Fee</p>
-                                    <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                        ${lot.idleChargingFee || 2.50}/hour after {lot.evGracePeriodMinutes || 30} minute grace period
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                <p className="mb-2">
-                                    <span className="font-medium">Note: </span>
-                                    Use of EV Charging Station parking spaces requires a station wand to be plugged
-                                    into a vehicle at all times.
-                                </p>
-                                <p>
-                                    EV Charging Station parking spaces located inside of metered parking lots only
-                                    require EV Charging Station payment, and not payment to the metered parking lot pay station.
-                                </p>
-                                <p className="mt-2">
-                                    <span className="font-medium">Idle Charging Fee: </span>
-                                    ${lot.idleChargingFee || 2.50}/hour for vehicles that are fully charged but remain parked.
-                                    This charge will begin after a grace period of {lot.evGracePeriodMinutes || 30} minutes.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

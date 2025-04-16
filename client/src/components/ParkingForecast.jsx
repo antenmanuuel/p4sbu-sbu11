@@ -7,7 +7,7 @@ const ParkingForecast = ({ darkMode, lot }) => {
     const [forecastData, setForecastData] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [selectedDay, setSelectedDay] = useState('all'); // 'all', 'Monday', 'Tuesday', etc.
+    const [selectedDay, setSelectedDay] = useState('Monday'); // Default to Monday
 
     // Helper function to convert to 12-hour format
     const format12HourTime = (hour) => {
@@ -44,8 +44,11 @@ const ParkingForecast = ({ darkMode, lot }) => {
             for (let dayIdx = 0; dayIdx < weekdays.length; dayIdx++) {
                 const dayName = weekdays[dayIdx];
 
-                // Generate key times for each day (morning, midday, afternoon)
-                const timeSlots = [9, 12, 15, 18]; // 9AM, 12PM, 3PM, 6PM
+                // Generate hourly time slots from 7AM to 11PM
+                const timeSlots = [];
+                for (let hour = 7; hour <= 23; hour++) {
+                    timeSlots.push(hour);
+                }
                 const dayForecasts = [];
 
                 for (let i = 0; i < timeSlots.length; i++) {
@@ -55,33 +58,84 @@ const ParkingForecast = ({ darkMode, lot }) => {
                     // Apply different patterns based on day and time
                     if (dayName === 'Monday' || dayName === 'Friday') {
                         // Mondays and Fridays are typically busier
-                        if (hour >= 9 && hour <= 12) {
+                        if (hour >= 7 && hour < 9) {
+                            // Early morning - higher availability
+                            availabilityPercentage = baseAvailability * 0.85;
+                        } else if (hour >= 9 && hour < 11) {
                             // Morning rush - lower availability
-                            availabilityPercentage = baseAvailability * 0.6;
-                        } else if (hour >= 15 && hour <= 18) {
-                            // Afternoon rush - even lower availability
                             availabilityPercentage = baseAvailability * 0.5;
+                        } else if (hour >= 11 && hour < 13) {
+                            // Lunch rush
+                            availabilityPercentage = baseAvailability * 0.4;
+                        } else if (hour >= 13 && hour < 15) {
+                            // Early afternoon
+                            availabilityPercentage = baseAvailability * 0.6;
+                        } else if (hour >= 15 && hour < 18) {
+                            // Afternoon rush - even lower availability
+                            availabilityPercentage = baseAvailability * 0.45;
+                        } else if (hour >= 18 && hour < 20) {
+                            // Early evening
+                            availabilityPercentage = baseAvailability * 0.7;
+                        } else if (hour >= 20) {
+                            // Late evening - higher availability
+                            availabilityPercentage = baseAvailability * 0.9;
                         } else {
-                            // Midday - moderate availability
-                            availabilityPercentage = baseAvailability * 0.8;
+                            // Default
+                            availabilityPercentage = baseAvailability * 0.7;
                         }
                     } else if (dayName === 'Wednesday') {
                         // Wednesday tends to be less busy
-                        if (hour >= 9 && hour <= 12) {
-                            availabilityPercentage = baseAvailability * 0.8;
-                        } else if (hour >= 15 && hour <= 18) {
-                            availabilityPercentage = baseAvailability * 0.7;
-                        } else {
+                        if (hour >= 7 && hour < 9) {
+                            // Early morning - higher availability
                             availabilityPercentage = baseAvailability * 0.9;
+                        } else if (hour >= 9 && hour < 11) {
+                            // Morning classes
+                            availabilityPercentage = baseAvailability * 0.7;
+                        } else if (hour >= 11 && hour < 13) {
+                            // Lunch time
+                            availabilityPercentage = baseAvailability * 0.6;
+                        } else if (hour >= 13 && hour < 15) {
+                            // Early afternoon
+                            availabilityPercentage = baseAvailability * 0.75;
+                        } else if (hour >= 15 && hour < 18) {
+                            // Late afternoon
+                            availabilityPercentage = baseAvailability * 0.65;
+                        } else if (hour >= 18 && hour < 20) {
+                            // Early evening
+                            availabilityPercentage = baseAvailability * 0.8;
+                        } else if (hour >= 20) {
+                            // Late evening - higher availability
+                            availabilityPercentage = baseAvailability * 0.95;
+                        } else {
+                            // Default
+                            availabilityPercentage = baseAvailability * 0.8;
                         }
                     } else {
                         // Tuesday and Thursday - normal patterns
-                        if (hour >= 9 && hour <= 12) {
-                            availabilityPercentage = baseAvailability * 0.7;
-                        } else if (hour >= 15 && hour <= 18) {
+                        if (hour >= 7 && hour < 9) {
+                            // Early morning - higher availability
+                            availabilityPercentage = baseAvailability * 0.88;
+                        } else if (hour >= 9 && hour < 11) {
+                            // Morning classes
                             availabilityPercentage = baseAvailability * 0.6;
+                        } else if (hour >= 11 && hour < 13) {
+                            // Lunch time
+                            availabilityPercentage = baseAvailability * 0.5;
+                        } else if (hour >= 13 && hour < 15) {
+                            // Early afternoon
+                            availabilityPercentage = baseAvailability * 0.7;
+                        } else if (hour >= 15 && hour < 18) {
+                            // Late afternoon
+                            availabilityPercentage = baseAvailability * 0.55;
+                        } else if (hour >= 18 && hour < 20) {
+                            // Early evening
+                            availabilityPercentage = baseAvailability * 0.75;
+                        } else if (hour >= 20) {
+                            // Late evening - higher availability
+                            availabilityPercentage = baseAvailability * 0.92;
                         } else {
-                            availabilityPercentage = baseAvailability * 0.85;
+                            // Default
+                            availabilityPercentage = baseAvailability * 0.75;
                         }
                     }
 
@@ -139,8 +193,9 @@ const ParkingForecast = ({ darkMode, lot }) => {
         const chartData = [];
 
         forecastData.weeklyForecast.forEach(day => {
-            // Filter by selected day if not 'all'
-            if (selectedDay === 'all' || day.day === selectedDay) {
+            // Only show data for the selected day
+            if (day.day === selectedDay) {
+                // Show all hourly data for the selected day
                 day.forecasts.forEach(timeSlot => {
                     chartData.push({
                         day: day.day,
@@ -200,10 +255,10 @@ const ParkingForecast = ({ darkMode, lot }) => {
             <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                 <h3 className={`font-bold text-lg mb-1 flex items-center ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     <FaChartLine className={`mr-2 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
-                    Weekly Parking Forecast
+                    Parking Forecast
                 </h3>
                 <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    Projected weekly availability based on historical patterns
+                    Projected daily availability based on historical patterns
                 </p>
             </div>
 
@@ -225,10 +280,10 @@ const ParkingForecast = ({ darkMode, lot }) => {
                             </div>
                             <div>
                                 <p className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                    {selectedDay === 'all' ? 'Weekly Forecast' : `${selectedDay} Forecast`}
+                                    {selectedDay} Forecast
                                 </p>
                                 <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                    {selectedDay === 'all' ? 'Monday through Friday' : 'Select a specific day'}
+                                    Select a day to view hourly availability
                                 </p>
                             </div>
                         </div>
@@ -236,22 +291,13 @@ const ParkingForecast = ({ darkMode, lot }) => {
 
                     {/* Day selector */}
                     <div className="flex flex-wrap gap-2 mb-4">
-                        <button
-                            onClick={() => setSelectedDay('all')}
-                            className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${selectedDay === 'all'
-                                    ? `${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`
-                                    : `${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'} hover:bg-gray-300 dark:hover:bg-gray-600`
-                                }`}
-                        >
-                            All Days
-                        </button>
                         {forecastData.weeklyForecast.map((day, index) => (
                             <button
                                 key={index}
                                 onClick={() => setSelectedDay(day.day)}
                                 className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${selectedDay === day.day
-                                        ? `${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`
-                                        : `${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'} hover:bg-gray-300 dark:hover:bg-gray-600`
+                                    ? `${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`
+                                    : `${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'} hover:bg-gray-300 dark:hover:bg-gray-600`
                                     }`}
                             >
                                 {day.day}
@@ -269,11 +315,15 @@ const ParkingForecast = ({ darkMode, lot }) => {
                         >
                             <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
                             <XAxis
-                                dataKey={selectedDay === 'all' ? 'day' : 'time'}
+                                dataKey="time"
                                 stroke={darkMode ? '#9ca3af' : '#6b7280'}
-                                tick={{ fontSize: 12 }}
+                                tick={{ fontSize: 10 }}
                                 tickLine={{ stroke: darkMode ? '#4b5563' : '#d1d5db' }}
                                 axisLine={{ stroke: darkMode ? '#4b5563' : '#d1d5db' }}
+                                interval={0}
+                                angle={30}
+                                textAnchor="start"
+                                height={60}
                             />
                             <YAxis
                                 stroke={darkMode ? '#9ca3af' : '#6b7280'}
@@ -293,14 +343,9 @@ const ParkingForecast = ({ darkMode, lot }) => {
                                     borderColor: darkMode ? '#374151' : '#e5e7eb',
                                     color: darkMode ? '#f9fafb' : '#111827'
                                 }}
-                                formatter={(value, name, props) => {
+                                formatter={(value, name) => {
                                     if (name === 'availableSpaces') {
-                                        return [
-                                            `${value} spaces`,
-                                            props.payload.day && selectedDay === 'all'
-                                                ? `${props.payload.day} at ${props.payload.time}`
-                                                : 'Available'
-                                        ];
+                                        return [`${value} spaces`, 'Available'];
                                     }
                                     return [value, name];
                                 }}
