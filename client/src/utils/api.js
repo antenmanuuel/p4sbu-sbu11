@@ -677,6 +677,7 @@ export const TicketService = {
     }
 };
 
+
 // Standalone Permit Type Service
 export const PermitTypeService = {
     // used by ManagePermitTypes
@@ -846,6 +847,7 @@ export const LotService = {
             if (filters.status) queryString += `&status=${filters.status}`;
             if (filters.permitType) queryString += `&permitType=${filters.permitType}`;
             if (filters.rateType) queryString += `&rateType=${filters.rateType}`;
+            if (filters.userType) queryString += `&userType=${filters.userType}`;
 
             const response = await API.get(`/lots?${queryString}`);
             return { success: true, data: response.data };
