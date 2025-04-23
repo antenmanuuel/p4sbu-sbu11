@@ -488,16 +488,6 @@ router.post('/', verifyToken, async (req, res) => {
             }
         }
 
-        // Add new permit to the reservation statistics 
-        if (newPermit) {
-            try {
-                await RevenueStatistics.recordPermitPurchase(newPermit.price);
-                console.log(`Recorded permit revenue: $${newPermit.price}`);
-            } catch (error) {
-                console.error('Failed to record permit revenue statistics:', error);
-            }
-        }
-
         // Create a notification for the user about their new reservation
         try {
             await NotificationHelper.createSystemNotification(
@@ -508,7 +498,7 @@ router.post('/', verifyToken, async (req, res) => {
             );
             console.log('Reservation creation notification sent to user:', req.user.userId);
 
-            
+
         } catch (notificationError) {
             console.error('Error creating reservation notification:', notificationError);
             // Continue even if notification creation fails
