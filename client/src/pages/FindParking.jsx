@@ -1594,12 +1594,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                     <div className="w-full max-w-6xl mx-auto px-4">
                         {renderError()}
                         {renderLoadingIndicator()}
-                        <div className="mb-6">
-                            <ParkingForecast
-                                darkMode={darkMode}
-                                lot={selectedLot}
-                            />
-                        </div>
+                        
                         <PaymentPage
                             darkMode={darkMode}
                             lotName={selectedLot?.name}
