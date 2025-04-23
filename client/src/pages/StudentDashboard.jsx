@@ -1553,7 +1553,7 @@ const StudentDashboard = ({ darkMode }) => {
               <div key={index} className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}>
                 <div className="flex justify-between items-center">
                   <div>
-                    <h3 className={`font-semibold text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>{permit.type} - {permit.lot}</h3>
+                    <h3 className={`font-semibold text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>{permit.type}</h3>
                     <p className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Valid Until: {permit.validUntil}</p>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusClass(permit.status)}`}>

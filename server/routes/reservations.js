@@ -439,10 +439,11 @@ router.post('/', verifyToken, async (req, res) => {
                 // Generate a unique permit number
                 const permitNumber = `P-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
 
-                // Create a new permit
-                const endDateTime = new Date(endTime);
+                // Create a new permit with end date 4 months from now
+                const fourMonthsFromNow = new Date();
+                fourMonthsFromNow.setMonth(fourMonthsFromNow.getMonth() + 4);
                 // Set time to end of day (23:59:59.999) to be consistent with expiration checks
-                endDateTime.setHours(23, 59, 59, 999);
+                fourMonthsFromNow.setHours(23, 59, 59, 999);
 
                 // Determine payment status
                 const permitPaymentStatus = freeReservation ? 'paid' : (paymentStatus === 'completed' ? 'paid' : 'unpaid');
@@ -458,8 +459,8 @@ router.post('/', verifyToken, async (req, res) => {
                         lotId: lot._id.toString(),
                         lotName: lot.name
                     }],
-                    startDate: new Date(startTime),
-                    endDate: endDateTime,
+                    startDate: new Date(),
+                    endDate: fourMonthsFromNow,
                     status: 'active',
                     price: totalPrice,
                     paymentStatus: permitPaymentStatus,
@@ -506,6 +507,8 @@ router.post('/', verifyToken, async (req, res) => {
                 '/dashboard'
             );
             console.log('Reservation creation notification sent to user:', req.user.userId);
+
+            
         } catch (notificationError) {
             console.error('Error creating reservation notification:', notificationError);
             // Continue even if notification creation fails
@@ -727,15 +730,16 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             );
         }
 
-        // Create notification for the user about the cancellation
+       
+
+        // Create a notification for the user about their cancelled reservation
         try {
-            await NotificationHelper.createReservationNotification(
+            await NotificationHelper.createSystemNotification(
                 req.user.userId,
-                reservation,
-                'cancelled',
-                '/past-reservations'
+                'Reservation Cancelled',
+                `Your reservation at ${reservation.lotId.name} scheduled for ${new Date(reservation.startTime).toLocaleString()} has been cancelled.`,
+                '/dashboard'
             );
-            console.log('Cancellation notification created for reservation:', reservationId);
         } catch (notificationError) {
             console.error('Error creating cancellation notification:', notificationError);
             // Continue even if notification creation fails
