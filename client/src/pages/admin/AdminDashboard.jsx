@@ -44,11 +44,11 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     const [revenueError, setRevenueError] = useState('');
 
     // State for current month and pie data
-    const [currentMonth, setCurrentMonth] = useState({ month: '', value: 0, permits: 0, citations: 0, other: 0 });
+    const [currentMonth, setCurrentMonth] = useState({ month: '', value: 0, permits: 0, citations: 0, metered: 0});
     const [pieData, setPieData] = useState([
         { name: 'Permits', value: 0 },
         { name: 'Citations', value: 0 },
-        { name: 'Other', value: 0 },
+        { name: 'Metered', value: 0 },
     ]);
 
     // State for growth data
@@ -194,7 +194,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                     value: 0,
                     permits: 0,
                     citations: 0,
-                    other: 0
+                    metered: 0,
                 };
 
                 setCurrentMonth(currentMonthData);
@@ -203,7 +203,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                 const newPieData = [
                     { name: 'Permits', value: currentMonthData.permits || 0 },
                     { name: 'Citations', value: currentMonthData.citations || 0 },
-                    { name: 'Other', value: currentMonthData.other || 0 }
+                    { name: 'Metered', value: currentMonthData.metered || 0 },
                 ].filter(item => item.value > 0);
 
                 setPieData(newPieData.length > 0 ? newPieData : [
@@ -268,7 +268,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                 // Handle empty or error response
                 console.error('Empty or error response from revenue statistics:', response);
                 setRevenueData([]);
-                setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, other: 0 });
+                setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, metered: 0});
                 setPieData([{ name: 'No Revenue', value: 1 }]);
                 setGrowthData([]);
             }
@@ -276,7 +276,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
             console.error('Error fetching revenue statistics:', error);
             // Handle error state
             setRevenueData([]);
-            setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, other: 0 });
+            setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, metered: 0});
             setPieData([{ name: 'No Revenue', value: 1 }]);
             setGrowthData([]);
         } finally {
@@ -338,7 +338,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
         navigate('/');
     }
 
-    const COLORS = ['#4CAF50', '#F44336', '#2196F3'];
+    const COLORS = ['#4CAF50', '#F44336', '#2196F3', '#FF9800'];
 
     const revenue = revenueData.length > 0 ? revenueData[revenueData.length - 1].value : 0;
     const prevRevenue = revenueData.length > 1 ? revenueData[revenueData.length - 2].value : 0;
@@ -801,7 +801,11 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                                                                 fill="#8884d8"
                                                                 dataKey="value"
                                                                 nameKey="name"
-                                                                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                                                label={({ name, percent }) => {
+                                                                    const percentValue = percent * 100;
+                                                                    // Always use 1 decimal place for consistency with the table
+                                                                    return `${name}: ${percentValue.toFixed(1)}%`;
+                                                                }}
                                                             >
                                                                 {pieData.map((entry, index) => (
                                                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -916,6 +920,17 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                                             </td>
                                             <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>
                                                 {currentMonth.value ? ((currentMonth.citations / currentMonth.value) * 100).toFixed(1) : 0}%
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                                Metered Parking
+                                            </td>
+                                            <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>
+                                                {formatCurrency(currentMonth.metered || 0)}
+                                            </td>
+                                            <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>
+                                                {currentMonth.value ? ((currentMonth.metered / currentMonth.value) * 100).toFixed(1) : 0}%
                                             </td>
                                         </tr>
                                         <tr>

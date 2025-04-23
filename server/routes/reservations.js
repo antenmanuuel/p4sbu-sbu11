@@ -332,6 +332,25 @@ router.post('/', verifyToken, async (req, res) => {
                 stripeReceiptUrl = paymentIntent.charges?.data[0]?.receipt_url || null;
 
                 console.log('Stripe payment successful:', stripePaymentIntentId);
+
+                // Record revenue statistics for metered/hourly parking
+                if (paymentStatus === 'completed' && totalPrice > 0) {
+                    try {
+                        // For hourly lots, record as metered revenue
+                        if (lot.rateType === 'Hourly') {
+                            await RevenueStatistics.recordMeteredPurchase(totalPrice);
+                            console.log(`Recorded revenue for metered parking purchase: $${totalPrice}`);
+                        }
+                        // If we have a specific flag for metered parking that isn't captured by lot.rateType
+                        else if (lot.isMetered || lot.meteredParking) {
+                            await RevenueStatistics.recordMeteredPurchase(totalPrice);
+                            console.log(`Recorded revenue for special metered parking purchase: $${totalPrice}`);
+                        }
+                    } catch (revenueError) {
+                        console.error('Failed to record metered revenue statistics:', revenueError);
+                        // Continue processing even if revenue recording fails
+                    }
+                }
             } catch (stripeError) {
                 console.error('Stripe payment failed:', stripeError);
                 return res.status(400).json({
@@ -692,8 +711,15 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
                 // If this reservation contributed to revenue statistics, update those as well
                 try {
                     // Update revenue statistics to reflect the refund
-                    await RevenueStatistics.recordRefund(amountToRefund);
-                    console.log(`Recorded refund of $${amountToRefund} in revenue statistics`);
+                    if (reservation.lotId && reservation.lotId.rateType === 'Hourly') {
+                        // For hourly/metered reservations, use recordMeteredRefund
+                        await RevenueStatistics.recordMeteredRefund(amountToRefund);
+                        console.log(`Recorded metered refund of $${amountToRefund} in revenue statistics`);
+                    } else {
+                        // For permit-based reservations, use recordRefund
+                        await RevenueStatistics.recordRefund(amountToRefund);
+                        console.log(`Recorded refund of $${amountToRefund} in revenue statistics`);
+                    }
                 } catch (statsError) {
                     console.error('Failed to update revenue statistics for refund:', statsError);
                     // Continue even if revenue statistics update fails
@@ -720,7 +746,7 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             );
         }
 
-       
+
 
         // Create a notification for the user about their cancelled reservation
         try {
@@ -980,6 +1006,17 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
                     paymentIntentId: paymentIntent.id,
                     amount: additionalPrice
                 };
+
+                // Record revenue statistics for metered/hourly parking extension
+                if (additionalPrice > 0 && (isMetered || (reservation.lotId.rateType === 'Hourly'))) {
+                    try {
+                        await RevenueStatistics.recordMeteredPurchase(additionalPrice);
+                        console.log(`Recorded revenue for metered parking extension: $${additionalPrice}`);
+                    } catch (revenueError) {
+                        console.error('Failed to record metered extension revenue statistics:', revenueError);
+                        // Continue processing even if revenue recording fails
+                    }
+                }
             } catch (stripeError) {
                 console.error('Stripe payment failed for extension:', stripeError);
                 return res.status(400).json({
