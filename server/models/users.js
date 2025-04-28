@@ -18,13 +18,27 @@ const UserSchema = new mongoose.Schema({
     },
     sbuId: {
         type: String,
-        required: true,
+        required: function () {
+            return this.userType !== 'visitor'; // Only required for non-visitors
+        },
         unique: true,
+        sparse: true, // Allows multiple null values (for visitors)
         validate: {
             validator: function (v) {
-                return /^\d{8}$/.test(v);  // Validates exactly 8 digits
+                // Skip validation if it's a visitor with a special ID format
+                if (this.userType === 'visitor' && v && v.startsWith('V')) {
+                    return /^V\d{10}$/.test(v); // Validates V + 10 digits for visitors
+                }
+
+                // For non-visitors, require 8 digits
+                return /^\d{8}$/.test(v);
             },
-            message: props => `${props.value} is not a valid SBU ID. Must be exactly 8 digits.`
+            message: props => {
+                if (props.value && props.value.startsWith('V')) {
+                    return `${props.value} is not a valid visitor ID. Must start with 'V' followed by 10 digits.`;
+                }
+                return `${props.value} is not a valid SBU ID. Must be exactly 8 digits.`;
+            }
         }
     },
     password: {
@@ -34,7 +48,7 @@ const UserSchema = new mongoose.Schema({
     },
     userType: {
         type: String,
-        enum: ['student', 'faculty', 'admin'],
+        enum: ['student', 'faculty', 'admin', 'visitor'],
         required: true
     },
     status: {

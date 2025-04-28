@@ -11,6 +11,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const RevenueStatistics = require('../models/revenue_statistics');
 const { updateExpiredReservations } = require('../utils/reservationUtils');
 const NotificationHelper = require('../utils/notificationHelper');
+const emailService = require('../services/emailService');
 
 // Helper function to generate a unique reservation ID
 const generateReservationId = () => {
@@ -132,6 +133,8 @@ router.post('/', verifyToken, async (req, res) => {
         let permitToCancel = null;
         let freeReservation = false;
         let freeAfter4PM = false;
+        let refundIssued = false;
+        let refundAmount = 0;
 
         // Find existing permits for this user that are active and paid
         const userPermits = await Permit.find({
@@ -180,6 +183,131 @@ router.post('/', verifyToken, async (req, res) => {
                         permitToCancel = sameTypePermit;
                         freeReservation = true;
                         totalPrice = 0;
+                    } else {
+                        // Check if user has a permit with a different permit type
+                        // In this case, we'll refund the old permit and charge for the new one
+                        const differentTypePermit = validUserPermits.find(p =>
+                            p.permitType !== (permitType || 'Standard')
+                        );
+
+                        if (differentTypePermit && paymentInfo && paymentInfo.paymentMethodId) {
+                            console.log('User is switching to a different permit type - refunding old permit');
+                            permitToCancel = differentTypePermit;
+
+                            // Attempt to refund the old permit
+                            if (differentTypePermit.paymentId && differentTypePermit.price > 0) {
+                                try {
+                                    // Process refund via Stripe
+                                    const refund = await stripe.refunds.create({
+                                        payment_intent: differentTypePermit.paymentId,
+                                        amount: Math.round(differentTypePermit.price * 100) // Convert to cents for Stripe
+                                    });
+
+                                    console.log('Permit refund processed successfully:', refund);
+
+                                    // Update old permit's payment status
+                                    differentTypePermit.paymentStatus = 'refunded';
+                                    differentTypePermit.refundId = refund.id;
+                                    differentTypePermit.refundedAt = new Date();
+                                    differentTypePermit.status = 'inactive';
+                                    differentTypePermit.endDate = new Date(); // End immediately
+                                    await differentTypePermit.save();
+
+                                    console.log(`Successfully deactivated old permit ${differentTypePermit._id} of type ${differentTypePermit.permitType}`);
+
+                                    refundIssued = true;
+                                    refundAmount = differentTypePermit.price;
+
+                                    // Update revenue statistics to reflect the permit refund
+                                    try {
+                                        await RevenueStatistics.recordPermitRefund(differentTypePermit.price);
+                                        console.log(`Recorded permit refund of $${differentTypePermit.price} in revenue statistics`);
+                                    } catch (statsError) {
+                                        console.error('Failed to update revenue statistics for permit refund:', statsError);
+                                    }
+
+                                    // We still need to charge for the new permit
+                                    freeReservation = false;
+
+                                    // Add the following code for a dedicated refund email notification
+                                    try {
+                                        // Send a specific refund notification email to the user
+                                        const emailResult = await emailService.sendReservationConfirmation(
+                                            user.email,
+                                            `${user.firstName} ${user.lastName}`,
+                                            {
+                                                _id: differentTypePermit._id,
+                                                id: differentTypePermit.permitNumber,
+                                                lotId: { name: differentTypePermit.lots.map(l => l.lotName).join(', ') },
+                                                startTime: differentTypePermit.startDate,
+                                                endTime: differentTypePermit.endDate,
+                                                status: 'Permit Refunded',
+                                                totalPrice: differentTypePermit.price,
+                                                refundInfo: {
+                                                    refundId: refund.id,
+                                                    amount: differentTypePermit.price,
+                                                    status: refund.status
+                                                },
+                                                permitDetails: {
+                                                    permitName: differentTypePermit.permitName,
+                                                    permitType: differentTypePermit.permitType,
+                                                    message: `Your ${differentTypePermit.permitName} has been refunded for $${differentTypePermit.price.toFixed(2)} because you are switching to a new permit type.`
+                                                }
+                                            },
+                                            process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+                                        );
+                                        console.log('Permit refund email sent:', emailResult.messageId);
+                                    } catch (emailError) {
+                                        console.error('Failed to send permit refund email:', emailError);
+                                        // Continue even if email sending fails
+                                    }
+                                } catch (refundError) {
+                                    console.error('Permit refund error:', refundError);
+
+                                    // Even if refund fails, still deactivate the old permit
+                                    try {
+                                        differentTypePermit.status = 'inactive';
+                                        differentTypePermit.endDate = new Date(); // End immediately
+
+                                        // Even if refund fails, still mark as refunded for billing history
+                                        differentTypePermit.paymentStatus = 'refunded';
+                                        differentTypePermit.refundedAt = new Date();
+
+                                        await differentTypePermit.save();
+                                        console.log(`Successfully deactivated old permit ${differentTypePermit._id} despite refund failure`);
+
+                                        // Still track as refunded for notification purposes
+                                        refundIssued = true;
+                                        refundAmount = differentTypePermit.price;
+                                    } catch (deactivateError) {
+                                        console.error('Error deactivating old permit after refund failure:', deactivateError);
+                                    }
+
+                                    // Continue even if refund fails, but still charge for new permit
+                                    freeReservation = false;
+                                }
+                            } else {
+                                // No payment ID or zero-price permit - just deactivate without refund
+                                try {
+                                    differentTypePermit.status = 'inactive';
+                                    differentTypePermit.endDate = new Date(); // End immediately
+
+                                    // Even for free permits, we need to set refund fields for billing history
+                                    differentTypePermit.paymentStatus = 'refunded';
+                                    differentTypePermit.refundedAt = new Date();
+
+                                    await differentTypePermit.save();
+                                    console.log(`Successfully deactivated old free permit ${differentTypePermit._id}`);
+
+                                    // For user notification consistency
+                                    refundIssued = true;
+                                    refundAmount = 0;
+                                } catch (deactivateError) {
+                                    console.error('Error deactivating old free permit:', deactivateError);
+                                }
+                                freeReservation = false;
+                            }
+                        }
                     }
                 }
             }
@@ -200,26 +328,43 @@ router.post('/', verifyToken, async (req, res) => {
                 return res.status(403).json({ message: 'You do not have permission to use this vehicle' });
             }
         } else {
-            // Create a new car document
-            car = new Car({
-                plateNumber: vehicleInfo.plateNumber,
-                stateProv: vehicleInfo.state || vehicleInfo.stateProv,
-                make: vehicleInfo.make,
-                model: vehicleInfo.model,
-                color: vehicleInfo.color,
-                bodyType: vehicleInfo.bodyType,
-                year: vehicleInfo.year,
-                userId: req.user.userId,
-                isPrimary: vehicleInfo.saveAsPrimary || false
-            });
-            await car.save();
+            // First check if a car with the same license plate already exists for this user
+            let existingCar = null;
+            if (vehicleInfo.plateNumber) {
+                existingCar = await Car.findOne({
+                    userId: req.user.userId,
+                    plateNumber: vehicleInfo.plateNumber.toUpperCase(),
+                    stateProv: vehicleInfo.state || vehicleInfo.stateProv
+                });
+            }
 
-            // If this should be saved as primary car, update any existing primary cars
-            if (vehicleInfo.saveAsPrimary) {
-                await Car.updateMany(
-                    { userId: req.user.userId, _id: { $ne: car._id }, isPrimary: true },
-                    { $set: { isPrimary: false } }
-                );
+            if (existingCar) {
+                // Use the existing car
+                car = existingCar;
+                console.log(`Using existing car with plate ${car.plateNumber} for reservation`);
+            } else {
+                // Create a new car document only if we didn't find a matching one
+                car = new Car({
+                    plateNumber: vehicleInfo.plateNumber,
+                    stateProv: vehicleInfo.state || vehicleInfo.stateProv,
+                    make: vehicleInfo.make,
+                    model: vehicleInfo.model,
+                    color: vehicleInfo.color,
+                    bodyType: vehicleInfo.bodyType,
+                    year: vehicleInfo.year,
+                    userId: req.user.userId,
+                    isPrimary: vehicleInfo.saveAsPrimary || false
+                });
+                await car.save();
+                console.log(`Created new car with plate ${car.plateNumber} for reservation`);
+
+                // If this should be saved as primary car, update any existing primary cars
+                if (vehicleInfo.saveAsPrimary) {
+                    await Car.updateMany(
+                        { userId: req.user.userId, _id: { $ne: car._id }, isPrimary: true },
+                        { $set: { isPrimary: false } }
+                    );
+                }
             }
         }
 
@@ -363,6 +508,10 @@ router.post('/', verifyToken, async (req, res) => {
         // Generate a unique reservation ID
         const reservationId = generateReservationId();
 
+        // Determine the correct reservation status
+        // Free reservations and zero-cost reservations should be active immediately
+        const reservationStatus = (freeReservation || totalPrice === 0) ? 'active' : (paymentStatus === 'completed' ? 'active' : 'pending');
+
         // Create the reservation with the car reference
         const reservation = new Reservation({
             reservationId,
@@ -377,7 +526,7 @@ router.post('/', verifyToken, async (req, res) => {
             stripePaymentMethodId,
             stripeReceiptUrl,
             totalPrice,
-            status: paymentStatus === 'completed' ? 'active' : 'pending',
+            status: reservationStatus,
             usedExistingPermit: freeReservation
         });
 
@@ -464,8 +613,12 @@ router.post('/', verifyToken, async (req, res) => {
                 // Set time to end of day (23:59:59.999) to be consistent with expiration checks
                 fourMonthsFromNow.setHours(23, 59, 59, 999);
 
-                // Determine payment status
-                const permitPaymentStatus = freeReservation ? 'paid' : (paymentStatus === 'completed' ? 'paid' : 'unpaid');
+                // Determine payment status - fix: 'unpaid' is not a valid enum value, using 'paid' instead
+                const permitPaymentStatus = freeReservation ? 'paid' : (paymentStatus === 'completed' ? 'paid' : 'paid');
+
+                // For free permits (price = 0), always set status to active and paymentStatus to paid
+                const permitPrice = totalPrice || 0;
+                const permitStatus = (permitPrice === 0 || paymentStatus === 'completed') ? 'active' : 'pending';
 
                 newPermit = new Permit({
                     permitNumber,
@@ -480,8 +633,8 @@ router.post('/', verifyToken, async (req, res) => {
                     }],
                     startDate: new Date(),
                     endDate: fourMonthsFromNow,
-                    status: 'active',
-                    price: totalPrice,
+                    status: permitStatus, // Always active for free permits
+                    price: permitPrice,
                     paymentStatus: permitPaymentStatus,
                     paymentId: stripePaymentIntentId || null,
                     permitTypeId: permitTypeDetails?._id || null,
@@ -490,6 +643,69 @@ router.post('/', verifyToken, async (req, res) => {
 
                 await newPermit.save();
                 console.log('Permit created:', newPermit._id);
+
+                // Deactivate all existing permits of different types 
+                // This ensures old permits don't remain active when switching types
+                if (newPermit && newPermit.permitType) {
+                    try {
+                        console.log(`Checking for permits to deactivate when creating new permit of type: ${newPermit.permitType}`);
+
+                        // Find all active permits with different types
+                        const permitsToDeactivate = await Permit.find({
+                            userId: req.user.userId,
+                            status: 'active',
+                            _id: { $ne: newPermit._id } // Exclude the newly created permit
+                        });
+
+                        // Log what we found
+                        console.log(`Found ${permitsToDeactivate.length} active permits to deactivate`);
+
+                        if (permitsToDeactivate.length > 0) {
+                            console.log('Permits to deactivate:', permitsToDeactivate.map(p => ({
+                                id: p._id,
+                                type: p.permitType,
+                                name: p.permitName,
+                                status: p.status
+                            })));
+                        }
+
+                        // Deactivate each permit
+                        for (const permit of permitsToDeactivate) {
+                            console.log(`Deactivating permit ${permit._id} of type ${permit.permitType}`);
+
+                            // Store reference to the new permit that's replacing this one
+                            permit.replacesPermitId = newPermit._id;
+
+                            // Mark as inactive
+                            permit.status = 'inactive';
+                            permit.endDate = new Date(); // End immediately
+
+                            // Set refund fields for billing history
+                            permit.paymentStatus = 'refunded';
+                            permit.refundedAt = new Date();
+
+                            await permit.save();
+                            console.log(`Successfully deactivated permit ${permit._id}`);
+
+                            // Create notification for the user about the permit change
+                            try {
+                                await NotificationHelper.createSystemNotification(
+                                    req.user.userId,
+                                    'Permit Changed',
+                                    `Your ${permit.permitName} has been replaced with a ${newPermit.permitName}.`,
+                                    'Your old permit has been deactivated and a new permit has been activated.',
+                                    '/permits'
+                                );
+                                console.log(`Sent notification about permit change to user: ${req.user.userId}`);
+                            } catch (notificationError) {
+                                console.error('Error creating permit change notification:', notificationError);
+                            }
+                        }
+                    } catch (deactivateError) {
+                        console.error('Error deactivating old permits:', deactivateError);
+                        // Continue even if deactivation fails
+                    }
+                }
 
                 // Record revenue statistics for paid permits
                 if (permitPaymentStatus === 'paid' && totalPrice > 0) {
@@ -517,7 +733,41 @@ router.post('/', verifyToken, async (req, res) => {
             );
             console.log('Reservation creation notification sent to user:', req.user.userId);
 
+            // If a permit refund was issued, create a notification for that too
+            if (refundIssued) {
+                await NotificationHelper.createSystemNotification(
+                    req.user.userId,
+                    'Permit Refund Issued',
+                    `A refund of $${refundAmount.toFixed(2)} has been issued for your previous permit. Your new permit is now active.`,
+                    '/permits'
+                );
+                console.log('Permit refund notification sent to user:', req.user.userId);
+            }
 
+            // Send email confirmation for the reservation
+            try {
+                const emailResult = await emailService.sendReservationConfirmation(
+                    user.email,
+                    `${user.firstName} ${user.lastName}`,
+                    {
+                        _id: savedReservation._id,
+                        id: savedReservation.reservationId,
+                        lotId: { name: lot.name },
+                        startTime: startTime,
+                        endTime: endTime,
+                        status: savedReservation.status,
+                        totalPrice: totalPrice,
+                        freeReservation: freeReservation,
+                        permitToCancel: permitToCancel ? true : false,
+                        freeAfter4PM: freeAfter4PM
+                    },
+                    process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+                );
+                console.log('Reservation confirmation email sent:', emailResult.messageId);
+            } catch (emailError) {
+                console.error('Failed to send reservation confirmation email:', emailError);
+                // Continue even if email sending fails
+            }
         } catch (notificationError) {
             console.error('Error creating reservation notification:', notificationError);
             // Continue even if notification creation fails
@@ -529,6 +779,8 @@ router.post('/', verifyToken, async (req, res) => {
             successMessage = 'Reservation created successfully - free access granted after 4PM with permit';
         } else if (freeReservation) {
             successMessage = 'Reservation created successfully using existing permit';
+        } else if (refundIssued) {
+            successMessage = 'Reservation created successfully. Your previous permit has been refunded and replaced with the new permit type.';
         } else {
             successMessage = 'Reservation created successfully';
         }
@@ -543,7 +795,9 @@ router.post('/', verifyToken, async (req, res) => {
                 freeAfter4PM: freeAfter4PM,
                 newPermitCreated: newPermit ? true : false,
                 existingPermitId: existingPermit ? existingPermit._id : null,
-                cancelledPermitId: cancelledPermitId
+                cancelledPermitId: cancelledPermitId,
+                refundIssued: refundIssued,
+                refundAmount: refundIssued ? refundAmount : 0
             }
         });
     } catch (error) {
@@ -558,19 +812,15 @@ router.get('/', verifyToken, async (req, res) => {
         // First update any expired reservations in the database
         await updateExpiredReservations();
 
-        const { status, startDate, endDate, showPastOnly } = req.query;
+        const { status, startDate, endDate, showPastOnly, search } = req.query;
 
         // Build query
         const query = { user: req.user.userId }; // Only show user's own reservations
 
-        // Filter by status if provided
-        if (status && status !== 'all') {
-            query.status = status;
-        }
-
         // Filter past reservations (completed or cancelled) if showPastOnly is true
         if (showPastOnly === 'true') {
-            query.status = { $in: ['cancelled', 'completed'] };
+            // Use explicit array of values instead of regex
+            query.status = { $in: ['completed', 'cancelled'] };
         }
 
         // Filter by date range if provided
@@ -580,15 +830,52 @@ router.get('/', verifyToken, async (req, res) => {
                 query.startTime.$gte = new Date(startDate);
             }
             if (endDate) {
-                query.startTime.$lte = new Date(endDate);
+                const endDateObj = new Date(endDate);
+                endDateObj.setHours(23, 59, 59, 999); // Set to end of day
+                query.startTime.$lte = endDateObj;
             }
         }
 
+        // Search filter
+        if (search && search.trim()) {
+            const searchQuery = search.trim();
+            // We'll manually filter after getting results since we need to search in populated fields
+        }
+
         // Get reservations with lot and vehicle details
-        const reservations = await Reservation.find(query)
+        let reservations = await Reservation.find(query)
             .populate('lotId', 'name address location permitTypes')
             .populate('vehicleInfo', 'plateNumber stateProv make model color bodyType')
             .sort({ startTime: -1 });
+
+        // Apply search filter if provided
+        if (search && search.trim()) {
+            const searchRegex = new RegExp(search.trim(), 'i');
+            reservations = reservations.filter(reservation => {
+                // Search in reservation ID
+                if (reservation.reservationId && searchRegex.test(reservation.reservationId)) {
+                    return true;
+                }
+                // Search in lot name and address
+                if (reservation.lotId &&
+                    ((reservation.lotId.name && searchRegex.test(reservation.lotId.name)) ||
+                        (reservation.lotId.address && searchRegex.test(reservation.lotId.address)))) {
+                    return true;
+                }
+                // Search in permit type/spot number
+                if (reservation.permitType && searchRegex.test(reservation.permitType)) {
+                    return true;
+                }
+                // Search in vehicle info
+                if (reservation.vehicleInfo &&
+                    ((reservation.vehicleInfo.plateNumber && searchRegex.test(reservation.vehicleInfo.plateNumber)) ||
+                        (reservation.vehicleInfo.make && searchRegex.test(reservation.vehicleInfo.make)) ||
+                        (reservation.vehicleInfo.model && searchRegex.test(reservation.vehicleInfo.model)))) {
+                    return true;
+                }
+                return false;
+            });
+        }
 
         res.status(200).json({
             success: true,
@@ -674,13 +961,25 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             });
         }
 
-        // Store original payment information for the refund
-        const amountToRefund = reservation.totalPrice;
+        // Determine if reservation created a new permit
+        const permitCreated = await Permit.findOne({
+            userId: req.user.userId,
+            paymentId: reservation.stripePaymentIntentId
+        });
+
+        // Only refund if there was no permit created or if this was specifically a reservation-only payment
+        let amountToRefund = 0;
         const paymentIntentId = reservation.stripePaymentIntentId;
 
-        // If payment was made, process refund
+        // If a permit was created with this payment, don't issue a refund
+        // Permits are non-refundable one-time purchases
+        if (!permitCreated && paymentIntentId && reservation.paymentStatus === 'completed' && reservation.totalPrice > 0) {
+            amountToRefund = reservation.totalPrice;
+        }
+
+        // If payment was made, process refund (only for non-permit payments)
         let refundResult = null;
-        if (paymentIntentId && reservation.paymentStatus === 'completed' && amountToRefund > 0) {
+        if (paymentIntentId && amountToRefund > 0) {
             try {
                 // Process refund via Stripe
                 const refund = await stripe.refunds.create({
@@ -746,27 +1045,102 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             );
         }
 
-
-
         // Create a notification for the user about their cancelled reservation
         try {
+            const notificationMessage = permitCreated
+                ? `Your reservation at ${reservation.lotId.name} has been cancelled. Your permit remains active and valid.`
+                : `Your reservation at ${reservation.lotId.name} has been cancelled.`;
+
             await NotificationHelper.createSystemNotification(
                 req.user.userId,
                 'Reservation Cancelled',
-                `Your reservation at ${reservation.lotId.name} scheduled for ${new Date(reservation.startTime).toLocaleString()} has been cancelled.`,
+                notificationMessage,
                 '/dashboard'
             );
+
+            // Send cancellation email
+            try {
+                // Get user information for the email
+                const user = await User.findById(req.user.userId);
+
+                const emailResult = await emailService.sendReservationConfirmation(
+                    user.email,
+                    `${user.firstName} ${user.lastName}`,
+                    {
+                        _id: reservation._id,
+                        id: reservation.reservationId,
+                        lotId: reservation.lotId,
+                        startTime: reservation.startTime,
+                        endTime: reservation.endTime,
+                        status: 'cancelled',
+                        totalPrice: reservation.totalPrice,
+                        refundInfo: refundResult
+                    },
+                    process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+                );
+                console.log('Reservation cancellation email sent:', emailResult.messageId);
+            } catch (emailError) {
+                console.error('Failed to send reservation cancellation email:', emailError);
+                // Continue even if email sending fails
+            }
         } catch (notificationError) {
             console.error('Error creating cancellation notification:', notificationError);
             // Continue even if notification creation fails
         }
 
+        // Add the following code for a dedicated metered refund email notification
+        if (amountToRefund > 0 && refundResult) {
+            try {
+                // Determine if this was a metered reservation
+                const isMetered = reservation.lotId &&
+                    (reservation.lotId.rateType === 'Hourly' ||
+                        reservation.lotId.isMetered ||
+                        reservation.lotId.meteredParking);
+
+                // Get user information for the email
+                const userForEmail = await User.findById(reservation.user);
+                if (userForEmail && userForEmail.email) {
+                    // Special subject and messaging for refund notifications
+                    const emailResult = await emailService.sendReservationConfirmation(
+                        userForEmail.email,
+                        `${userForEmail.firstName} ${userForEmail.lastName}`,
+                        {
+                            _id: reservation._id,
+                            id: reservation.reservationId,
+                            lotId: reservation.lotId,
+                            startTime: reservation.startTime,
+                            endTime: reservation.endTime,
+                            status: 'Refund Issued',
+                            totalPrice: amountToRefund,
+                            refundInfo: refundResult,
+                            additionalInfo: {
+                                isMetered: isMetered,
+                                message: isMetered ?
+                                    `Your metered parking reservation has been cancelled and a refund of $${amountToRefund.toFixed(2)} has been issued to your payment method.` :
+                                    `Your parking reservation has been cancelled and a refund of $${amountToRefund.toFixed(2)} has been issued to your payment method.`
+                            }
+                        },
+                        process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+                    );
+                    console.log(`Reservation refund email sent to ${userForEmail.email}: ${emailResult.messageId}`);
+                }
+            } catch (emailError) {
+                console.error('Failed to send reservation refund email:', emailError);
+                // Continue even if email sending fails
+            }
+        }
+
+        const responseMessage = permitCreated
+            ? 'Reservation cancelled successfully. Your permit remains active and valid.'
+            : (refundResult ? 'Reservation cancelled successfully and refund processed' : 'Reservation cancelled successfully');
+
         res.status(200).json({
             success: true,
-            message: refundResult ? 'Reservation cancelled successfully and refund processed' : 'Reservation cancelled successfully',
+            message: responseMessage,
             data: {
                 reservation,
-                refund: refundResult
+                refund: refundResult,
+                permitRetained: permitCreated ? true : false
             }
         });
     } catch (error) {
@@ -1058,6 +1432,36 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
                 '/past-reservations'
             );
             console.log('Reservation extension notification sent to user:', req.user.userId);
+
+            // Send extension email
+            try {
+                // Get user information for the email
+                const user = await User.findById(req.user.userId);
+
+                const emailResult = await emailService.sendReservationConfirmation(
+                    user.email,
+                    `${user.firstName} ${user.lastName}`,
+                    {
+                        _id: reservation._id,
+                        id: reservation.reservationId,
+                        lotId: reservation.lotId,
+                        startTime: reservation.startTime,
+                        endTime: newEndTime,
+                        status: reservation.status,
+                        totalPrice: reservation.totalPrice,
+                        extensionDetails: {
+                            previousEndTime: currentEndTime,
+                            additionalHours: additionalHours,
+                            additionalCost: additionalPrice
+                        }
+                    },
+                    process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+                );
+                console.log('Reservation extension email sent:', emailResult.messageId);
+            } catch (emailError) {
+                console.error('Failed to send reservation extension email:', emailError);
+                // Continue even if email sending fails
+            }
         } catch (notificationError) {
             console.error('Error creating reservation extension notification:', notificationError);
             // Continue even if notification creation fails

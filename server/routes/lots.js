@@ -36,21 +36,27 @@ router.get('/', async (req, res) => {
         // Handle userType filter - but don't filter out metered lots or other general permits
         if (req.query.userType && req.query.userType !== 'admin') {
             const userType = req.query.userType.toLowerCase();
-            filterQuery.$or = [
-                // Always include metered lots
-                { 'features.isMetered': true },
 
-                // Include lots with appropriate permit types
-                {
-                    permitTypes: {
-                        $in: userType === 'faculty'
-                            ? [/faculty/i, /staff/i, /all/i, /visitor/i, /general/i]
-                            : userType === 'student'
-                                ? [/student/i, /commuter/i, /resident/i, /all/i, /visitor/i, /general/i]
-                                : [/.*/] // Include all lots if userType is unknown
+            // For visitors, only show metered lots
+            if (userType === 'visitor') {
+                filterQuery['features.isMetered'] = true;
+            } else {
+                filterQuery.$or = [
+                    // Always include metered lots
+                    { 'features.isMetered': true },
+
+                    // Include lots with appropriate permit types
+                    {
+                        permitTypes: {
+                            $in: userType === 'faculty'
+                                ? [/faculty/i, /staff/i, /all/i, /visitor/i, /general/i]
+                                : userType === 'student'
+                                    ? [/student/i, /commuter/i, /resident/i, /all/i, /visitor/i, /general/i]
+                                    : [/.*/] // Include all lots if userType is unknown
+                        }
                     }
-                }
-            ];
+                ];
+            }
         }
 
         // Search functionality

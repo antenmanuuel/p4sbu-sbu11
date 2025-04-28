@@ -12,6 +12,8 @@ const Ticket = require('../models/tickets');
 const User = require('../models/users');
 const RevenueStatistics = require('../models/revenue_statistics');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const NotificationHelper = require('../utils/notificationHelper');
+const emailService = require('../services/emailService');
 
 // Initialize Stripe with conditional logic to handle tests
 let stripe;
@@ -56,8 +58,6 @@ if (process.env.STRIPE_SECRET_KEY) {
         refunds: { create: () => ({ id: 'mock_refund_id', status: 'failed' }) }
     };
 }
-
-const NotificationHelper = require('../utils/notificationHelper');
 
 // USER TICKET ROUTES
 
@@ -228,6 +228,20 @@ router.post('/user/tickets/:ticketId/pay', verifyToken, async (req, res) => {
             }
         }
 
+        // Send an email notification about the payment
+        try {
+            const emailResult = await emailService.sendCitationNotification(
+                ticket.user.email,
+                ticket,
+                true, // isPaid = true
+                process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+            );
+            console.log('Citation payment confirmation email sent:', emailResult.messageId);
+        } catch (emailError) {
+            console.error('Failed to send citation payment email:', emailError);
+            // Continue even if email sending fails
+        }
+
         res.json({
             success: true,
             ticket,
@@ -286,6 +300,22 @@ router.post('/admin/tickets', verifyToken, isAdmin, async (req, res) => {
         } catch (notificationError) {
             console.error('Error creating ticket notification:', notificationError);
             // Continue even if notification fails
+        }
+
+        // Find the user associated with this citation
+        if (user && user.email) {
+            try {
+                const emailResult = await emailService.sendCitationNotification(
+                    user.email,
+                    savedTicket,
+                    false, // isPaid = false
+                    process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+                );
+                console.log('Citation notification email sent:', emailResult.messageId);
+            } catch (emailError) {
+                console.error('Failed to send citation notification email:', emailError);
+                // Continue even if email sending fails
+            }
         }
 
         res.status(201).json(savedTicket);

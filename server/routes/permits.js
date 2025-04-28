@@ -15,9 +15,11 @@ const { verifyToken, isAdmin } = require('../middleware/auth');
 const RevenueStatistics = require('../models/revenue_statistics');
 const { updateExpiredPermits } = require('../utils/permitUtils');
 const NotificationHelper = require('../utils/notificationHelper');
+const emailService = require('../services/emailService');
 const Lot = require('../models/lot');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const Reservation = require('../models/reservation');
+const User = require('../models/users');
 
 // GET /api/permits - Retrieve permits with optional filtering & pagination
 router.get('/', verifyToken, async (req, res) => {
@@ -152,6 +154,38 @@ router.post('/', verifyToken, async (req, res) => {
           '/dashboard'
         );
         console.log('Permit creation notification sent to user:', savedPermit.userId);
+
+        // Send email confirmation about the new permit
+        try {
+          // Get user email
+          const user = await User.findById(savedPermit.userId);
+          if (user && user.email) {
+            // Since there's no dedicated permit email method, use reservation confirmation
+            // with a custom message for permit creation
+            const emailResult = await emailService.sendReservationConfirmation(
+              user.email,
+              `${user.firstName} ${user.lastName}`,
+              {
+                _id: savedPermit._id,
+                id: savedPermit.permitNumber,
+                lotId: { name: savedPermit.lots.map(l => l.lotName).join(', ') },
+                startTime: savedPermit.startDate,
+                endTime: savedPermit.endDate,
+                status: 'Permit Created',
+                totalPrice: savedPermit.price,
+                permitDetails: {
+                  permitName: savedPermit.permitName,
+                  permitType: savedPermit.permitType
+                }
+              },
+              process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+            );
+            console.log('Permit creation email sent:', emailResult.messageId);
+          }
+        } catch (emailError) {
+          console.error('Failed to send permit creation email:', emailError);
+          // Continue even if email sending fails
+        }
       }
     } catch (notificationError) {
       console.error('Error creating permit notification:', notificationError);
@@ -219,10 +253,73 @@ router.put('/:id', verifyToken, async (req, res) => {
         }
       }
 
+      // Check if status is changing from inactive to active
+      const statusChangedToActive =
+        req.body.status === 'active' &&
+        currentPermit.status !== 'active';
+
+      // If status changed to active, record the revenue
+      if (statusChangedToActive && updatedPermit.price > 0) {
+        try {
+          await RevenueStatistics.recordPermitPurchase(updatedPermit.price);
+          console.log(`Recorded revenue for permit activation: $${updatedPermit.price}`);
+        } catch (revenueError) {
+          console.error('Failed to record revenue statistics:', revenueError);
+          // Continue processing even if revenue recording fails
+        }
+      }
+
       res.status(200).json({
         message: 'Permit updated successfully',
         permit: updatedPermit
       });
+
+      // Create notifications for the user about their permit being updated
+      try {
+        if (updatedPermit.userId) {
+          await NotificationHelper.createSystemNotification(
+            updatedPermit.userId,
+            statusChangedToActive ? 'Permit Activated' : 'Permit Payment Processed',
+            `Your ${updatedPermit.permitName} permit is now active until ${new Date(updatedPermit.endDate).toLocaleDateString()}.`,
+            '/dashboard'
+          );
+          console.log('Permit status update notification sent to user:', updatedPermit.userId);
+
+          // Send email notification for permit activation/update
+          try {
+            // Get user email
+            const user = await User.findById(updatedPermit.userId);
+            if (user && user.email) {
+              // Use reservation confirmation with custom message for permit update
+              const emailResult = await emailService.sendReservationConfirmation(
+                user.email,
+                `${user.firstName} ${user.lastName}`,
+                {
+                  _id: updatedPermit._id,
+                  id: updatedPermit.permitNumber,
+                  lotId: { name: updatedPermit.lots.map(l => l.lotName).join(', ') },
+                  startTime: updatedPermit.startDate,
+                  endTime: updatedPermit.endDate,
+                  status: statusChangedToActive ? 'Permit Activated' : 'Payment Processed',
+                  totalPrice: updatedPermit.price,
+                  permitDetails: {
+                    permitName: updatedPermit.permitName,
+                    permitType: updatedPermit.permitType
+                  }
+                },
+                process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+              );
+              console.log('Permit update email sent:', emailResult.messageId);
+            }
+          } catch (emailError) {
+            console.error('Failed to send permit update email:', emailError);
+            // Continue even if email sending fails
+          }
+        }
+      } catch (notificationError) {
+        console.error('Error creating permit status notification:', notificationError);
+        // Continue even if notification creation fails
+      }
     }
   } catch (error) {
     console.error('Error updating permit:', error);
@@ -367,19 +464,46 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     // Now delete the permit
     const deletedPermit = await Permit.findByIdAndDelete(req.params.id);
 
-    // Create a notification for the user about the deleted permit
+    // Create notifications for the user about their permit being deleted
     try {
-      // Only create notification if userId exists
-      if (userId) {
-        await NotificationHelper.createSystemNotification(
-          userId,
-          'Permit Deleted',
-          `Your ${permit.permitName || 'parking permit'} has been deleted by an administrator.`,
-          'Your permit has been deleted and any reservations requiring this permit have been cancelled and refunded.',
-          '/past-permits'
-        );
-      } else {
-        console.log('Skipping notification creation - no userId found on permit');
+      await NotificationHelper.createSystemNotification(
+        permit.userId,
+        'Permit Deleted',
+        `Your ${permit.permitName} has been removed. Any associated reservations have been cancelled.`,
+        '/dashboard'
+      );
+      console.log('Permit deletion notification sent to user:', permit.userId);
+
+      // Send email notification about permit deletion
+      try {
+        // Get user email
+        const user = await User.findById(permit.userId);
+        if (user && user.email) {
+          // Use reservation confirmation with cancelled status for permit deletion
+          const emailResult = await emailService.sendReservationConfirmation(
+            user.email,
+            `${user.firstName} ${user.lastName}`,
+            {
+              _id: permit._id,
+              id: permit.permitNumber,
+              lotId: { name: permit.lots.map(l => l.lotName).join(', ') },
+              startTime: permit.startDate,
+              endTime: permit.endDate,
+              status: 'cancelled',
+              totalPrice: permit.price,
+              permitDetails: {
+                permitName: permit.permitName,
+                permitType: permit.permitType,
+                message: 'Your permit has been deleted by an administrator. Any associated reservations have been cancelled.'
+              }
+            },
+            process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+          );
+          console.log('Permit deletion email sent:', emailResult.messageId);
+        }
+      } catch (emailError) {
+        console.error('Failed to send permit deletion email:', emailError);
+        // Continue even if email sending fails
       }
     } catch (notificationError) {
       console.error('Error creating permit deletion notification:', notificationError);

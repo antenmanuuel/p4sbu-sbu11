@@ -7,6 +7,8 @@ const bcrypt = require('bcrypt');
 const mongoose = require('mongoose');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const Notification = require('../models/notification');
+const NotificationPreferences = require('../models/notification_preferences');
+const Permit = require('../models/permits');
 
 // Get user profile
 router.get('/profile', verifyToken, async (req, res) => {
@@ -27,6 +29,7 @@ router.get('/profile', verifyToken, async (req, res) => {
             email: user.email,
             userType: user.userType,
             sbuId: user.sbuId,
+            idLabel: user.userType === 'visitor' ? 'Visitor ID' : 'SBU ID',
             phone: user.phone || '', // Include phone if it exists
             isApproved: user.isApproved,
             car: user.car,
@@ -55,13 +58,60 @@ router.get('/profile', verifyToken, async (req, res) => {
         // Additional admin statistics (only for admin users)
         let adminStats = null;
         if (user.userType === 'admin') {
-            adminStats = {
-                totalUsersManaged: await User.countDocuments(),
-                totalPermitsManaged: 1879, // Mock data
-                actionsThisMonth: 138, // Mock data
-                lastLogin: 'Today, 8:45 AM',
-                role: 'System Administrator'
-            };
+            try {
+                // Get latest login activity for the user
+                const lastLoginActivity = await UserActivity.findOne({
+                    user: user._id,
+                    activity_type: 'login'
+                }).sort({ created_at: -1 });
+
+                // Format last login time
+                let lastLogin = 'Never logged in';
+                if (lastLoginActivity) {
+                    const loginDate = new Date(lastLoginActivity.created_at);
+                    const today = new Date();
+                    const isToday = loginDate.toDateString() === today.toDateString();
+
+                    if (isToday) {
+                        lastLogin = `Today, ${loginDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                    } else {
+                        lastLogin = loginDate.toLocaleDateString([], {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                    }
+                }
+
+                // Get actual counts from database
+                const totalUsersManaged = await User.countDocuments() || 0;
+                const totalPermitsManaged = await Permit.countDocuments() || 0;
+
+                // Count admin actions for the current month
+                const now = new Date();
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+                // Don't track actions anymore
+                adminStats = {
+                    totalUsersManaged,
+                    totalPermitsManaged,
+                    lastLogin,
+                    role: user.userType === 'admin' ? 'System Administrator' : 'Staff'
+                };
+
+                console.log('Admin stats loaded from database:', adminStats);
+            } catch (error) {
+                console.error('Error fetching admin statistics:', error);
+                // Use actual data when possible, zeros for anything that failed
+                adminStats = {
+                    totalUsersManaged: 0,
+                    totalPermitsManaged: 0,
+                    lastLogin: 'Unknown',
+                    role: 'System Administrator'
+                };
+            }
         }
 
         res.status(200).json({
@@ -135,6 +185,7 @@ router.put('/profile', verifyToken, async (req, res) => {
                 email: updatedUser.email,
                 userType: updatedUser.userType,
                 sbuId: updatedUser.sbuId,
+                idLabel: updatedUser.userType === 'visitor' ? 'Visitor ID' : 'SBU ID',
                 phone: updatedUser.phone || '',
                 address: updatedUser.address || '',
                 emergencyContact: updatedUser.emergencyContact || '',
@@ -220,7 +271,7 @@ router.get('/billing-history', verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
 
-        // Find permits with payment status "paid" for this user
+        // Find permits for this user - include both active and refunded permits
         const permits = await User.aggregate([
             { $match: { _id: new mongoose.Types.ObjectId(userId) } },
             {
@@ -232,7 +283,19 @@ router.get('/billing-history', verifyToken, async (req, res) => {
                 }
             },
             { $unwind: '$permits' },
-            { $match: { 'permits.paymentStatus': 'paid' } },
+            // Include both paid permits and those that were paid but later refunded
+            {
+                $match: {
+                    $or: [
+                        { 'permits.paymentStatus': 'paid' },
+                        // Include permits that were paid but later refunded for permit switches
+                        {
+                            'permits.paymentStatus': 'refunded',
+                            'permits.replacesPermitId': { $exists: true, $ne: null }
+                        }
+                    ]
+                }
+            },
             {
                 $project: {
                     _id: '$permits._id',
@@ -245,7 +308,19 @@ router.get('/billing-history', verifyToken, async (req, res) => {
                         }
                     },
                     amount: '$permits.price',
-                    status: '$permits.paymentStatus',
+                    status: {
+                        $cond: {
+                            if: { $eq: ['$permits.paymentStatus', 'refunded'] },
+                            then: {
+                                $cond: {
+                                    if: { $ne: [{ $ifNull: ['$permits.replacesPermitId', null] }, null] },
+                                    then: 'Paid', // For permits that were switched, show as paid
+                                    else: 'Refunded'  // For permits that were refunded, show as refunded
+                                }
+                            },
+                            else: '$permits.paymentStatus'
+                        }
+                    },
                     type: { $literal: 'permit' }
                 }
             },
@@ -260,7 +335,7 @@ router.get('/billing-history', verifyToken, async (req, res) => {
             {
                 $match: {
                     user: new mongoose.Types.ObjectId(userId),
-                    paymentStatus: 'completed'
+                    // Include all reservations, including refunded ones
                 }
             },
             {
@@ -294,14 +369,11 @@ router.get('/billing-history', verifyToken, async (req, res) => {
                         ]
                     },
                     amount: '$totalPrice',
-                    status: {
-                        $cond: {
-                            if: { $eq: ['$paymentStatus', 'completed'] },
-                            then: 'Paid',
-                            else: '$paymentStatus'
-                        }
-                    },
-                    type: { $literal: 'metered' }
+                    status: 'Paid', // Always show as "Paid" for original transactions
+                    type: { $literal: 'metered' },
+                    // Track refund state separately
+                    originalPaymentStatus: '$paymentStatus',
+                    wasRefunded: { $eq: ['$paymentStatus', 'refunded'] }
                 }
             },
             { $sort: { date: -1 } }
@@ -346,8 +418,70 @@ router.get('/billing-history', verifyToken, async (req, res) => {
             { $sort: { date: -1 } }
         ]);
 
+        // Find refunds for cancelled or refunded permits (without replacesPermitId)
+        const permitRefunds = await Permit.aggregate([
+            {
+                $match: {
+                    userId: new mongoose.Types.ObjectId(userId),
+                    $or: [
+                        // Match permits explicitly marked as refunded
+                        { paymentStatus: 'refunded', replacesPermitId: { $exists: false } },
+                        // Also match inactive permits with refund data that don't have a replacesPermitId
+                        {
+                            status: 'inactive',
+                            refundedAt: { $exists: true, $ne: null },
+                            replacesPermitId: { $exists: false }
+                        }
+                    ]
+                }
+            },
+            {
+                $project: {
+                    _id: { $concat: [{ $toString: '$_id' }, '_refund'] },
+                    date: { $ifNull: ['$refundedAt', '$updatedAt'] },
+                    description: {
+                        $concat: [
+                            'Refund: Cancelled Permit - ',
+                            { $ifNull: ['$permitName', 'Permit'] }
+                        ]
+                    },
+                    amount: { $multiply: [{ $ifNull: ['$price', 0] }, -1] }, // Negative amount for refunds
+                    status: 'Refunded',
+                    type: { $literal: 'refund' }
+                }
+            },
+            { $sort: { date: -1 } }
+        ]);
+
+        // Find refunds for permits that were switched (those with replacesPermitId)
+        const permitSwitchRefunds = await Permit.aggregate([
+            {
+                $match: {
+                    userId: new mongoose.Types.ObjectId(userId),
+                    paymentStatus: 'refunded',
+                    replacesPermitId: { $exists: true, $ne: null }
+                }
+            },
+            {
+                $project: {
+                    _id: { $concat: [{ $toString: '$_id' }, '_switch_refund'] },
+                    date: { $ifNull: ['$refundedAt', '$updatedAt'] },
+                    description: {
+                        $concat: [
+                            'Refund: Permit Switch - ',
+                            { $ifNull: ['$permitName', 'Permit'] }
+                        ]
+                    },
+                    amount: { $multiply: [{ $ifNull: ['$price', 0] }, -1] }, // Negative amount for refunds
+                    status: 'Refunded',
+                    type: { $literal: 'refund' }
+                }
+            },
+            { $sort: { date: -1 } }
+        ]);
+
         // Combine all types of transactions and sort by date
-        const combinedHistory = [...permits, ...meteredReservations, ...refunds]
+        const combinedHistory = [...permits, ...meteredReservations, ...refunds, ...permitRefunds, ...permitSwitchRefunds]
             .sort((a, b) => new Date(b.date) - new Date(a.date));
 
         res.status(200).json({
@@ -671,6 +805,74 @@ router.delete('/notifications/:notificationId', verifyToken, async (req, res) =>
         });
     } catch (error) {
         console.error('Error deleting notification:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Get user notification preferences
+router.get('/notification-preferences', verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+
+        // Find user's notification preferences, or create default if not exists
+        let preferences = await NotificationPreferences.findOne({ user: userId });
+
+        if (!preferences) {
+            // Create default preferences
+            preferences = new NotificationPreferences({ user: userId });
+            await preferences.save();
+        }
+
+        res.status(200).json({
+            success: true,
+            preferences
+        });
+    } catch (error) {
+        console.error('Error fetching notification preferences:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Update user notification preferences
+router.put('/notification-preferences', verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const updateData = req.body;
+
+        // Extract only valid fields for update
+        const validFields = [
+            'enableEmail', 'enablePush',
+            'emailForReservation', 'emailForPermit', 'emailForFine', 'emailForSystem',
+            'pushForReservation', 'pushForPermit', 'pushForFine', 'pushForSystem',
+            // Admin-specific notification preferences
+            'emailForUserActivity', 'emailForSystemAlerts',
+            'pushForUserActivity', 'pushForSystemAlerts'
+        ];
+
+        const filteredUpdate = {};
+        validFields.forEach(field => {
+            if (updateData[field] !== undefined) {
+                filteredUpdate[field] = updateData[field];
+            }
+        });
+
+        // Find and update the preferences, create if not exists
+        let preferences = await NotificationPreferences.findOneAndUpdate(
+            { user: userId },
+            {
+                $set: filteredUpdate,
+                $setOnInsert: { user: userId }
+            },
+            { new: true, upsert: true }
+        );
+
+        res.status(200).json({
+            success: true,
+            message: 'Notification preferences updated',
+            preferences
+        });
+    } catch (error) {
+        console.error('Error updating notification preferences:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
