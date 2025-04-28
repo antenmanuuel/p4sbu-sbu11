@@ -37,7 +37,7 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
 
   // Fetch notifications when authenticated
   useEffect(() => {
-    if (isAuthenticated && user && user.userType !== 'admin') {
+    if (isAuthenticated && user) {
       fetchNotifications();
     }
   }, [isAuthenticated, user]);
@@ -204,9 +204,13 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
       links.push({ name: 'Find Parking', path: '/find-parking', icon: <FaParking className="mr-2" /> });
     }
 
-    // Add About Us and Contact Us links for all users
+    // Add About Us link for all users
     links.push({ name: 'About Us', path: '/about-us', icon: <FaInfoCircle className="mr-2" /> });
-    links.push({ name: 'Contact Us', path: '/contact-us', icon: <FaEnvelope className="mr-2" /> });
+
+    // Add Contact Us link only for non-admin users
+    if (!isAuthenticated || user?.userType !== 'admin') {
+      links.push({ name: 'Contact Us', path: '/contact-us', icon: <FaEnvelope className="mr-2" /> });
+    }
 
     // Add appropriate Dashboard link for authenticated users
     if (isAuthenticated) {
@@ -237,7 +241,7 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
 
   return (
     <nav
-      className={`sticky top-0 z-50 w-full border-b ${darkMode
+      className={`sticky top-0 z-50 w-full border-b shadow-sm ${darkMode
         ? 'bg-gray-900 border-gray-800 text-white'
         : 'bg-white border-gray-100 text-gray-900'
         }`}
@@ -247,15 +251,17 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
           {/* Logo */}
           <div className="flex-shrink-0">
             <button
-              className="flex items-center gap-2 font-bold text-xl transition-transform hover:opacity-90 active:scale-95"
+              className="flex items-center gap-2 font-bold text-xl transition-all duration-300 hover:opacity-90 active:scale-95"
               onClick={handleLogoClick}
               aria-label="Homepage"
               type="button"
             >
-              <div className="size-9 bg-red-600 rounded-md flex items-center justify-center text-white font-semibold shadow-sm">
+              <div className="size-9 bg-gradient-to-br from-red-500 to-red-700 rounded-lg flex items-center justify-center text-white font-semibold shadow-md">
                 P
               </div>
-              <span className={darkMode ? 'text-white' : 'text-gray-900'}>P4SBU</span>
+              <span className={`${darkMode ? 'text-white' : 'text-gray-900'} tracking-tight`}>
+                P4<span className="text-red-600">SBU</span>
+              </span>
             </button>
           </div>
 
@@ -265,11 +271,11 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
               <Link
                 key={link.name}
                 to={link.path}
-                className={`relative px-3 py-2 rounded-md font-medium text-sm flex items-center transition-colors duration-200 ${activeLink === link.name
+                className={`relative px-3 py-2 rounded-md font-medium text-sm flex items-center transition-all duration-300 ${activeLink === link.name
                   ? 'text-red-600'
                   : darkMode
                     ? 'text-gray-200 hover:text-white hover:bg-gray-800'
-                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                   }`}
                 onClick={() => handleLinkClick(link.name, link.path)}
               >
@@ -287,7 +293,7 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
 
 
             {/* Notifications */}
-            {isAuthenticated && user && user.userType !== 'admin' && (
+            {isAuthenticated && user && (
               <div className="relative">
                 <button
                   id="notifications-button"
@@ -469,7 +475,7 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
                             {user?.email || 'user@example.com'}
                           </p>
                           <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                            ID: {user?.sbuId || user?._id || '12345678'}
+                            {user?.userType === 'visitor' ? 'Visitor ID: ' : 'SBU ID: '}{user?.sbuId || user?._id || '12345678'}
                           </p>
                         </div>
                       </div>

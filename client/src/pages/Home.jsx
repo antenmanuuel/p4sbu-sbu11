@@ -29,6 +29,30 @@ const Home = ({ darkMode, isAuthenticated, user }) => {
       description: "File an appeal for a citation",
       route: "/appeal",
       icon: "A"
+    },
+    {
+      title: "View notifications",
+      description: "Check all your system notifications",
+      route: "/notifications",
+      icon: "N"
+    },
+    {
+      title: "Past reservations",
+      description: "View your parking reservation history",
+      route: "/past-reservations",
+      icon: "R"
+    },
+    {
+      title: "Billing information",
+      description: "Manage payment methods and history",
+      route: "/billing",
+      icon: "B"
+    },
+    {
+      title: "User profile",
+      description: "Update your personal information",
+      route: "/profile",
+      icon: "U"
     }
   ];
 
@@ -36,7 +60,7 @@ const Home = ({ darkMode, isAuthenticated, user }) => {
   const parkingOptions = [
     {
       title: "Commuter Core - Students",
-      price: "$155.00/semester",
+      price: "$135.00/semester",
       color: "bg-blue-600"
     },
     {
@@ -58,6 +82,11 @@ const Home = ({ darkMode, isAuthenticated, user }) => {
       title: "EV Charging Lots",
       price: "$1.50/hour + parking fee",
       color: "bg-teal-500"
+    },
+    {
+      title: "Faculty Permit - Faculty",
+      price: "$50.05/semester",
+      color: "bg-orange-500"
     }
   ];
 
@@ -69,99 +98,136 @@ const Home = ({ darkMode, isAuthenticated, user }) => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-      {/* Hero Section */}
-      <div className="relative w-full h-[500px] rounded-2xl overflow-hidden shadow-xl mb-16">
-        {/* Background gradient */}
-        <div
-          className="absolute inset-0 bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900"
-          style={{
-            backgroundImage: "linear-gradient(to bottom right, rgba(30,58,138,0.9), rgba(55,48,163,0.95)), url('https://www.stonybrook.edu/commcms/campres/_images/campus/quad_arial.jpg')",
-            backgroundSize: "cover",
-            backgroundPosition: "center"
-          }}
-        ></div>
-
-        {/* Content */}
-        <div className="relative z-10 h-full flex flex-col items-start justify-center px-8 md:px-12 text-white">
-          <h1 className="text-4xl md:text-6xl font-bold mb-4 tracking-tighter text-balance animate-slideInUp">
-            SBU Parking Made Simple
-          </h1>
-          <p className="text-xl md:text-2xl mb-8 max-w-2xl text-white/90 animate-slideInUp" style={{ animationDelay: '0.1s' }}>
-            Find, reserve, and manage your parking spots efficiently with our streamlined platform
-          </p>
-          <div className="flex flex-wrap gap-4 animate-slideInUp" style={{ animationDelay: '0.2s' }}>
-            {/* Show appropriate buttons based on user authentication status and type */}
-
-            {/* Find Parking button - show for anyone except admin users */}
-            {(!isAuthenticated || (isAuthenticated && user?.userType !== 'admin')) && (
-              <button
-                onClick={() => {
-                  console.log('Navigating to Find Parking');
-                  navigate('/find-parking');
-                }}
-                className="px-6 py-3 text-base font-medium bg-red-600 text-white rounded-md shadow-lg hover:bg-red-700 hover:shadow-xl transition-all"
-              >
-                Find Parking
-              </button>
-            )}
-
-            {/* Create Account button - show only for not logged in users */}
-            {!isAuthenticated && (
-              <button
-                onClick={() => navigate('/register')}
-                className={`px-6 py-3 text-base font-medium rounded-md transition-all ${darkMode ? 'bg-gray-800 text-white hover:bg-gray-700' : 'bg-white text-gray-900 hover:bg-gray-100'
-                  } shadow-lg hover:shadow-xl`}
-              >
-                Create Account
-              </button>
-            )}
-
-            {/* Admin Dashboard button - only for admin users */}
-            {isAuthenticated && user?.userType === 'admin' && (
-              <button
-                onClick={() => navigate('/admin-dashboard')}
-                className="px-6 py-3 text-base font-medium bg-blue-600 text-white rounded-md shadow-lg hover:bg-blue-700 hover:shadow-xl transition-all"
-              >
-                Go to Admin Dashboard
-              </button>
-            )}
-
-            {/* Faculty Dashboard button - only for faculty users */}
-            {isAuthenticated && user?.userType === 'faculty' && (
-              <button
-                onClick={() => navigate('/faculty-dashboard')}
-                className="px-6 py-3 text-base font-medium bg-green-600 text-white rounded-md shadow-lg hover:bg-green-700 hover:shadow-xl transition-all"
-              >
-                Go to Faculty Dashboard
-              </button>
-            )}
-
-            {/* Student Dashboard button - only for student users */}
-            {isAuthenticated && user?.userType === 'student' && (
-              <button
-                onClick={() => navigate('/dashboard')}
-                className="px-6 py-3 text-base font-medium bg-indigo-600 text-white rounded-md shadow-lg hover:bg-indigo-700 hover:shadow-xl transition-all"
-              >
-                Go to Student Dashboard
-              </button>
-            )}
+      {/* Hero Section with modern layout */}
+      <div className="flex flex-col lg:flex-row lg:items-center gap-12 mb-16">
+        {/* Image container - left side on desktop, top on mobile */}
+        <div className="lg:w-1/2 w-full">
+          <div className="relative w-full h-[400px] rounded-2xl overflow-hidden shadow-xl transform transition-all duration-500 hover:scale-[1.02]">
+            <div
+              className="absolute inset-0"
+              style={{
+                backgroundImage: "url('https://news.stonybrook.edu/wp-content/uploads/2023/12/fall-2023-sunset.jpg')",
+                backgroundSize: "cover",
+                backgroundPosition: "center"
+              }}
+            ></div>
+            {/* Floating badge */}
+            <div className="absolute top-6 left-6 bg-red-600 text-white px-4 py-2 rounded-full text-sm font-semibold shadow-lg animate-pulse">
+              Stony Brook University
+            </div>
           </div>
+        </div>
+
+        {/* Content container - right side on desktop, bottom on mobile */}
+        <div className="lg:w-1/2 w-full">
+          <div className="relative">
+            {/* Decorative element */}
+            <div className="absolute -top-10 -left-10 w-20 h-20 bg-red-600 opacity-10 rounded-full blur-xl"></div>
+
+            <h1 className={`text-4xl md:text-6xl font-bold mb-6 tracking-tighter leading-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              <span className="text-red-600 block">SBU Parking</span>
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-red-600 to-red-400">Made Simple</span>
+            </h1>
+
+            <p className={`text-xl md:text-2xl mb-8 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+              Find, reserve, and manage your parking spots efficiently with our streamlined platform
+            </p>
+
+            <div className="flex flex-wrap gap-4">
+              {/* Show appropriate buttons based on user authentication status and type */}
+
+              {/* Find Parking button - show for anyone except admin users */}
+              {(!isAuthenticated || (isAuthenticated && user?.userType !== 'admin')) && (
+                <button
+                  onClick={() => {
+                    console.log('Navigating to Find Parking');
+                    navigate('/find-parking');
+                  }}
+                  className="px-6 py-3 text-base font-medium bg-red-600 text-white rounded-md shadow-lg hover:bg-red-700 hover:shadow-xl transition-all transform hover:-translate-y-1"
+                >
+                  Find Parking
+                </button>
+              )}
+
+              {/* Create Account button - show only for not logged in users */}
+              {!isAuthenticated && (
+                <button
+                  onClick={() => navigate('/register')}
+                  className={`px-6 py-3 text-base font-medium rounded-md transition-all transform hover:-translate-y-1 ${darkMode ? 'bg-gray-800 text-white hover:bg-gray-700' : 'bg-white text-gray-900 hover:bg-gray-100'
+                    } shadow-lg hover:shadow-xl`}
+                >
+                  Create Account
+                </button>
+              )}
+
+              {/* Admin Dashboard button - only for admin users */}
+              {isAuthenticated && user?.userType === 'admin' && (
+                <button
+                  onClick={() => navigate('/admin-dashboard')}
+                  className="px-6 py-3 text-base font-medium bg-blue-600 text-white rounded-md shadow-lg hover:bg-blue-700 hover:shadow-xl transition-all transform hover:-translate-y-1"
+                >
+                  Go to Admin Dashboard
+                </button>
+              )}
+
+              {/* Faculty Dashboard button - only for faculty users */}
+              {isAuthenticated && user?.userType === 'faculty' && (
+                <button
+                  onClick={() => navigate('/faculty-dashboard')}
+                  className="px-6 py-3 text-base font-medium bg-green-600 text-white rounded-md shadow-lg hover:bg-green-700 hover:shadow-xl transition-all transform hover:-translate-y-1"
+                >
+                  Go to Faculty Dashboard
+                </button>
+              )}
+
+              {/* Student Dashboard button - only for student users */}
+              {isAuthenticated && user?.userType === 'student' && (
+                <button
+                  onClick={() => navigate('/dashboard')}
+                  className="px-6 py-3 text-base font-medium bg-indigo-600 text-white rounded-md shadow-lg hover:bg-indigo-700 hover:shadow-xl transition-all transform hover:-translate-y-1"
+                >
+                  Go to Student Dashboard
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Section - New! */}
+      <div className={`grid grid-cols-1 md:grid-cols-4 gap-6 mb-16 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+        <div className={`p-8 rounded-xl text-center ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} shadow-sm transition-all hover:shadow-md`}>
+          <div className="text-4xl font-bold text-red-600 mb-2">10,000+</div>
+          <div className="text-sm opacity-70">Parking Spaces</div>
+        </div>
+        <div className={`p-8 rounded-xl text-center ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} shadow-sm transition-all hover:shadow-md`}>
+          <div className="text-4xl font-bold text-red-600 mb-2">5,000+</div>
+          <div className="text-sm opacity-70">Daily Users</div>
+        </div>
+        <div className={`p-8 rounded-xl text-center ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} shadow-sm transition-all hover:shadow-md`}>
+          <div className="text-4xl font-bold text-red-600 mb-2">20+</div>
+          <div className="text-sm opacity-70">Parking Lots</div>
+        </div>
+        <div className={`p-8 rounded-xl text-center ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} shadow-sm transition-all hover:shadow-md`}>
+          <div className="text-4xl font-bold text-red-600 mb-2">24/7</div>
+          <div className="text-sm opacity-70">Support Available</div>
         </div>
       </div>
 
       {/* Quick Links Section */}
       <div className="mb-16">
-        <h2 className={`text-2xl font-bold mb-8 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-          Quick Links
-        </h2>
+        <div className="flex justify-between items-end mb-8">
+          <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            What You Can Do Here
+          </h2>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {quickLinks.map((link, index) => (
             <div
               key={index}
-              onClick={() => handleQuickLinkClick(link.route)}
-              className={`group flex flex-col h-full rounded-xl p-6 shadow-sm cursor-pointer transition-all duration-300 ${darkMode
-                ? 'bg-gray-800 border border-gray-700 hover:bg-gray-750'
-                : 'bg-white border border-gray-100 hover:border-gray-200 hover:shadow-md'
+              className={`flex flex-col h-full rounded-xl p-6 shadow-sm ${darkMode
+                ? 'bg-gray-800 border border-gray-700'
+                : 'bg-white border border-gray-100'
                 }`}
             >
               <div className="flex items-center mb-4">
@@ -179,13 +245,6 @@ const Home = ({ darkMode, isAuthenticated, user }) => {
               <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                 {link.description}
               </p>
-              <div className={`mt-auto pt-4 text-sm font-medium ${darkMode ? 'text-red-400' : 'text-red-600'
-                } flex items-center`}>
-                <span className="group-hover:underline">Access {link.title.toLowerCase()}</span>
-                <svg className="ml-2 size-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
             </div>
           ))}
         </div>
@@ -193,42 +252,41 @@ const Home = ({ darkMode, isAuthenticated, user }) => {
 
       {/* Parking Options Section */}
       <div className="mb-16">
-        <h2 className={`text-2xl font-bold mb-8 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-          Parking Options
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-          {parkingOptions.map((option, index) => (
-            <div
-              key={index}
-              className={`group h-full rounded-xl overflow-hidden shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md ${darkMode ? 'shadow-gray-800' : ''
-                }`}
-            >
-              <div className={`h-40 ${option.color} flex items-center justify-center text-white relative overflow-hidden`}>
-                <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors"></div>
-                <span className="relative z-10 text-3xl font-bold">
-                  {option.title.split(" ")[0].charAt(0)}
-                  {option.title.split(" ")[1]?.charAt(0)}
-                </span>
-              </div>
-              <div className={`p-5 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                <h3 className={`text-base font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  {option.title}
-                </h3>
-                <p className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {option.price}
-                </p>
-                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                  <button
-                    className={`text-sm font-medium ${darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'
-                      }`}
-                    onClick={() => navigate('/under-construction')}
-                  >
-                    View details
-                  </button>
+        <div className="flex justify-between items-end mb-8">
+          <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            Parking Options
+          </h2>
+          <a href="https://www.stonybrook.edu/mobility-and-parking/#" target="_blank" rel="noopener noreferrer" className={`text-sm font-medium ${darkMode ? 'text-red-400' : 'text-red-600'} hover:underline`}>View all permits →</a>
+        </div>
+
+        <div className="relative">
+          {/* Decorative element */}
+          <div className="hidden md:block absolute -bottom-10 right-10 w-40 h-40 bg-blue-500 opacity-5 rounded-full blur-2xl"></div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+            {parkingOptions.map((option, index) => (
+              <div
+                key={index}
+                className={`h-full rounded-xl overflow-hidden shadow-sm ${darkMode ? 'shadow-gray-800' : 'shadow-sm'}`}
+              >
+                <div className={`h-40 ${option.color} flex items-center justify-center text-white relative overflow-hidden`}>
+                  <div className="absolute inset-0 bg-black/10"></div>
+                  <span className="relative z-10 text-3xl font-bold">
+                    {option.title.split(" ")[0].charAt(0)}
+                    {option.title.split(" ")[1]?.charAt(0)}
+                  </span>
+                </div>
+                <div className={`p-5 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                  <h3 className={`text-base font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    {option.title}
+                  </h3>
+                  <p className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                    {option.price}
+                  </p>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
 
@@ -240,7 +298,7 @@ const Home = ({ darkMode, isAuthenticated, user }) => {
             Why Choose P4SBU?
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-8">
-            <div className={`flex flex-col items-center text-center`}>
+            <div className={`flex flex-col items-center text-center transform transition-transform hover:scale-105`}>
               <div className={`size-16 rounded-full flex items-center justify-center mb-4 ${darkMode ? 'bg-blue-900/40 text-blue-400' : 'bg-blue-100 text-blue-600'
                 }`}>
                 <svg className="size-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -250,41 +308,45 @@ const Home = ({ darkMode, isAuthenticated, user }) => {
               <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                 Save Time
               </h3>
-              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                Quickly find and reserve parking spots without circling the campus
+              <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                Quickly find and reserve parking spots without circling the lot.
               </p>
             </div>
-            <div className={`flex flex-col items-center text-center`}>
+
+            <div className={`flex flex-col items-center text-center transform transition-transform hover:scale-105`}>
               <div className={`size-16 rounded-full flex items-center justify-center mb-4 ${darkMode ? 'bg-green-900/40 text-green-400' : 'bg-green-100 text-green-600'
                 }`}>
                 <svg className="size-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                Secure Platform
+                Easy to Use
               </h3>
-              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                Your payment and personal information are always protected
+              <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                Our intuitive platform makes parking management simple for everyone.
               </p>
             </div>
-            <div className={`flex flex-col items-center text-center`}>
+
+            <div className={`flex flex-col items-center text-center transform transition-transform hover:scale-105`}>
               <div className={`size-16 rounded-full flex items-center justify-center mb-4 ${darkMode ? 'bg-purple-900/40 text-purple-400' : 'bg-purple-100 text-purple-600'
                 }`}>
                 <svg className="size-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                 </svg>
               </div>
               <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                24/7 Support
+                Secure & Reliable
               </h3>
-              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                Our team is always available to help with any parking-related issues
+              <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                Count on our system for safe, dependable parking management.
               </p>
             </div>
           </div>
         </div>
       </div>
+
+
     </div>
   );
 };

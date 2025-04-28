@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
-import { FaLock, FaExclamationCircle, FaCheckCircle } from 'react-icons/fa';
+import { FaLock, FaExclamationCircle, FaCheckCircle, FaArrowLeft, FaUnlock } from 'react-icons/fa';
 import { AuthService } from '../utils/api';
 
 const ResetPassword = ({ darkMode }) => {
@@ -176,189 +176,206 @@ const ResetPassword = ({ darkMode }) => {
     const isFieldValid = (field) => touched[field] && !errors[field];
 
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-            <div className={`max-w-md w-full space-y-8 p-10 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                <div>
-                    <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-red-600">
-                        <svg className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                        </svg>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
+            {/* Hero Section */}
+            <div className="relative mb-10">
+                {/* Decorative elements */}
+                <div className="absolute -top-10 -right-10 w-40 h-40 bg-red-600 opacity-5 rounded-full blur-2xl"></div>
+                <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-blue-500 opacity-5 rounded-full blur-2xl"></div>
+
+                <div className="text-center relative z-10">
+                    <div className="inline-block mb-4">
+                        <span className={`inline-flex items-center justify-center p-3 ${darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'} rounded-xl`}>
+                            <FaUnlock className="w-8 h-8" />
+                        </span>
                     </div>
-                    <h2 className={`mt-6 text-center text-3xl font-extrabold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                        Reset Your Password
-                    </h2>
-                    <p className={`mt-2 text-center text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                        Enter your new password below
+                    <h1 className={`text-4xl md:text-5xl font-bold mb-4 tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                        Reset <span className="text-red-600">Password</span>
+                    </h1>
+                    <p className={`text-xl md:text-2xl max-w-3xl mx-auto ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                        Create a new password for your account
                     </p>
                 </div>
+            </div>
 
-                {message && (
-                    <div className={`p-4 mb-4 text-sm rounded-lg flex items-center ${messageType === 'success'
-                            ? (darkMode ? 'bg-green-900/50 text-green-200' : 'bg-green-100 text-green-800')
-                            : (darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-100 text-red-800')
-                        }`}>
-                        {messageType === 'success' ? (
-                            <FaCheckCircle className="mr-2 flex-shrink-0" />
-                        ) : (
-                            <FaExclamationCircle className="mr-2 flex-shrink-0" />
-                        )}
-                        <span>{message}</span>
-                    </div>
-                )}
-
-                <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-                    <div className="space-y-4">
-                        <div>
-                            <label htmlFor="password" className={`block text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                                New Password
-                            </label>
-                            <div className="relative mt-1">
-                                <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                    <FaLock />
-                                </div>
-                                <input
-                                    id="password"
-                                    name="password"
-                                    type="password"
-                                    autoComplete="new-password"
-                                    value={password}
-                                    onChange={(e) => handleFieldChange('password', e.target.value)}
-                                    onBlur={() => setTouched(prev => ({ ...prev, password: true }))}
-                                    className={`pl-10 appearance-none block w-full px-3 py-2 border 
-                    ${errors.password && touched.password
-                                            ? 'border-red-500 error-border'
-                                            : isFieldValid('password')
-                                                ? 'border-green-500'
-                                                : darkMode ? 'border-gray-700' : 'border-gray-300'
-                                        } 
-                    rounded-md placeholder-gray-500 
-                    ${darkMode ? 'bg-gray-700 text-white placeholder-gray-400' : 'text-gray-900'} 
-                    focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm`}
-                                    placeholder="••••••••"
-                                    aria-invalid={errors.password && touched.password ? "true" : "false"}
-                                    aria-describedby={errors.password ? "password-error" : undefined}
-                                />
-                                {isFieldValid('password') && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaCheckCircle className="text-green-500" />
-                                    </div>
-                                )}
-                                {errors.password && touched.password && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaExclamationCircle className="text-red-500" />
-                                    </div>
-                                )}
+            <div className="flex flex-col lg:flex-row gap-12 mb-16">
+                {/* Left column - info */}
+                <div className="lg:w-1/2">
+                    <div className={`rounded-2xl shadow-lg overflow-hidden transform transition-all duration-500 hover:shadow-xl ${darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'}`}>
+                        <div className="relative h-64 bg-gradient-to-r from-red-600 to-red-400">
+                            <div className="absolute inset-0 p-8 text-white flex flex-col justify-end bg-black bg-opacity-20">
+                                <h2 className="text-2xl font-bold mb-2">Create a New Password</h2>
+                                <p className="text-lg opacity-90">Secure your P4SBU account</p>
                             </div>
-                            {errors.password && touched.password && (
-                                <p id="password-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                    <FaExclamationCircle className="mr-1" /> {errors.password}
-                                </p>
+                        </div>
+
+                        <div className="p-8">
+                            <div className="space-y-4">
+                                <div className="flex items-start gap-3">
+                                    <div className="rounded-full p-2 bg-red-100 text-red-600">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h3 className={`text-lg font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>Strong Password</h3>
+                                        <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Create a strong password with at least 8 characters, including uppercase, lowercase, and numbers.</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-start gap-3">
+                                    <div className="rounded-full p-2 bg-blue-100 text-blue-600">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h3 className={`text-lg font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>Account Security</h3>
+                                        <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Your new password will help keep your parking account secure.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right column - password form */}
+                <div className="lg:w-1/2">
+                    <div className={`rounded-2xl overflow-hidden shadow-lg ${darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'}`}>
+                        <div className="p-8 relative">
+                            {/* Decorative accent */}
+                            <div className="absolute top-0 right-0 h-1 w-24 bg-gradient-to-l from-red-600 to-red-400"></div>
+
+                            <h2 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                Reset your password
+                            </h2>
+
+                            {message && (
+                                <div className={`p-4 mb-6 rounded-xl flex items-center ${messageType === 'success'
+                                    ? (darkMode ? 'bg-green-900/30 text-green-300' : 'bg-green-50 text-green-800')
+                                    : (darkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-50 text-red-800')
+                                    }`}>
+                                    {messageType === 'success' ? (
+                                        <FaCheckCircle className="flex-shrink-0 mr-3" />
+                                    ) : (
+                                        <FaExclamationCircle className="flex-shrink-0 mr-3" />
+                                    )}
+                                    <span>{message}</span>
+                                </div>
                             )}
-                        </div>
 
-                        <div>
-                            <label htmlFor="confirmPassword" className={`block text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                                Confirm New Password
-                            </label>
-                            <div className="relative mt-1">
-                                <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                    <FaLock />
+                            <form onSubmit={handleSubmit} className="space-y-6">
+                                <div>
+                                    <label htmlFor="password" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                        New Password
+                                    </label>
+                                    <div className="relative">
+                                        <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            <FaLock className="w-5 h-5" />
+                                        </div>
+                                        <input
+                                            id="password"
+                                            name="password"
+                                            type="password"
+                                            autoComplete="new-password"
+                                            value={password}
+                                            onChange={(e) => handleFieldChange('password', e.target.value)}
+                                            onBlur={() => setTouched(prev => ({ ...prev, password: true }))}
+                                            className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} 
+                                            ${errors.password && touched.password ? 'border-red-500 error-border' : isFieldValid('password') ? 'border-green-500' : 'border'} 
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-400' : 'focus:ring-red-600'}`}
+                                            placeholder="••••••••"
+                                        />
+                                        {isFieldValid('password') && (
+                                            <FaCheckCircle className="absolute right-3 top-3 text-green-500" />
+                                        )}
+                                    </div>
+                                    {errors.password && touched.password && (
+                                        <p className="mt-1 text-sm text-red-500 flex items-center">
+                                            <FaExclamationCircle className="mr-1" /> {errors.password}
+                                        </p>
+                                    )}
                                 </div>
-                                <input
-                                    id="confirmPassword"
-                                    name="confirmPassword"
-                                    type="password"
-                                    autoComplete="new-password"
-                                    value={confirmPassword}
-                                    onChange={(e) => handleFieldChange('confirmPassword', e.target.value)}
-                                    onBlur={() => setTouched(prev => ({ ...prev, confirmPassword: true }))}
-                                    className={`pl-10 appearance-none block w-full px-3 py-2 border 
-                    ${errors.confirmPassword && touched.confirmPassword
-                                            ? 'border-red-500 error-border'
-                                            : isFieldValid('confirmPassword')
-                                                ? 'border-green-500'
-                                                : darkMode ? 'border-gray-700' : 'border-gray-300'
-                                        } 
-                    rounded-md placeholder-gray-500 
-                    ${darkMode ? 'bg-gray-700 text-white placeholder-gray-400' : 'text-gray-900'} 
-                    focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm`}
-                                    placeholder="••••••••"
-                                    aria-invalid={errors.confirmPassword && touched.confirmPassword ? "true" : "false"}
-                                    aria-describedby={errors.confirmPassword ? "confirmPassword-error" : undefined}
-                                />
-                                {isFieldValid('confirmPassword') && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaCheckCircle className="text-green-500" />
+
+                                <div>
+                                    <label htmlFor="confirmPassword" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                        Confirm Password
+                                    </label>
+                                    <div className="relative">
+                                        <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            <FaLock className="w-5 h-5" />
+                                        </div>
+                                        <input
+                                            id="confirmPassword"
+                                            name="confirmPassword"
+                                            type="password"
+                                            autoComplete="new-password"
+                                            value={confirmPassword}
+                                            onChange={(e) => handleFieldChange('confirmPassword', e.target.value)}
+                                            onBlur={() => setTouched(prev => ({ ...prev, confirmPassword: true }))}
+                                            className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} 
+                                            ${errors.confirmPassword && touched.confirmPassword ? 'border-red-500 error-border' : isFieldValid('confirmPassword') ? 'border-green-500' : 'border'} 
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-400' : 'focus:ring-red-600'}`}
+                                            placeholder="••••••••"
+                                        />
+                                        {isFieldValid('confirmPassword') && (
+                                            <FaCheckCircle className="absolute right-3 top-3 text-green-500" />
+                                        )}
                                     </div>
-                                )}
-                                {errors.confirmPassword && touched.confirmPassword && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaExclamationCircle className="text-red-500" />
-                                    </div>
-                                )}
-                            </div>
-                            {errors.confirmPassword && touched.confirmPassword && (
-                                <p id="confirmPassword-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                    <FaExclamationCircle className="mr-1" /> {errors.confirmPassword}
+                                    {errors.confirmPassword && touched.confirmPassword && (
+                                        <p className="mt-1 text-sm text-red-500 flex items-center">
+                                            <FaExclamationCircle className="mr-1" /> {errors.confirmPassword}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    disabled={isLoading}
+                                    className={`w-full py-3 px-4 rounded-lg text-white font-medium shadow-md transform transition-all hover:-translate-y-1 hover:shadow-lg
+                                    ${isLoading
+                                            ? 'bg-gray-400 cursor-not-allowed'
+                                            : 'bg-red-600 hover:bg-red-700'}`}
+                                >
+                                    {isLoading ? (
+                                        <div className="flex items-center justify-center">
+                                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Resetting Password...
+                                        </div>
+                                    ) : 'Reset Password'}
+                                </button>
+                            </form>
+
+                            <div className="mt-6 text-center">
+                                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                    Remember your password?{' '}
+                                    <Link to="/login" className={`font-medium ${darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'}`}>
+                                        Back to login
+                                    </Link>
                                 </p>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Form validation summary */}
-                    {formSubmitted && Object.keys(errors).length > 0 && (
-                        <div className={`p-3 rounded-md ${darkMode ? 'bg-red-900/50' : 'bg-red-50'} border ${darkMode ? 'border-red-800' : 'border-red-200'}`}>
-                            <div className="flex">
-                                <FaExclamationCircle className={`flex-shrink-0 h-5 w-5 text-red-500 mt-0.5`} />
-                                <div className="ml-3">
-                                    <h3 className={`text-sm font-medium ${darkMode ? 'text-red-300' : 'text-red-800'}`}>
-                                        Please correct the following errors:
-                                    </h3>
-                                    <div className={`mt-2 text-sm ${darkMode ? 'text-red-300' : 'text-red-700'}`}>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            {Object.keys(errors).map(key => (
-                                                <li key={key}>{errors[key]}</li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                </div>
                             </div>
                         </div>
-                    )}
-
-                    <div>
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className={`group relative w-full flex justify-center py-2 px-4 border border-transparent rounded-md font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 ${isLoading ? 'cursor-not-allowed opacity-75' : ''}`}
-                        >
-                            {isLoading ? (
-                                <>
-                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    Updating Password...
-                                </>
-                            ) : 'Reset Password'}
-                        </button>
                     </div>
 
-                    <div className="text-center mt-4">
+                    {/* Back to home button */}
+                    <div className="mt-6 text-center">
                         <Link
-                            to="/login"
-                            className={`inline-flex items-center px-4 py-2 border rounded-md shadow-sm text-sm font-medium ${darkMode
-                                    ? 'border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600'
-                                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                                }`}
+                            to="/"
+                            className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${darkMode
+                                ? 'text-gray-300 hover:text-white hover:bg-gray-800'
+                                : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'}`}
                         >
-                            Back to Login
+                            <FaArrowLeft className="mr-2" />
+                            Back to Home
                         </Link>
                     </div>
-                </form>
+                </div>
             </div>
         </div>
     );
 };
 
-export default ResetPassword; 
+export default ResetPassword;

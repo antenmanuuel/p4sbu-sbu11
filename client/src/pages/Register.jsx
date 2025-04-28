@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { FaUser, FaEnvelope, FaLock, FaIdCard, FaUserTag, FaCheckCircle, FaExclamationCircle } from 'react-icons/fa';
+import { FaUser, FaEnvelope, FaLock, FaIdCard, FaUserTag, FaCheckCircle, FaExclamationCircle, FaArrowLeft, FaShieldAlt } from 'react-icons/fa';
 import { AuthService } from '../utils/api';
 
 const Register = ({ darkMode }) => {
@@ -59,6 +59,10 @@ const Register = ({ darkMode }) => {
                 }
                 break;
             case 'sbuId':
+                // Skip SBU ID validation for visitors
+                if (allValues.userType === 'visitor') {
+                    return '';
+                }
                 if (!value) {
                     return 'SBU ID is required';
                 } else if (!/^\d{8}$/.test(value)) {
@@ -160,14 +164,22 @@ const Register = ({ darkMode }) => {
         try {
             // Call the API to register the user
             const { firstName, lastName, email, password, sbuId, userType } = formData;
-            const result = await AuthService.register({
+
+            // Prepare user data for registration - make sbuId optional for visitors
+            const userData = {
                 firstName,
                 lastName,
                 email,
                 password,
-                sbuId,
                 userType
-            });
+            };
+
+            // Only include sbuId if not a visitor or if provided anyway
+            if (userType !== 'visitor' || sbuId.trim() !== '') {
+                userData.sbuId = sbuId;
+            }
+
+            const result = await AuthService.register(userData);
 
             setIsLoading(false);
 
@@ -199,458 +211,390 @@ const Register = ({ darkMode }) => {
     const isFieldValid = (field) => touched[field] && !errors[field];
 
     return (
-        <div className={`min-h-screen flex flex-col items-center justify-center py-12 px-4 sm:px-6 lg:px-8`}>
-            <div className={`max-w-md w-full space-y-8 p-8 rounded-lg shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                <div>
-                    <div className="flex justify-center">
-                        <div className="size-16 bg-red-600 rounded-md flex items-center justify-center text-white font-bold text-xl shadow-sm">
-                            P
-                        </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
+            {/* Hero Section */}
+            <div className="relative mb-10">
+                {/* Decorative elements */}
+                <div className="absolute -top-10 -right-10 w-40 h-40 bg-red-600 opacity-5 rounded-full blur-2xl"></div>
+                <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-blue-500 opacity-5 rounded-full blur-2xl"></div>
+
+                <div className="text-center relative z-10">
+                    <div className="inline-block mb-4">
+                        <span className={`inline-flex items-center justify-center p-3 ${darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'} rounded-xl`}>
+                            <FaUserTag className="w-8 h-8" />
+                        </span>
                     </div>
-                    <h2 className={`mt-6 text-center text-3xl font-extrabold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                        Create a new account
-                    </h2>
-                    <p className={`mt-2 text-center text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                        Or{' '}
-                        <Link to="/login" className="font-medium text-red-600 hover:text-red-500">
-                            sign in to your account
-                        </Link>
+                    <h1 className={`text-4xl md:text-5xl font-bold mb-4 tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                        Create <span className="text-red-600">P4SBU</span> Account
+                    </h1>
+                    <p className={`text-xl md:text-2xl max-w-3xl mx-auto ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                        Register for Stony Brook University parking management
                     </p>
                 </div>
+            </div>
 
-                {registerError && (
-                    <div className={`p-3 rounded-md flex items-center ${darkMode ? 'bg-red-900/50 text-red-200' : 'bg-red-50 text-red-800'}`}>
-                        <FaExclamationCircle className="mr-2 flex-shrink-0" />
-                        <span>{registerError}</span>
-                    </div>
-                )}
-
-                {success && (
-                    <div className={`p-3 rounded-md flex items-center ${darkMode ? 'bg-green-900/50 text-green-200' : 'bg-green-50 text-green-800'}`}>
-                        <FaCheckCircle className="mr-2 flex-shrink-0 text-green-500" />
-                        <span>Registration successful! Redirecting to login...</span>
-                    </div>
-                )}
-
-                <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-                    <div className="rounded-md space-y-4">
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <div>
-                                <label htmlFor="firstName" className={`block text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                                    First Name
-                                </label>
-                                <div className="relative mt-1">
-                                    <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                        <FaUser />
-                                    </div>
-                                    <input
-                                        id="firstName"
-                                        name="firstName"
-                                        type="text"
-                                        autoComplete="given-name"
-                                        value={formData.firstName}
-                                        onChange={handleChange}
-                                        onBlur={() => setTouched(prev => ({ ...prev, firstName: true }))}
-                                        className={`pl-10 appearance-none rounded-md relative block w-full px-3 py-2 border
-                                            ${errors.firstName && touched.firstName
-                                                ? 'border-red-500 error-border'
-                                                : isFieldValid('firstName')
-                                                    ? 'border-green-500'
-                                                    : darkMode ? 'border-gray-700' : 'border-gray-300'
-                                            } 
-                                            placeholder-gray-500 
-                                            ${darkMode
-                                                ? 'bg-gray-700 text-white placeholder-gray-400'
-                                                : 'text-gray-900'
-                                            } 
-                                            focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm`}
-                                        aria-invalid={errors.firstName && touched.firstName ? "true" : "false"}
-                                        aria-describedby={errors.firstName ? "firstName-error" : undefined}
-                                    />
-                                    {isFieldValid('firstName') && (
-                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                            <FaCheckCircle className="text-green-500" />
-                                        </div>
-                                    )}
-                                    {errors.firstName && touched.firstName && (
-                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                            <FaExclamationCircle className="text-red-500" />
-                                        </div>
-                                    )}
-                                </div>
-                                {errors.firstName && touched.firstName && (
-                                    <p id="firstName-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                        <FaExclamationCircle className="mr-1" /> {errors.firstName}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label htmlFor="lastName" className={`block text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                                    Last Name
-                                </label>
-                                <div className="relative mt-1">
-                                    <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                        <FaUser />
-                                    </div>
-                                    <input
-                                        id="lastName"
-                                        name="lastName"
-                                        type="text"
-                                        autoComplete="family-name"
-                                        value={formData.lastName}
-                                        onChange={handleChange}
-                                        onBlur={() => setTouched(prev => ({ ...prev, lastName: true }))}
-                                        className={`pl-10 appearance-none rounded-md relative block w-full px-3 py-2 border
-                                            ${errors.lastName && touched.lastName
-                                                ? 'border-red-500 error-border'
-                                                : isFieldValid('lastName')
-                                                    ? 'border-green-500'
-                                                    : darkMode ? 'border-gray-700' : 'border-gray-300'
-                                            }
-                                            placeholder-gray-500 
-                                            ${darkMode
-                                                ? 'bg-gray-700 text-white placeholder-gray-400'
-                                                : 'text-gray-900'
-                                            } 
-                                            focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm`}
-                                        aria-invalid={errors.lastName && touched.lastName ? "true" : "false"}
-                                        aria-describedby={errors.lastName ? "lastName-error" : undefined}
-                                    />
-                                    {isFieldValid('lastName') && (
-                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                            <FaCheckCircle className="text-green-500" />
-                                        </div>
-                                    )}
-                                    {errors.lastName && touched.lastName && (
-                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                            <FaExclamationCircle className="text-red-500" />
-                                        </div>
-                                    )}
-                                </div>
-                                {errors.lastName && touched.lastName && (
-                                    <p id="lastName-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                        <FaExclamationCircle className="mr-1" /> {errors.lastName}
-                                    </p>
-                                )}
+            <div className="flex flex-col lg:flex-row gap-12 mb-16">
+                {/* Left Column - Info */}
+                <div className="lg:w-1/3">
+                    <div className={`rounded-2xl shadow-lg overflow-hidden transform transition-all duration-500 hover:shadow-xl ${darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'}`}>
+                        <div className="relative h-48 bg-gradient-to-r from-red-600 to-red-400">
+                            <div className="absolute inset-0 p-8 text-white flex flex-col justify-end bg-black bg-opacity-20">
+                                <h2 className="text-2xl font-bold mb-2">Join Our Community</h2>
+                                <p className="text-lg opacity-90">Easy access to campus parking</p>
                             </div>
                         </div>
 
-                        <div>
-                            <label htmlFor="email" className={`block text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                                Email Address
-                            </label>
-                            <div className="relative mt-1">
-                                <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                    <FaEnvelope />
-                                </div>
-                                <input
-                                    id="email"
-                                    name="email"
-                                    type="email"
-                                    autoComplete="email"
-                                    value={formData.email}
-                                    onChange={handleChange}
-                                    onBlur={() => setTouched(prev => ({ ...prev, email: true }))}
-                                    className={`pl-10 appearance-none rounded-md relative block w-full px-3 py-2 border
-                                        ${errors.email && touched.email
-                                            ? 'border-red-500 error-border'
-                                            : isFieldValid('email')
-                                                ? 'border-green-500'
-                                                : darkMode ? 'border-gray-700' : 'border-gray-300'
-                                        }
-                                        placeholder-gray-500 
-                                        ${darkMode
-                                            ? 'bg-gray-700 text-white placeholder-gray-400'
-                                            : 'text-gray-900'
-                                        } 
-                                        focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm`}
-                                    placeholder="you@example.com"
-                                    aria-invalid={errors.email && touched.email ? "true" : "false"}
-                                    aria-describedby={errors.email ? "email-error" : undefined}
-                                />
-                                {isFieldValid('email') && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaCheckCircle className="text-green-500" />
-                                    </div>
-                                )}
-                                {errors.email && touched.email && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaExclamationCircle className="text-red-500" />
-                                    </div>
-                                )}
-                            </div>
-                            {errors.email && touched.email && (
-                                <p id="email-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                    <FaExclamationCircle className="mr-1" /> {errors.email}
-                                </p>
-                            )}
-                        </div>
-
-                        <div>
-                            <label htmlFor="password" className={`block text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                                Password
-                            </label>
-                            <div className="relative mt-1">
-                                <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                    <FaLock />
-                                </div>
-                                <input
-                                    id="password"
-                                    name="password"
-                                    type="password"
-                                    autoComplete="new-password"
-                                    value={formData.password}
-                                    onChange={handleChange}
-                                    onBlur={() => setTouched(prev => ({ ...prev, password: true }))}
-                                    className={`pl-10 appearance-none rounded-md relative block w-full px-3 py-2 border
-                                        ${errors.password && touched.password
-                                            ? 'border-red-500 error-border'
-                                            : isFieldValid('password')
-                                                ? 'border-green-500'
-                                                : darkMode ? 'border-gray-700' : 'border-gray-300'
-                                        }
-                                        placeholder-gray-500 
-                                        ${darkMode
-                                            ? 'bg-gray-700 text-white placeholder-gray-400'
-                                            : 'text-gray-900'
-                                        } 
-                                        focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm`}
-                                    placeholder="••••••"
-                                    aria-invalid={errors.password && touched.password ? "true" : "false"}
-                                    aria-describedby={errors.password ? "password-error" : undefined}
-                                />
-                                {isFieldValid('password') && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaCheckCircle className="text-green-500" />
-                                    </div>
-                                )}
-                                {errors.password && touched.password && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaExclamationCircle className="text-red-500" />
-                                    </div>
-                                )}
-                            </div>
-                            {errors.password && touched.password && (
-                                <p id="password-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                    <FaExclamationCircle className="mr-1" /> {errors.password}
-                                </p>
-                            )}
-                        </div>
-
-                        <div>
-                            <label htmlFor="confirmPassword" className={`block text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                                Confirm Password
-                            </label>
-                            <div className="relative mt-1">
-                                <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                    <FaLock />
-                                </div>
-                                <input
-                                    id="confirmPassword"
-                                    name="confirmPassword"
-                                    type="password"
-                                    autoComplete="new-password"
-                                    value={formData.confirmPassword}
-                                    onChange={handleChange}
-                                    onBlur={() => setTouched(prev => ({ ...prev, confirmPassword: true }))}
-                                    className={`pl-10 appearance-none rounded-md relative block w-full px-3 py-2 border
-                                        ${errors.confirmPassword && touched.confirmPassword
-                                            ? 'border-red-500 error-border'
-                                            : isFieldValid('confirmPassword')
-                                                ? 'border-green-500'
-                                                : darkMode ? 'border-gray-700' : 'border-gray-300'
-                                        }
-                                        placeholder-gray-500 
-                                        ${darkMode
-                                            ? 'bg-gray-700 text-white placeholder-gray-400'
-                                            : 'text-gray-900'
-                                        } 
-                                        focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm`}
-                                    placeholder="••••••"
-                                    aria-invalid={errors.confirmPassword && touched.confirmPassword ? "true" : "false"}
-                                    aria-describedby={errors.confirmPassword ? "confirmPassword-error" : undefined}
-                                />
-                                {isFieldValid('confirmPassword') && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaCheckCircle className="text-green-500" />
-                                    </div>
-                                )}
-                                {errors.confirmPassword && touched.confirmPassword && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaExclamationCircle className="text-red-500" />
-                                    </div>
-                                )}
-                            </div>
-                            {errors.confirmPassword && touched.confirmPassword && (
-                                <p id="confirmPassword-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                    <FaExclamationCircle className="mr-1" /> {errors.confirmPassword}
-                                </p>
-                            )}
-                        </div>
-
-                        <div>
-                            <label htmlFor="sbuId" className={`block text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                                SBU ID
-                            </label>
-                            <div className="relative mt-1">
-                                <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                    <FaIdCard />
-                                </div>
-                                <input
-                                    id="sbuId"
-                                    name="sbuId"
-                                    type="text"
-                                    value={formData.sbuId}
-                                    onChange={handleChange}
-                                    onBlur={() => setTouched(prev => ({ ...prev, sbuId: true }))}
-                                    className={`pl-10 appearance-none rounded-md relative block w-full px-3 py-2 border
-                                        ${errors.sbuId && touched.sbuId
-                                            ? 'border-red-500 error-border'
-                                            : isFieldValid('sbuId')
-                                                ? 'border-green-500'
-                                                : darkMode ? 'border-gray-700' : 'border-gray-300'
-                                        }
-                                        placeholder-gray-500 
-                                        ${darkMode
-                                            ? 'bg-gray-700 text-white placeholder-gray-400'
-                                            : 'text-gray-900'
-                                        } 
-                                        focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm`}
-                                    placeholder="12345678"
-                                    maxLength="8"
-                                    aria-invalid={errors.sbuId && touched.sbuId ? "true" : "false"}
-                                    aria-describedby={errors.sbuId ? "sbuId-error" : undefined}
-                                />
-                                {isFieldValid('sbuId') && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaCheckCircle className="text-green-500" />
-                                    </div>
-                                )}
-                                {errors.sbuId && touched.sbuId && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaExclamationCircle className="text-red-500" />
-                                    </div>
-                                )}
-                            </div>
-                            {errors.sbuId && touched.sbuId && (
-                                <p id="sbuId-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                    <FaExclamationCircle className="mr-1" /> {errors.sbuId}
-                                </p>
-                            )}
-                            <p className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                Your 8-digit Stony Brook University ID number
-                            </p>
-                        </div>
-
-                        <div>
-                            <label htmlFor="userType" className={`block text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                                User Type
-                            </label>
-                            <div className="relative mt-1">
-                                <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                    <FaUserTag />
-                                </div>
-                                <select
-                                    id="userType"
-                                    name="userType"
-                                    value={formData.userType}
-                                    onChange={handleChange}
-                                    onBlur={() => setTouched(prev => ({ ...prev, userType: true }))}
-                                    className={`pl-10 appearance-none rounded-md relative block w-full px-3 py-2 border
-                                        ${errors.userType && touched.userType
-                                            ? 'border-red-500 error-border'
-                                            : isFieldValid('userType')
-                                                ? 'border-green-500'
-                                                : darkMode ? 'border-gray-700' : 'border-gray-300'
-                                        }
-                                        ${darkMode
-                                            ? 'bg-gray-700 text-white'
-                                            : 'text-gray-900'
-                                        } 
-                                        focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm`}
-                                    aria-invalid={errors.userType && touched.userType ? "true" : "false"}
-                                    aria-describedby={errors.userType ? "userType-error" : undefined}
-                                >
-                                    <option value="student">Student</option>
-                                    <option value="faculty">Faculty</option>
-                                    <option value="staff">Staff</option>
-                                    <option value="visitor">Visitor</option>
-                                </select>
-                                {isFieldValid('userType') && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                        <FaCheckCircle className="text-green-500" />
-                                    </div>
-                                )}
-                                {errors.userType && touched.userType && (
-                                    <div className="absolute inset-y-0 right-0 flex items-center pr-10 pointer-events-none">
-                                        <FaExclamationCircle className="text-red-500" />
-                                    </div>
-                                )}
-                            </div>
-                            {errors.userType && touched.userType && (
-                                <p id="userType-error" className="mt-1 text-sm text-red-500 flex items-center">
-                                    <FaExclamationCircle className="mr-1" /> {errors.userType}
-                                </p>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Form validation summary */}
-                    {formSubmitted && Object.keys(errors).length > 0 && (
-                        <div className={`p-3 rounded-md ${darkMode ? 'bg-red-900/50' : 'bg-red-50'} border ${darkMode ? 'border-red-800' : 'border-red-200'}`}>
-                            <div className="flex">
-                                <FaExclamationCircle className={`flex-shrink-0 h-5 w-5 text-red-500 mt-0.5`} />
-                                <div className="ml-3">
-                                    <h3 className={`text-sm font-medium ${darkMode ? 'text-red-300' : 'text-red-800'}`}>
-                                        Please correct the following errors:
+                        <div className="p-8">
+                            <div className="space-y-6">
+                                <div>
+                                    <h3 className={`text-xl font-semibold mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        Registration Process
                                     </h3>
-                                    <div className={`mt-2 text-sm ${darkMode ? 'text-red-300' : 'text-red-700'}`}>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                            {Object.keys(errors).map(key => (
-                                                <li key={key}>{errors[key]}</li>
-                                            ))}
-                                        </ul>
-                                    </div>
+                                    <ul className={`space-y-2 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                                        <li className="flex items-start">
+                                            <span className="inline-flex items-center justify-center size-5 rounded-full bg-red-100 text-red-600 mr-2 mt-0.5">1</span>
+                                            Create your account with a valid @stonybrook.edu email
+                                        </li>
+                                        <li className="flex items-start">
+                                            <span className="inline-flex items-center justify-center size-5 rounded-full bg-red-100 text-red-600 mr-2 mt-0.5">2</span>
+                                            Wait for administrator approval (usually within 24 hours)
+                                        </li>
+                                        <li className="flex items-start">
+                                            <span className="inline-flex items-center justify-center size-5 rounded-full bg-red-100 text-red-600 mr-2 mt-0.5">3</span>
+                                            Log in and start using P4SBU services
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <div className={`p-4 rounded-xl ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                                    <h4 className={`font-medium mb-2 flex items-center ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        <FaShieldAlt className="mr-2 text-green-500" />
+                                        Important Information
+                                    </h4>
+                                    <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                                        Stony Brook University affiliated individuals (students and faculty) require an <strong>@stonybrook.edu</strong> email address and SBU ID. Visitors can register with any email address.
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                        Already have an account?{' '}
+                                        <Link to="/login" className={`font-medium ${darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'}`}>
+                                            Sign in
+                                        </Link>
+                                    </p>
                                 </div>
                             </div>
                         </div>
-                    )}
-
-                    <div>
-                        <button
-                            id="create account"
-                            type="submit"
-                            disabled={isLoading}
-                            className={`group relative w-full flex justify-center py-2 px-4 border border-transparent rounded-md font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 ${isLoading ? 'cursor-not-allowed opacity-75' : ''}`}
-                        >
-                            {isLoading ? (
-                                <>
-                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    Creating Account...
-                                </>
-                            ) : 'Create Account'}
-                        </button>
                     </div>
 
-                    <div className="text-center">
+                    {/* Back to home button */}
+                    <div className="mt-6 text-center">
                         <Link
                             to="/"
-                            className={`inline-flex items-center px-4 py-2 border rounded-md shadow-sm text-sm font-medium ${darkMode
-                                ? 'border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600'
-                                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                                }`}
+                            className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${darkMode
+                                ? 'text-gray-300 hover:text-white hover:bg-gray-800'
+                                : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'}`}
                         >
-                            <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M9.707 14.707a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 1.414L7.414 9H15a1 1 0 110 2H7.414l2.293 2.293a1 1 0 010 1.414z" clipRule="evenodd" />
-                            </svg>
+                            <FaArrowLeft className="mr-2" />
                             Back to Home
                         </Link>
                     </div>
-                </form>
+                </div>
+
+                {/* Right Column - Registration Form */}
+                <div className="lg:w-2/3">
+                    <div className={`rounded-2xl overflow-hidden shadow-lg ${darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'}`}>
+                        <div className="p-8 relative">
+                            {/* Decorative accent */}
+                            <div className="absolute top-0 right-0 h-1 w-24 bg-gradient-to-l from-red-600 to-red-400"></div>
+
+                            <h2 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                Register for an Account
+                            </h2>
+
+                            {/* Success message */}
+                            {success && (
+                                <div className={`mb-6 p-4 rounded-xl ${darkMode ? 'bg-green-900/30 text-green-300' : 'bg-green-50 text-green-800'} flex items-center`}>
+                                    <FaCheckCircle className="flex-shrink-0 mr-3" />
+                                    <span>Registration successful! Redirecting to login page...</span>
+                                </div>
+                            )}
+
+                            {/* Error message */}
+                            {registerError && (
+                                <div className={`mb-6 p-4 rounded-xl ${darkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-50 text-red-800'} flex items-center`}>
+                                    <FaExclamationCircle className="flex-shrink-0 mr-3" />
+                                    <span>{registerError}</span>
+                                </div>
+                            )}
+
+                            <form onSubmit={handleSubmit} className="space-y-6">
+                                {/* Name Fields */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label htmlFor="firstName" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                            First Name*
+                                        </label>
+                                        <div className="relative">
+                                            <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                <FaUser className="w-5 h-5" />
+                                            </div>
+                                            <input
+                                                id="firstName"
+                                                name="firstName"
+                                                type="text"
+                                                autoComplete="given-name"
+                                                value={formData.firstName}
+                                                onChange={handleChange}
+                                                onBlur={() => setTouched(prev => ({ ...prev, firstName: true }))}
+                                                className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} 
+                                                ${errors.firstName && touched.firstName ? 'border-red-500 error-border' : isFieldValid('firstName') ? 'border-green-500' : 'border'} 
+                                                focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-400' : 'focus:ring-red-600'}`}
+                                                placeholder="John"
+                                            />
+                                            {isFieldValid('firstName') && (
+                                                <FaCheckCircle className="absolute right-3 top-3 text-green-500" />
+                                            )}
+                                        </div>
+                                        {errors.firstName && touched.firstName && (
+                                            <p className="mt-1 text-sm text-red-500 flex items-center">
+                                                <FaExclamationCircle className="mr-1" /> {errors.firstName}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label htmlFor="lastName" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                            Last Name*
+                                        </label>
+                                        <div className="relative">
+                                            <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                <FaUser className="w-5 h-5" />
+                                            </div>
+                                            <input
+                                                id="lastName"
+                                                name="lastName"
+                                                type="text"
+                                                autoComplete="family-name"
+                                                value={formData.lastName}
+                                                onChange={handleChange}
+                                                onBlur={() => setTouched(prev => ({ ...prev, lastName: true }))}
+                                                className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} 
+                                                ${errors.lastName && touched.lastName ? 'border-red-500 error-border' : isFieldValid('lastName') ? 'border-green-500' : 'border'} 
+                                                focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-400' : 'focus:ring-red-600'}`}
+                                                placeholder="Doe"
+                                            />
+                                            {isFieldValid('lastName') && (
+                                                <FaCheckCircle className="absolute right-3 top-3 text-green-500" />
+                                            )}
+                                        </div>
+                                        {errors.lastName && touched.lastName && (
+                                            <p className="mt-1 text-sm text-red-500 flex items-center">
+                                                <FaExclamationCircle className="mr-1" /> {errors.lastName}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Email */}
+                                <div>
+                                    <label htmlFor="email" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                        Email Address*
+                                    </label>
+                                    <div className="relative">
+                                        <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            <FaEnvelope className="w-5 h-5" />
+                                        </div>
+                                        <input
+                                            id="email"
+                                            name="email"
+                                            type="email"
+                                            autoComplete="email"
+                                            value={formData.email}
+                                            onChange={handleChange}
+                                            onBlur={() => setTouched(prev => ({ ...prev, email: true }))}
+                                            className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} 
+                                            ${errors.email && touched.email ? 'border-red-500 error-border' : isFieldValid('email') ? 'border-green-500' : 'border'} 
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-400' : 'focus:ring-red-600'}`}
+                                            placeholder="your.name@stonybrook.edu"
+                                        />
+                                        {isFieldValid('email') && (
+                                            <FaCheckCircle className="absolute right-3 top-3 text-green-500" />
+                                        )}
+                                    </div>
+                                    {errors.email && touched.email && (
+                                        <p className="mt-1 text-sm text-red-500 flex items-center">
+                                            <FaExclamationCircle className="mr-1" /> {errors.email}
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Password */}
+                                <div>
+                                    <label htmlFor="password" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                        Password*
+                                    </label>
+                                    <div className="relative">
+                                        <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            <FaLock className="w-5 h-5" />
+                                        </div>
+                                        <input
+                                            id="password"
+                                            name="password"
+                                            type="password"
+                                            autoComplete="new-password"
+                                            value={formData.password}
+                                            onChange={handleChange}
+                                            onBlur={() => setTouched(prev => ({ ...prev, password: true }))}
+                                            className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} 
+                                            ${errors.password && touched.password ? 'border-red-500 error-border' : isFieldValid('password') ? 'border-green-500' : 'border'} 
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-400' : 'focus:ring-red-600'}`}
+                                            placeholder="••••••••"
+                                        />
+                                        {isFieldValid('password') && (
+                                            <FaCheckCircle className="absolute right-3 top-3 text-green-500" />
+                                        )}
+                                    </div>
+                                    {errors.password && touched.password && (
+                                        <p className="mt-1 text-sm text-red-500 flex items-center">
+                                            <FaExclamationCircle className="mr-1" /> {errors.password}
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Confirm Password */}
+                                <div>
+                                    <label htmlFor="confirmPassword" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                        Confirm Password*
+                                    </label>
+                                    <div className="relative">
+                                        <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            <FaLock className="w-5 h-5" />
+                                        </div>
+                                        <input
+                                            id="confirmPassword"
+                                            name="confirmPassword"
+                                            type="password"
+                                            autoComplete="new-password"
+                                            value={formData.confirmPassword}
+                                            onChange={handleChange}
+                                            onBlur={() => setTouched(prev => ({ ...prev, confirmPassword: true }))}
+                                            className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} 
+                                            ${errors.confirmPassword && touched.confirmPassword ? 'border-red-500 error-border' : isFieldValid('confirmPassword') ? 'border-green-500' : 'border'} 
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-400' : 'focus:ring-red-600'}`}
+                                            placeholder="••••••••"
+                                        />
+                                        {isFieldValid('confirmPassword') && (
+                                            <FaCheckCircle className="absolute right-3 top-3 text-green-500" />
+                                        )}
+                                    </div>
+                                    {errors.confirmPassword && touched.confirmPassword && (
+                                        <p className="mt-1 text-sm text-red-500 flex items-center">
+                                            <FaExclamationCircle className="mr-1" /> {errors.confirmPassword}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <label htmlFor="userType" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                        User Type*
+                                    </label>
+                                    <div className="relative">
+                                        <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            <FaUserTag className="w-5 h-5" />
+                                        </div>
+                                        <select
+                                            id="userType"
+                                            name="userType"
+                                            value={formData.userType}
+                                            onChange={handleChange}
+                                            onBlur={() => setTouched(prev => ({ ...prev, userType: true }))}
+                                            className={`pl-10 w-full px-4 py-3 rounded-lg appearance-none ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} 
+                                            ${errors.userType && touched.userType ? 'border-red-500 error-border' : isFieldValid('userType') ? 'border-green-500' : 'border'} 
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-400' : 'focus:ring-red-600'}`}
+                                        >
+                                            <option value="student">Student</option>
+                                            <option value="faculty">Faculty/Staff</option>
+                                            <option value="visitor">Visitor</option>
+                                        </select>
+                                        {isFieldValid('userType') && (
+                                            <FaCheckCircle className="absolute right-8 top-3 text-green-500" />
+                                        )}
+                                    </div>
+                                    {errors.userType && touched.userType && (
+                                        <p className="mt-1 text-sm text-red-500 flex items-center">
+                                            <FaExclamationCircle className="mr-1" /> {errors.userType}
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* SBU ID field - show for all users but make it auto-generated for visitors */}
+                                <div>
+                                    <label htmlFor="sbuId" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                        {formData.userType === 'visitor' ? 'Visitor ID (Auto-generated)' : 'SBU ID* (8 digits)'}
+                                    </label>
+                                    <div className="relative">
+                                        <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            <FaIdCard className="w-5 h-5" />
+                                        </div>
+                                        <input
+                                            id="sbuId"
+                                            name="sbuId"
+                                            type="text"
+                                            inputMode="numeric"
+                                            maxLength={8}
+                                            value={formData.userType === 'visitor' ? 'Will be auto-generated' : formData.sbuId}
+                                            onChange={handleChange}
+                                            onBlur={() => setTouched(prev => ({ ...prev, sbuId: true }))}
+                                            disabled={formData.userType === 'visitor'}
+                                            className={`pl-10 w-full px-4 py-3 rounded-lg ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'} 
+                                            ${errors.sbuId && touched.sbuId ? 'border-red-500 error-border' : isFieldValid('sbuId') ? 'border-green-500' : 'border'} 
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-400' : 'focus:ring-red-600'}
+                                            ${formData.userType === 'visitor' ? `${darkMode ? 'bg-gray-600' : 'bg-gray-100'} cursor-not-allowed` : ''}`}
+                                            placeholder={formData.userType === 'visitor' ? '' : "12345678"}
+                                        />
+                                        {isFieldValid('sbuId') && formData.userType !== 'visitor' && (
+                                            <FaCheckCircle className="absolute right-3 top-3 text-green-500" />
+                                        )}
+                                    </div>
+                                    {errors.sbuId && touched.sbuId && (
+                                        <p className="mt-1 text-sm text-red-500 flex items-center">
+                                            <FaExclamationCircle className="mr-1" /> {errors.sbuId}
+                                        </p>
+                                    )}
+                                    {formData.userType === 'visitor' && (
+                                        <p className="mt-1 text-sm text-amber-500 flex items-center">
+                                            <FaExclamationCircle className="mr-1" />
+                                            Visitors are not part of Stony Brook University. A unique Visitor ID will be automatically assigned.
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div className="mt-6">
+                                    <button
+                                        type="submit"
+                                        disabled={isLoading}
+                                        className={`w-full py-3 px-4 rounded-lg text-white font-medium shadow-md transform transition-all hover:-translate-y-1 hover:shadow-lg
+                                        ${isLoading
+                                                ? 'bg-gray-400 cursor-not-allowed'
+                                                : 'bg-red-600 hover:bg-red-700'}`}
+                                    >
+                                        {isLoading ? (
+                                            <div className="flex items-center justify-center">
+                                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                Registering...
+                                            </div>
+                                        ) : 'Create Account'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     );
