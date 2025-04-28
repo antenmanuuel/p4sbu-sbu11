@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcryptjs');
 const User = require('../models/users');
 const PermitType = require('../models/permit_types');
 const Reservation = require('../models/reservation');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const NotificationHelper = require('../utils/notificationHelper');
+const Permit = require('../models/permits');
+const Ticket = require('../models/tickets');
 
 // Get Pending Users
 router.get('/pending-users', verifyToken, isAdmin, async (req, res) => {
@@ -210,6 +213,198 @@ router.put('/users/:userId/toggle-status', verifyToken, isAdmin, async (req, res
         });
     } catch (error) {
         console.error('Error toggling user status:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Change User Role (student, faculty, visitor, admin)
+router.put('/users/:userId/change-role', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const { role } = req.body;
+
+        // Validate the role parameter
+        if (!role || !['student', 'faculty', 'visitor', 'admin'].includes(role)) {
+            return res.status(400).json({ message: 'Invalid role - must be student, faculty, visitor, or admin' });
+        }
+
+        // Get the user to check current role
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Don't allow changing the default admin account
+        if (user.email === 'admin@stonybrook.edu') {
+            return res.status(403).json({ message: 'Default admin account role cannot be changed' });
+        }
+
+        // If promoting to admin, check the admin limit (max 5)
+        if (role === 'admin' && user.userType !== 'admin') {
+            const adminCount = await User.countDocuments({ userType: 'admin' });
+            if (adminCount >= 5) {
+                return res.status(400).json({ message: 'Admin limit reached (maximum 5 admins allowed)' });
+            }
+        }
+
+        // Handle special case for visitor IDs
+        let updateData = { userType: role };
+        if (role === 'visitor' && user.userType !== 'visitor') {
+            // Generate a visitor ID if changing to visitor
+            const visitorId = `V${Date.now().toString().substring(0, 10)}`;
+            updateData.sbuId = visitorId;
+        }
+
+        // Clean up user-specific records based on the new role
+        try {
+            // Different cleanup logic based on the target role
+            let cleanupOperations = [];
+            let cleanupMessage = '';
+
+            // Delete all cars for the user
+            const Car = require('../models/car');
+            const deleteCarsOperation = Car.deleteMany({ userId: userId });
+
+            // Clear payment method information
+            updateData.defaultPaymentMethodId = null;
+
+            if (role === 'admin') {
+                // Admins shouldn't have any permits, reservations or tickets
+                cleanupOperations = [
+                    // Delete all permits
+                    Permit.deleteMany({ userId: userId }),
+                    // Delete all reservations
+                    Reservation.deleteMany({ user: userId }),
+                    // Delete all tickets
+                    Ticket.deleteMany({ user: userId }),
+                    // Delete all cars
+                    deleteCarsOperation
+                ];
+                cleanupMessage = 'As part of your promotion to admin, your permits, reservations, tickets, and vehicle information have been removed.';
+            }
+            else if (role === 'faculty') {
+                // Faculty shouldn't have student-specific permits/reservations
+                cleanupOperations = [
+                    // Only delete Student permits
+                    Permit.deleteMany({
+                        userId: userId,
+                        permitType: 'Student'
+                    }),
+                    // Keep faculty reservations intact
+                    // Delete unpaid tickets if any
+                    Ticket.deleteMany({ user: userId, isPaid: false }),
+                    // Delete all cars
+                    deleteCarsOperation
+                ];
+                cleanupMessage = 'As part of your role change to faculty, your student permits and vehicle information have been removed.';
+            }
+            else if (role === 'student') {
+                // Students shouldn't have faculty-specific permits
+                cleanupOperations = [
+                    // Only delete Faculty permits
+                    Permit.deleteMany({
+                        userId: userId,
+                        permitType: 'Faculty'
+                    }),
+                    // Keep student reservations intact
+                    // Keep tickets intact
+                    // Delete all cars
+                    deleteCarsOperation
+                ];
+                cleanupMessage = 'As part of your role change to student, your faculty permits and vehicle information have been removed.';
+            }
+            else if (role === 'visitor') {
+                // Visitors shouldn't have any permits, reservations or unpaid tickets
+                cleanupOperations = [
+                    // Delete all permits
+                    Permit.deleteMany({ userId: userId }),
+                    // Delete all reservations
+                    Reservation.deleteMany({ user: userId }),
+                    // Delete all tickets
+                    Ticket.deleteMany({ user: userId }),
+                    // Delete all cars
+                    deleteCarsOperation
+                ];
+                cleanupMessage = 'As part of your role change to visitor, your permits, reservations, tickets, and vehicle information have been removed.';
+            }
+
+            if (cleanupOperations.length > 0) {
+                const cleanupResults = await Promise.allSettled(cleanupOperations);
+
+                // Log results of cleanup operations
+                const operationMap = {
+                    'admin': ['permits', 'reservations', 'tickets', 'vehicles'],
+                    'visitor': ['permits', 'reservations', 'tickets', 'vehicles'],
+                    'faculty': ['student permits', 'unpaid tickets', 'vehicles'],
+                    'student': ['faculty permits', 'vehicles']
+                };
+
+                console.log(`Cleanup results for user changed to ${role}:`,
+                    cleanupResults.map((result, index) => {
+                        const operation = operationMap[role][index];
+
+                        if (result.status === 'fulfilled') {
+                            return `${operation}: ${result.value.deletedCount} deleted`;
+                        } else {
+                            return `${operation}: failed - ${result.reason}`;
+                        }
+                    })
+                );
+
+                // Create notification about data cleanup
+                if (cleanupMessage) {
+                    await NotificationHelper.createSystemNotification(
+                        userId,
+                        'Data Cleanup for Role Change',
+                        cleanupMessage,
+                        role === 'admin' ? '/admin-dashboard' : '/dashboard'
+                    );
+                }
+            }
+        } catch (cleanupError) {
+            console.error(`Error cleaning up user data for new ${role}:`, cleanupError);
+            // Continue even if cleanup fails
+        }
+
+        // Update user role
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            updateData,
+            { new: true }
+        ).select('-password');
+
+        // Create notification for the user
+        try {
+            if (role === 'admin') {
+                await NotificationHelper.createSystemNotification(
+                    userId,
+                    'Administrator Role Granted',
+                    'You have been granted administrator privileges on the system.',
+                    '/admin-dashboard'
+                );
+            } else {
+                await NotificationHelper.createSystemNotification(
+                    userId,
+                    'Role Changed',
+                    `Your account role has been updated to ${role}.`,
+                    '/dashboard'
+                );
+            }
+        } catch (notificationError) {
+            console.error('Error creating role change notification:', notificationError);
+            // Continue even if notification creation fails
+        }
+
+        res.status(200).json({
+            message: role === 'admin'
+                ? 'User promoted to admin successfully'
+                : user.userType === 'admin'
+                    ? 'User demoted from admin successfully'
+                    : `User role changed to ${role} successfully`,
+            user: updatedUser
+        });
+    } catch (error) {
+        console.error('Error changing user role:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
