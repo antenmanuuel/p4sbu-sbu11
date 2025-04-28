@@ -7,7 +7,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
 } from 'recharts';
-import { FaUsers, FaUserCog, FaParking, FaMapMarkerAlt, FaCheckCircle, FaTimesCircle, FaInfoCircle, FaExclamationCircle, FaTicketAlt, FaCar, FaFileAlt, FaSync, FaFileDownload } from 'react-icons/fa';
+import { FaUsers, FaUserCog, FaParking, FaMapMarkerAlt, FaCheckCircle, FaTimesCircle, FaInfoCircle, FaExclamationCircle, FaTicketAlt, FaCar, FaFileAlt, FaSync, FaFileDownload, FaEnvelope } from 'react-icons/fa';
 import { AdminService, PermitService } from '../../utils/api';
 
 const AdminDashboard = ({ isAuthenticated, darkMode }) => {
@@ -44,7 +44,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     const [revenueError, setRevenueError] = useState('');
 
     // State for current month and pie data
-    const [currentMonth, setCurrentMonth] = useState({ month: '', value: 0, permits: 0, citations: 0, metered: 0});
+    const [currentMonth, setCurrentMonth] = useState({ month: '', value: 0, permits: 0, citations: 0, metered: 0 });
     const [pieData, setPieData] = useState([
         { name: 'Permits', value: 0 },
         { name: 'Citations', value: 0 },
@@ -67,14 +67,21 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     // Add useRef to imports
     const isInitialLoad = useRef(true);
 
+    // Add state for contact submissions count
+    const [contactSubmissionsCount, setContactSubmissionsCount] = useState(0);
+    const [isContactSubmissionsCountLoading, setIsContactSubmissionsCountLoading] = useState(true);
+    const [contactSubmissionsCountError, setContactSubmissionsCountError] = useState('');
+
     // Update the loadDashboardData function to mark initial load as complete after first fetch
     const loadDashboardData = useCallback(() => {
+        // Load all dashboard data without setting up any automatic refresh
         fetchPendingUsers();
         fetchUsersCount();
         fetchLotsCount();
         fetchRevenueStats();
         fetchActivePermitsCount();
         fetchActiveReservationsCount();
+        fetchContactSubmissionsCount();
 
         // Mark initial load as complete after a short delay
         setTimeout(() => {
@@ -85,18 +92,44 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     // Replace the existing useEffect for initial data loading with this improved version
     useEffect(() => {
         if (isAuthenticated) {
-            // Load data initially
-            loadDashboardData();
+            console.log('Admin Dashboard: Loading initial data on startup');
 
-            // Set up polling for live updates (every 30 seconds)
-            const pollingInterval = setInterval(() => {
-                fetchRevenueStats();
-                fetchActivePermitsCount();
-                fetchActiveReservationsCount();
-            }, 30000); // 30 seconds
+            // Show the "refreshing" notification on startup
+            setNotificationMessage('Refreshing data...');
+            setNotificationType('success');
+            setShowNotification(true);
 
-            // Clean up interval on component unmount
-            return () => clearInterval(pollingInterval);
+            // Load all data on startup
+            const loadStartupData = async () => {
+                try {
+                    // Load all data sources
+                    await fetchPendingUsers();
+                    await fetchUsersCount();
+                    await fetchLotsCount();
+                    await fetchRevenueStats();
+                    await fetchActivePermitsCount();
+                    await fetchActiveReservationsCount();
+                    await fetchContactSubmissionsCount();
+
+                    // Show success notification after loading
+                    setNotificationMessage('Data refreshed successfully');
+                    setNotificationType('success');
+
+                    // Mark initial load as complete
+                    isInitialLoad.current = false;
+                } catch (error) {
+                    console.error('Error loading initial data:', error);
+                    setNotificationMessage('Failed to refresh data');
+                    setNotificationType('error');
+                }
+
+                // Hide notification after 3 seconds
+                setTimeout(() => {
+                    setShowNotification(false);
+                }, 3000);
+            };
+
+            loadStartupData();
         }
     }, [isAuthenticated]);
 
@@ -253,22 +286,11 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                 } else {
                     setGrowthData([]);
                 }
-
-                // Show notification for revenue data update
-                if (!isInitialLoad.current) {
-                    setNotificationMessage('Revenue statistics updated');
-                    setNotificationType('info');
-                    setShowNotification(true);
-
-                    setTimeout(() => {
-                        setShowNotification(false);
-                    }, 3000);
-                }
             } else {
                 // Handle empty or error response
                 console.error('Empty or error response from revenue statistics:', response);
                 setRevenueData([]);
-                setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, metered: 0});
+                setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, metered: 0 });
                 setPieData([{ name: 'No Revenue', value: 1 }]);
                 setGrowthData([]);
             }
@@ -276,7 +298,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
             console.error('Error fetching revenue statistics:', error);
             // Handle error state
             setRevenueData([]);
-            setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, metered: 0});
+            setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, metered: 0 });
             setPieData([{ name: 'No Revenue', value: 1 }]);
             setGrowthData([]);
         } finally {
@@ -331,6 +353,27 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
             setReservationsCountError('An unexpected error occurred while fetching active reservations count');
         } finally {
             setIsReservationsCountLoading(false);
+        }
+    };
+
+    // Add function to fetch contact submissions count
+    const fetchContactSubmissionsCount = async () => {
+        setIsContactSubmissionsCountLoading(true);
+        setContactSubmissionsCountError('');
+
+        try {
+            const result = await AdminService.getContactSubmissionCounts();
+            if (result.success) {
+                setContactSubmissionsCount(result.data.counts.total || 0);
+            } else {
+                setContactSubmissionsCountError(result.error || 'Failed to fetch contact submissions count');
+                console.error('Error fetching contact submissions count:', result.error);
+            }
+        } catch (error) {
+            setContactSubmissionsCountError('An unexpected error occurred');
+            console.error('Unexpected error fetching contact submissions count:', error);
+        } finally {
+            setIsContactSubmissionsCountLoading(false);
         }
     };
 
@@ -476,13 +519,19 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
         navigate('/admin/tickets');
     };
 
+    // Add function to navigate to Manage Contact Submissions page
+    const goToManageContactSubmissions = () => {
+        navigate('/contact-submissions');
+    };
+
     // Add function to handle manual refresh
     const handleManualRefresh = async () => {
         setNotificationMessage('Refreshing data...');
-        setNotificationType('info');
+        setNotificationType('success');
         setShowNotification(true);
 
         try {
+            // This is now the only way revenue statistics are updated
             await fetchRevenueStats();
             await fetchActivePermitsCount();
             await fetchActiveReservationsCount();
@@ -490,6 +539,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
             setNotificationMessage('Data refreshed successfully');
             setNotificationType('success');
         } catch (error) {
+            console.error('Error refreshing data:', error);
             setNotificationMessage('Failed to refresh data');
             setNotificationType('error');
         }
@@ -588,10 +638,14 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
             {showNotification && (
                 <div className={`fixed top-20 right-4 px-4 py-3 rounded z-50 shadow-md flex items-center ${notificationType === 'success'
                     ? 'bg-green-100 border border-green-400 text-green-700'
-                    : 'bg-red-100 border border-red-400 text-red-700'
+                    : notificationType === 'info'
+                        ? 'bg-blue-100 border border-blue-400 text-blue-700'
+                        : 'bg-red-100 border border-red-400 text-red-700'
                     }`}>
                     {notificationType === 'success' ? (
                         <FaCheckCircle className="mr-2" />
+                    ) : notificationType === 'info' ? (
+                        <FaInfoCircle className="mr-2" />
                     ) : (
                         <FaTimesCircle className="mr-2" />
                     )}
@@ -717,6 +771,32 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                         </div>
                     </div>
                 </div>
+                <div
+                    className={`p-6 shadow-sm rounded-lg border hover:shadow-md transition-shadow cursor-pointer
+                               ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}
+                    onClick={goToManageContactSubmissions}
+                >
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Contact Submissions</p>
+                            {isContactSubmissionsCountLoading ? (
+                                <div className="mt-1 h-8 w-16 bg-gray-200 rounded animate-pulse"></div>
+                            ) : contactSubmissionsCountError ? (
+                                <p className="text-2xl font-bold mt-1 text-red-500">Error</p>
+                            ) : (
+                                <p className="text-2xl font-bold mt-1">{contactSubmissionsCount}</p>
+                            )}
+                        </div>
+                        <div className={`p-3 rounded-full ${darkMode ? 'bg-indigo-900' : 'bg-indigo-100'}`}>
+                            <FaEnvelope className={`h-5 w-5 ${darkMode ? 'text-indigo-200' : 'text-indigo-600'}`} />
+                        </div>
+                    </div>
+                    <div className="mt-2">
+                        <p className={`text-sm ${darkMode ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                            Click to manage form submissions
+                        </p>
+                    </div>
+                </div>
             </div>
 
             {/* Revenue Overview */}
@@ -738,7 +818,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                                 } transition-colors`}
                             title="Refresh revenue data"
                         >
-                            <FaSync className={`${isRevenueLoading ? 'animate-spin' : ''} text-red-600`} />
+                            <FaSync className={`${isRevenueLoading ? 'animate-spin' : ''} text-green-600`} />
                         </button>
                     </div>
 
