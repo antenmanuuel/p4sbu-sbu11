@@ -23,42 +23,43 @@ const Billing = ({ darkMode, isAuthenticated }) => {
     const [error, setError] = useState(null);
     const [billingHistory, setBillingHistory] = useState([]);
 
-    // Fetch billing history from backend
-    useEffect(() => {
-        const fetchBillingHistory = async () => {
-            setLoading(true);
-            setError(null);
-            try {
-                const response = await UserService.getBillingHistory();
-                console.log('Billing history response:', response);
+    // Define fetchBillingHistory outside useEffect so it can be called elsewhere
+    const fetchBillingHistory = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await UserService.getBillingHistory();
+            console.log('Billing history response:', response);
 
-                if (response.success && response.data.billingHistory) {
-                    // Format the billing data with additional details
-                    const formattedBillingHistory = response.data.billingHistory.map(item => ({
-                        id: item._id,
-                        date: new Date(item.date).toISOString().split('T')[0], // Format as YYYY-MM-DD
-                        description: item.description,
-                        amount: item.amount,
-                        status: item.status,
-                        paymentMethod: 'Credit Card', // Default payment method
-                        details: `${item.description} - Purchased on ${new Date(item.date).toLocaleDateString()}`,
-                        receiptNumber: `REC-${new Date(item.date).getFullYear()}-${item._id.substr(-4)}`
-                    }));
+            if (response.success && response.data.billingHistory) {
+                // Format the billing data with additional details
+                const formattedBillingHistory = response.data.billingHistory.map(item => ({
+                    id: item._id,
+                    date: new Date(item.date).toISOString().split('T')[0], // Format as YYYY-MM-DD
+                    description: item.description,
+                    amount: item.amount,
+                    status: item.status,
+                    paymentMethod: 'Credit Card', // Default payment method
+                    details: `${item.description} - Purchased on ${new Date(item.date).toLocaleDateString()}`,
+                    receiptNumber: `REC-${new Date(item.date).getFullYear()}-${item._id.substr(-4)}`
+                }));
 
-                    setBillingHistory(formattedBillingHistory);
-                } else {
-                    throw new Error(response.error || 'Failed to fetch billing history');
-                }
-            } catch (error) {
-                console.error('Error fetching billing history:', error);
-                setError(error.message || 'An unexpected error occurred');
-                // Set empty array to avoid undefined errors
-                setBillingHistory([]);
-            } finally {
-                setLoading(false);
+                setBillingHistory(formattedBillingHistory);
+            } else {
+                throw new Error(response.error || 'Failed to fetch billing history');
             }
-        };
+        } catch (error) {
+            console.error('Error fetching billing history:', error);
+            setError(error.message || 'An unexpected error occurred');
+            // Set empty array to avoid undefined errors
+            setBillingHistory([]);
+        } finally {
+            setLoading(false);
+        }
+    };
 
+    // Fetch billing history from backend on component mount
+    useEffect(() => {
         fetchBillingHistory();
     }, []);
 
@@ -78,11 +79,18 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                 let matchesType = true;
                 if (filterType !== 'all') {
                     if (filterType === 'permit') {
-                        matchesType = bill.type === 'permit';
-                    } else if (filterType === 'reservation') {
-                        matchesType = bill.type === 'reservation';
+                        // Match direct permit type or description contains "Permit" but not "Refund"
+                        matchesType = (bill.type === 'permit' ||
+                            (bill.description.includes('Permit') && !bill.description.includes('Refund')));
                     } else if (filterType === 'refund') {
-                        matchesType = bill.type === 'refund';
+                        // Match refund type or description starts with "Refund"
+                        matchesType = (bill.type === 'refund' || bill.description.includes('Refund'));
+                    } else if (filterType === 'metered') {
+                        // Match metered type or description contains "Metered" or "Parking"
+                        matchesType = bill.type === 'metered' ||
+                            bill.description.toLowerCase().includes('metered') ||
+                            (bill.description.toLowerCase().includes('parking') &&
+                                !bill.description.includes('Permit'));
                     }
                 }
 
@@ -144,7 +152,7 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                         >
                             <option value="all">All Transactions</option>
                             <option value="permit">Permits Only</option>
-                            <option value="reservation">Reservations Only</option>
+                            <option value="metered">Metered Only</option>
                             <option value="refund">Refunds Only</option>
                         </select>
                         <select
@@ -186,7 +194,7 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                             >
                                 <option value="all">All Transactions</option>
                                 <option value="permit">Permits Only</option>
-                                <option value="reservation">Reservations Only</option>
+                                <option value="metered">Metered Only</option>
                                 <option value="refund">Refunds Only</option>
                             </select>
                         </div>
@@ -303,14 +311,19 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                                         <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                                             {bill.id}
                                         </td>
-                                        <td className={`px-6 py-4 whitespace-nowrap font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        <td className={`px-6 py-4 whitespace-nowrap font-medium ${bill.amount < 0 || bill.description.includes('Refund')
+                                            ? 'text-green-600'
+                                            : darkMode ? 'text-white' : 'text-gray-900'
+                                            }`}>
                                             {formatCurrency(bill.amount)}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium 
                                       ${bill.status === 'Paid'
                                                     ? 'bg-green-100 text-green-800'
-                                                    : 'bg-red-100 text-red-800'}`}
+                                                    : bill.status === 'Refunded'
+                                                        ? 'bg-blue-100 text-blue-800'
+                                                        : 'bg-red-100 text-red-800'}`}
                                             >
                                                 {bill.status}
                                             </span>
@@ -357,7 +370,9 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                                 <span className="font-medium">{selectedBill.date}</span>
                             </div>
                             <div className="flex justify-between mb-2">
-                                <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Description:</span>
+                                <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>
+                                    {selectedBill.description.includes('Refund') ? 'Refund For:' : 'Description:'}
+                                </span>
                                 <span className="font-medium">{selectedBill.description}</span>
                             </div>
                             <div className="flex justify-between mb-2">
@@ -365,11 +380,23 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                                 <span className="font-medium">{selectedBill.paymentMethod}</span>
                             </div>
                             <div className="flex justify-between mb-2">
-                                <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Amount:</span>
-                                <span className={`font-bold ${selectedBill.description.includes('Refund') ? 'text-green-500' : ''}`}>
+                                <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>
+                                    {selectedBill.amount < 0 ? 'Refund Amount:' : 'Amount:'}
+                                </span>
+                                <span className={`font-bold ${selectedBill.amount < 0 || selectedBill.description.includes('Refund') ? 'text-green-500' : ''}`}>
                                     {formatCurrency(selectedBill.amount)}
                                 </span>
                             </div>
+                            {selectedBill.status === 'Refunded' && (
+                                <div className="mt-4 pt-4 border-t border-gray-500">
+                                    <div className="text-center text-sm">
+                                        <span className={`inline-block px-2 py-1 rounded-full 
+                                            ${darkMode ? 'bg-blue-900 text-blue-200' : 'bg-blue-100 text-blue-800'}`}>
+                                            This transaction is a refund
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex justify-end space-x-3">

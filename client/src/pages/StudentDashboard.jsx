@@ -1065,13 +1065,13 @@ const StudentDashboard = ({ darkMode }) => {
               {reservationsError}
             </p>
           </div>
-        ) : reservations.filter(res => res.status.toLowerCase() !== 'cancelled').length === 0 ? (
+        ) : reservations.filter(res => ['active', 'upcoming', 'pending'].includes(res.status.toLowerCase())).length === 0 ? (
           <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any active parking reservations.</p>
         ) : (
           <div className="space-y-4">
-            {/* Show only the most recent non-cancelled reservation */}
+            {/* Show only the most recent active, upcoming, or pending reservation */}
             {reservations
-              .filter(reservation => reservation.status.toLowerCase() !== 'cancelled')
+              .filter(reservation => ['active', 'upcoming', 'pending'].includes(reservation.status.toLowerCase()))
               .slice(0, 1)
               .map((reservation) => (
                 <div

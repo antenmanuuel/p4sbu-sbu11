@@ -16,7 +16,10 @@ const Profile = ({ darkMode }) => {
     const [profileData, setProfileData] = useState({
         user: null,
         permits: [],
-        adminStats: null
+        adminStats: {
+            totalUsersManaged: 0,
+            totalPermitsManaged: 0,
+        }
     });
     const [userCars, setUserCars] = useState([]);
     const [loadingCars, setLoadingCars] = useState(false);
@@ -68,7 +71,10 @@ const Profile = ({ darkMode }) => {
                     setProfileData({
                         user: profileResult.data.user,
                         permits: permitsResult.success ? permitsResult.permits : [],
-                        adminStats: profileResult.data.adminStats
+                        adminStats: profileResult.data.adminStats || {
+                            totalUsersManaged: 0,
+                            totalPermitsManaged: 0,
+                        }
                     });
                 } else {
                     setError(profileResult.error || 'Failed to load profile data');
@@ -396,7 +402,7 @@ const Profile = ({ darkMode }) => {
                                             </div>
                                         ) : (
                                             <div className="sm:col-span-1">
-                                                <dt className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>SBU ID</dt>
+                                                <dt className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{user?.userType === 'visitor' ? 'Visitor ID' : 'SBU ID'}</dt>
                                                 <dd className="mt-1 text-sm">{user?.sbuId || '12345678'}</dd>
                                             </div>
                                         )}
@@ -422,7 +428,7 @@ const Profile = ({ darkMode }) => {
                         <div className={`rounded-lg shadow-md overflow-hidden mb-8 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
                             <div className="p-6">
                                 <h3 className="text-lg font-bold mb-4">Administration Statistics</h3>
-                                <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+                                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                                     <div className={`rounded-lg p-4 ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
                                         <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Total Users Managed</p>
                                         <p className="text-xl font-bold">{adminStats.totalUsersManaged}</p>
@@ -431,13 +437,7 @@ const Profile = ({ darkMode }) => {
                                         <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Total Permits Managed</p>
                                         <p className="text-xl font-bold">{adminStats.totalPermitsManaged}</p>
                                     </div>
-                                    <div className={`rounded-lg p-4 ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Actions This Month</p>
-                                        <p className="text-xl font-bold">{adminStats.actionsThisMonth}</p>
-                                    </div>
                                 </div>
-
-
                             </div>
                         </div>
                     </>
@@ -675,8 +675,8 @@ const Profile = ({ darkMode }) => {
                     <button
                         onClick={() => navigate('/notifications')}
                         className={`px-4 py-2 rounded-md text-sm font-medium ${darkMode
-                                ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
                             }`}
                     >
                         View All Notifications
