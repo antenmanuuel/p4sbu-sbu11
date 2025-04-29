@@ -30,7 +30,7 @@ const handleApiError = (error) => {
 // Configure Axios to use the base URL and include credentials
 const API = axios.create({
     baseURL: API_BASE_URL,
-    withCredentials: true
+    withCredentials: false
 });
 
 // Try connecting to alternative URLs if the main one fails
@@ -116,6 +116,13 @@ export const AuthService = {
                 localStorage.setItem('auth_token', response.data.token);
                 localStorage.setItem('user', JSON.stringify(response.data.user));
 
+                // Store the remember me preference if it was provided
+                if (credentials.rememberMe) {
+                    localStorage.setItem('remember_me', 'true');
+                } else {
+                    localStorage.removeItem('remember_me');
+                }
+
                 // Log the user type for debugging
                 console.log('User type:', response.data.user.userType);
             } else {
@@ -168,6 +175,38 @@ export const AuthService = {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user');
         return { success: true };
+    },
+
+    // Session timeout logout
+    sessionTimeout: async () => {
+        try {
+            // Log session timeout on server if possible
+            const token = localStorage.getItem('auth_token');
+            if (token) {
+                // Set a flag for the login page to show timeout message
+                localStorage.setItem('sessionExpired', 'true');
+
+                try {
+                    // Try to notify server about session timeout
+                    await API.post('/auth/session-timeout');
+                } catch (error) {
+                    console.log('Could not log session timeout to server:', error);
+                }
+            }
+
+            // Clear auth data
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user');
+
+            return { success: true };
+        } catch (error) {
+            console.error('Session timeout error:', error);
+            // Still remove auth data even if API call fails
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user');
+            localStorage.setItem('sessionExpired', 'true');
+            return { success: true };
+        }
     },
 
     // Check if user is authenticated
@@ -349,6 +388,58 @@ export const AdminService = {
                 success: false,
                 error: error.response?.data?.message || 'Failed to toggle user status'
             };
+        }
+    },
+
+    // Change user role (this is the function that needs to be modified)
+    changeUserRole: async (userId, role) => {
+        try {
+            const response = await API.put(`/admin/users/${userId}/change-role`, { role });
+
+            // Check if we're updating the current user's role
+            const currentUser = AuthService.getCurrentUser();
+            if (currentUser && currentUser._id === userId) {
+                // Update the user data in localStorage with the new role
+                const updatedUser = {
+                    ...currentUser,
+                    userType: role
+                };
+                localStorage.setItem('user', JSON.stringify(updatedUser));
+
+                // Redirect to the appropriate dashboard based on new role
+                AdminService.refreshUserSession();
+            }
+
+            return { success: true, data: response.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to change user role'
+            };
+        }
+    },
+
+    // Helper function to refresh the session after role changes
+    refreshUserSession: () => {
+        // Redirect to appropriate dashboard based on role
+        const currentUser = AuthService.getCurrentUser();
+        if (currentUser) {
+            switch (currentUser.userType) {
+                case 'admin':
+                    window.location.href = '/admin-dashboard';
+                    break;
+                case 'faculty':
+                    window.location.href = '/faculty-dashboard';
+                    break;
+                case 'student':
+                case 'visitor':
+                default:
+                    window.location.href = '/dashboard';
+                    break;
+            }
+        } else {
+            // Fallback - just reload the page
+            window.location.reload();
         }
     },
 
@@ -555,6 +646,85 @@ export const AdminService = {
                 };
             }
         }
+    },
+
+    // Contact Form Submissions
+    getContactSubmissions: async (filters = {}, page = 1, limit = 10) => {
+        try {
+            const { status, sort = '-createdAt' } = filters;
+            let queryString = `page=${page}&limit=${limit}&sort=${sort}`;
+
+            if (status) queryString += `&status=${status}`;
+            if (filters.search) queryString += `&search=${encodeURIComponent(filters.search)}`;
+
+            console.log(`Fetching contact submissions with query: ${queryString}`);
+            const response = await API.get(`/contact?${queryString}`);
+            console.log('Contact submissions response:', response.data);
+            return { success: true, data: response.data };
+        } catch (error) {
+            console.error('Error fetching contact submissions:', error);
+            console.error('Error details:', {
+                message: error.message,
+                response: error.response?.data,
+                status: error.response?.status
+            });
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch contact submissions'
+            };
+        }
+    },
+
+    getContactSubmissionById: async (id) => {
+        try {
+            const response = await API.get(`/contact/${id}`);
+            return { success: true, data: response.data };
+        } catch (error) {
+            console.error('Error fetching contact submission:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch contact submission'
+            };
+        }
+    },
+
+    updateContactSubmission: async (id, data) => {
+        try {
+            const response = await API.put(`/contact/${id}`, data);
+            return { success: true, data: response.data };
+        } catch (error) {
+            console.error('Error updating contact submission:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to update contact submission'
+            };
+        }
+    },
+
+    addContactFollowup: async (id, data) => {
+        try {
+            const response = await API.post(`/contact/${id}/followup`, data);
+            return { success: true, data: response.data };
+        } catch (error) {
+            console.error('Error adding contact follow-up:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to add contact follow-up'
+            };
+        }
+    },
+
+    getContactSubmissionCounts: async () => {
+        try {
+            const response = await API.get('/contact/count');
+            return { success: true, data: response.data };
+        } catch (error) {
+            console.error('Error fetching contact submission counts:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch contact submission counts'
+            };
+        }
     }
 };
 
@@ -676,6 +846,7 @@ export const TicketService = {
         }
     }
 };
+
 
 // Standalone Permit Type Service
 export const PermitTypeService = {
@@ -846,6 +1017,7 @@ export const LotService = {
             if (filters.status) queryString += `&status=${filters.status}`;
             if (filters.permitType) queryString += `&permitType=${filters.permitType}`;
             if (filters.rateType) queryString += `&rateType=${filters.rateType}`;
+            if (filters.userType) queryString += `&userType=${filters.userType}`;
 
             const response = await API.get(`/lots?${queryString}`);
             return { success: true, data: response.data };
@@ -1480,6 +1652,61 @@ export const NotificationService = {
             return {
                 success: false,
                 error: error.response?.data?.message || 'Failed to delete notification'
+            };
+        }
+    },
+
+    // Get notification preferences
+    getNotificationPreferences: async () => {
+        try {
+            const response = await API.get('/user/notification-preferences');
+            return {
+                success: true,
+                preferences: response.data.preferences
+            };
+        } catch (error) {
+            console.error('Error fetching notification preferences:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch notification preferences'
+            };
+        }
+    },
+
+    // Update notification preferences
+    updateNotificationPreferences: async (preferences) => {
+        try {
+            const response = await API.put('/user/notification-preferences', preferences);
+            return {
+                success: true,
+                preferences: response.data.preferences
+            };
+        } catch (error) {
+            console.error('Error updating notification preferences:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to update notification preferences'
+            };
+        }
+    }
+};
+
+// Contact Service for contact form and communication
+export const ContactService = {
+    // Submit contact form
+    submitContactForm: async (contactData) => {
+        try {
+            const response = await API.post('/contact', contactData);
+            return {
+                success: true,
+                data: response.data,
+                message: 'Contact form submitted successfully'
+            };
+        } catch (error) {
+            console.error('Contact form submission error:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to submit contact form'
             };
         }
     }

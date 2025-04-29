@@ -6,6 +6,7 @@ const User = require('../models/users');
 const UserActivity = require('../models/user_activity');
 const crypto = require('crypto');
 const emailService = require('../services/emailService');
+const { verifyToken } = require('../middleware/auth');
 
 // User Registration
 router.post('/register', async (req, res) => {
@@ -18,10 +19,30 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ message: 'User already exists with this email' });
         }
 
-        // Check if SBU ID is already registered
-        const existingSbuId = await User.findOne({ sbuId });
-        if (existingSbuId) {
-            return res.status(400).json({ message: 'User already exists with this SBU ID' });
+        let finalSbuId = sbuId;
+
+        // Always generate a unique ID for visitors
+        if (userType === 'visitor') {
+            // Generate a unique visitor ID with prefix 'V' followed by timestamp and random digits
+            const timestamp = new Date().getTime().toString().slice(-6);
+            const randomDigits = Math.floor(1000 + Math.random() * 9000);
+            finalSbuId = `V${timestamp}${randomDigits}`;
+
+            // Ensure it's unique by checking against existing IDs
+            const existingId = await User.findOne({ sbuId: finalSbuId });
+            if (existingId) {
+                // Try again with a different random number if collision occurs
+                const newRandomDigits = Math.floor(1000 + Math.random() * 9000);
+                finalSbuId = `V${timestamp}${newRandomDigits}`;
+            }
+        } else if (sbuId) {
+            // For non-visitors, check if SBU ID is already registered
+            const existingSbuId = await User.findOne({ sbuId });
+            if (existingSbuId) {
+                return res.status(400).json({ message: 'User already exists with this SBU ID' });
+            }
+        } else {
+            return res.status(400).json({ message: 'SBU ID is required for non-visitor users' });
         }
 
         // Create new user - will be pending approval
@@ -30,7 +51,7 @@ router.post('/register', async (req, res) => {
             lastName,
             email,
             password, // Will be hashed by the pre-save hook in the User model
-            sbuId,
+            sbuId: finalSbuId,
             userType,
             isApproved: false // Default is false, needs admin approval
         });
@@ -42,10 +63,26 @@ router.post('/register', async (req, res) => {
             user: newUser._id,
             activity_type: 'account_created',
             description: 'Account created',
-            details: 'Welcome to P4SBU',
+            details: userType === 'visitor' ? `Welcome to P4SBU (Visitor) - Assigned ID: ${finalSbuId}` : 'Welcome to P4SBU',
             ip_address: req.ip,
             user_agent: req.headers['user-agent']
         });
+
+        // Send registration confirmation email
+        try {
+            const baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_URL || 'http://localhost:5173';
+            const userName = `${firstName} ${lastName}`;
+            await emailService.sendAccountRegistrationEmail(
+                email,
+                userName,
+                userType,
+                baseUrl
+            );
+            console.log('Registration confirmation email sent to:', email);
+        } catch (emailError) {
+            console.error('Error sending registration confirmation email:', emailError);
+            // Continue even if email sending fails
+        }
 
         // Create JWT token
         const token = jwt.sign(
@@ -77,7 +114,7 @@ router.post('/register', async (req, res) => {
 // User Login
 router.post('/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password, rememberMe } = req.body;
 
         // Find user
         const user = await User.findOne({ email });
@@ -105,6 +142,9 @@ router.post('/login', async (req, res) => {
             return res.status(400).json({ message: 'Invalid email or password' });
         }
 
+        // Set token expiration based on rememberMe flag
+        const expiresIn = rememberMe ? '30d' : '24h';
+
         // Generate JWT token
         const token = jwt.sign(
             {
@@ -113,7 +153,7 @@ router.post('/login', async (req, res) => {
                 userType: user.userType
             },
             process.env.JWT_SECRET,
-            { expiresIn: '24h' }
+            { expiresIn }
         );
 
         // Log successful login
@@ -121,7 +161,7 @@ router.post('/login', async (req, res) => {
             user: user._id,
             activity_type: 'login',
             description: 'Logged in from new device',
-            details: req.headers['user-agent'] || 'Unknown device',
+            details: `${req.headers['user-agent'] || 'Unknown device'} - ${rememberMe ? 'Extended session (30 days)' : 'Standard session (24 hours)'}`,
             ip_address: req.ip,
             user_agent: req.headers['user-agent']
         });
@@ -172,7 +212,7 @@ router.post('/forgot-password', async (req, res) => {
         console.log('User saved with reset token');
 
         // Send the reset email
-        const baseUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+        const baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_URL || 'http://localhost:5173';
         console.log('Using client base URL from env:', baseUrl);
 
         const emailResult = await emailService.sendPasswordResetEmail(email, token, baseUrl);
@@ -227,6 +267,25 @@ router.post('/reset-password', async (req, res) => {
     } catch (error) {
         console.error('Reset password error:', error);
         res.status(500).json({ message: 'Server error during password reset' });
+    }
+});
+
+// Session timeout endpoint
+router.post('/session-timeout', verifyToken, async (req, res) => {
+    try {
+        // Log session timeout
+        await UserActivity.logActivity({
+            user: req.user.userId,
+            activity_type: 'session_timeout',
+            description: 'User session timed out due to inactivity',
+            ip_address: req.ip,
+            user_agent: req.headers['user-agent']
+        });
+
+        res.status(200).json({ message: 'Session timeout logged successfully' });
+    } catch (error) {
+        console.error('Error logging session timeout:', error);
+        res.status(500).json({ message: 'Server error' });
     }
 });
 

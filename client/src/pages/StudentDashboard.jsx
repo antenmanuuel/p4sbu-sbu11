@@ -1065,13 +1065,13 @@ const StudentDashboard = ({ darkMode }) => {
               {reservationsError}
             </p>
           </div>
-        ) : reservations.filter(res => res.status.toLowerCase() !== 'cancelled').length === 0 ? (
+        ) : reservations.filter(res => ['active', 'upcoming', 'pending'].includes(res.status.toLowerCase())).length === 0 ? (
           <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any active parking reservations.</p>
         ) : (
           <div className="space-y-4">
-            {/* Show only the most recent non-cancelled reservation */}
+            {/* Show only the most recent active, upcoming, or pending reservation */}
             {reservations
-              .filter(reservation => reservation.status.toLowerCase() !== 'cancelled')
+              .filter(reservation => ['active', 'upcoming', 'pending'].includes(reservation.status.toLowerCase()))
               .slice(0, 1)
               .map((reservation) => (
                 <div
@@ -1553,7 +1553,7 @@ const StudentDashboard = ({ darkMode }) => {
               <div key={index} className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}>
                 <div className="flex justify-between items-center">
                   <div>
-                    <h3 className={`font-semibold text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>{permit.type} - {permit.lot}</h3>
+                    <h3 className={`font-semibold text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>{permit.type}</h3>
                     <p className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Valid Until: {permit.validUntil}</p>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusClass(permit.status)}`}>

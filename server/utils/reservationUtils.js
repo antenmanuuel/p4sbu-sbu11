@@ -1,5 +1,7 @@
 const Reservation = require('../models/reservation');
 const NotificationHelper = require('./notificationHelper');
+const User = require('../models/users');
+const emailService = require('../services/emailService');
 
 /**
  * Utility function to find and update expired reservations
@@ -34,6 +36,7 @@ const updateExpiredReservations = async () => {
             // Create notifications for each completed reservation
             for (const reservation of expiredReservations) {
                 try {
+                    // Send in-app notification
                     await NotificationHelper.createReservationNotification(
                         reservation.user,
                         reservation,
@@ -41,6 +44,47 @@ const updateExpiredReservations = async () => {
                         '/past-reservations'
                     );
                     console.log(`Created completion notification for reservation ${reservation._id}`);
+
+                    // Send email notification for the completed reservation
+                    try {
+                        // Get user information for the email
+                        const user = await User.findById(reservation.user);
+                        if (user && user.email) {
+                            // Determine if this was a metered reservation based on lot type
+                            const isMetered = reservation.lotId &&
+                                (reservation.lotId.rateType === 'Hourly' ||
+                                    reservation.lotId.isMetered ||
+                                    reservation.lotId.meteredParking);
+
+                            // Create custom message for metered vs permit-based reservations
+                            let completionMessage = "Your parking reservation has been completed.";
+                            if (isMetered) {
+                                completionMessage = "Your metered parking session has ended. Thank you for using SBU Parking System.";
+                            }
+
+                            const emailResult = await emailService.sendReservationConfirmation(
+                                user.email,
+                                `${user.firstName} ${user.lastName}`,
+                                {
+                                    _id: reservation._id,
+                                    id: reservation.reservationId,
+                                    lotId: reservation.lotId,
+                                    startTime: reservation.startTime,
+                                    endTime: reservation.endTime,
+                                    status: 'completed',
+                                    totalPrice: reservation.totalPrice,
+                                    additionalInfo: {
+                                        completionMessage: completionMessage,
+                                        isMetered: isMetered
+                                    }
+                                },
+                                process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+                            );
+                            console.log(`Reservation completion email sent to ${user.email}: ${emailResult.messageId}`);
+                        }
+                    } catch (emailError) {
+                        console.error(`Failed to send reservation completion email for reservation ${reservation._id}:`, emailError);
+                    }
                 } catch (notifyError) {
                     console.error(`Error creating notification for completed reservation ${reservation._id}:`, notifyError);
                     // Continue to next reservation even if notification fails

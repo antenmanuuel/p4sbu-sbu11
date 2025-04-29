@@ -11,6 +11,7 @@ import ResultsView from '../components/ResultsView';
 import LotDetailsView from '../components/LotDetailsView';
 import CarInfoForm from '../components/CarInfoForm';
 import PaymentPage from '../components/PaymentPage';
+import ParkingForecast from '../components/ParkingForecast';
 import ParkingMap from '../components/ParkingMap';
 // Import Mapbox components
 import ReactMapGL, { Marker, NavigationControl, GeolocateControl, Source, Layer, Popup } from 'react-map-gl';
@@ -98,6 +99,9 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
     // Add state for search in progress
     const [searching, setSearching] = useState(false);
+
+    // State for managing form submission
+    const [isSubmittingCarInfo, setIsSubmittingCarInfo] = useState(false);
 
     // Effect to restore reservation data from sessionStorage if present
     useEffect(() => {
@@ -490,6 +494,8 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         } else if (currentView === 'details') {
             setCurrentView('results');
             setSelectedLot(null);
+        } else if (currentView === 'car-info') {
+            setCurrentView('details');
         }
     };
 
@@ -683,27 +689,67 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
     };
 
     // Handle car information submission and move to payment step
-    const handleCarInfoSubmit = (carData) => {
-        console.log('Car information submitted:', carData);
+    const handleCarInfoSubmit = async (carData) => {
+        // Prevent duplicate submissions
+        if (isSubmittingCarInfo) return;
 
-        // Normalize the vehicle info to ensure consistency with backend model
-        const normalizedCarData = {
-            ...carData,
-            // Handle state/stateProv conversion for consistency
-            stateProv: carData.stateProv || carData.state,
-        };
+        try {
+            setIsSubmittingCarInfo(true);
+            console.log('Car information submitted:', carData);
 
-        // If state was used instead of stateProv, remove it to avoid confusion
-        if (normalizedCarData.state && normalizedCarData.stateProv) {
-            delete normalizedCarData.state;
-        }
+            // Normalize the vehicle info to ensure consistency with backend model
+            const normalizedCarData = {
+                ...carData,
+                // Handle state/stateProv conversion for consistency
+                stateProv: carData.stateProv || carData.state,
+                // Ensure license plate is uppercase for consistent matching with existing cars
+                plateNumber: carData.plateNumber ? carData.plateNumber.toUpperCase() : carData.plateNumber
+            };
 
-        setVehicleInfo(normalizedCarData);
-        setCurrentView('payment');
+            // If state was used instead of stateProv, remove it to avoid confusion
+            if (normalizedCarData.state && normalizedCarData.stateProv) {
+                delete normalizedCarData.state;
+            }
 
-        // If we've already fetched permits, use them for the payment view
-        if (!hasValidPermit && !validPermitDetails && isAuthenticated) {
-            fetchUserPermits();
+            // For new users, save the car to their profile first
+            if (isAuthenticated && !carData.carId) {
+                try {
+                    // Check first if car already exists
+                    const existingCars = await CarService.getUserCars();
+                    const carExists = existingCars.success && existingCars.cars &&
+                        existingCars.cars.some(car =>
+                            car.plateNumber === normalizedCarData.plateNumber &&
+                            car.stateProv === normalizedCarData.stateProv);
+
+                    if (!carExists) {
+                        // Only save if the car doesn't already exist
+                        const saveResponse = await CarService.saveCar(normalizedCarData);
+                        if (saveResponse.success && saveResponse.car) {
+                            // Update normalizedCarData with the saved car's ID
+                            normalizedCarData.carId = saveResponse.car._id;
+                            console.log('Car saved to user profile:', saveResponse.car._id);
+                        }
+                    } else {
+                        console.log('Car already exists in user profile, not saving duplicate');
+                    }
+                } catch (err) {
+                    console.error('Error saving car to profile:', err);
+                    // Continue even if car save fails - the reservation endpoint will handle it
+                }
+            }
+
+            setVehicleInfo(normalizedCarData);
+            setCurrentView('payment');
+
+            // If we've already fetched permits, use them for the payment view
+            if (!hasValidPermit && !validPermitDetails && isAuthenticated) {
+                fetchUserPermits();
+            }
+        } catch (error) {
+            console.error('Error in car info submission:', error);
+            setError('Failed to process car information. Please try again.');
+        } finally {
+            setIsSubmittingCarInfo(false);
         }
     };
 
@@ -868,7 +914,8 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 permitType: selectedPermitType,
                 vehicleInfo: {
                     ...vehicleInfo,
-                    plateNumber: vehicleInfo.plateNumber.toUpperCase()
+                    // Ensure license plate is uppercase for consistent matching with existing cars
+                    plateNumber: vehicleInfo.plateNumber ? vehicleInfo.plateNumber.toUpperCase() : vehicleInfo.plateNumber
                 },
                 paymentInfo: {
                     ...paymentData,
@@ -1530,13 +1577,17 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
             case 'car-info':
                 return (
                     <div className="w-full max-w-6xl mx-auto px-4">
+                        {renderError()}
+                        {renderLoadingIndicator()}
+
                         <CarInfoForm
                             darkMode={darkMode}
                             lotName={selectedLot?.name}
                             permitType={selectedPermitType}
-                            onBackClick={handlePaymentBackClick}
+                            onBackClick={handleBackClick}
                             onContinue={handleCarInfoSubmit}
                             isAuthenticated={isAuthenticated}
+                            isSubmitting={isSubmittingCarInfo}
                         />
                     </div>
                 );
@@ -1593,6 +1644,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                     <div className="w-full max-w-6xl mx-auto px-4">
                         {renderError()}
                         {renderLoadingIndicator()}
+
                         <PaymentPage
                             darkMode={darkMode}
                             lotName={selectedLot?.name}

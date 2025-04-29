@@ -1,5 +1,7 @@
 const Permit = require('../models/permits');
 const NotificationHelper = require('./notificationHelper');
+const User = require('../models/users');
+const emailService = require('../services/emailService');
 
 /**
  * Utility function to find and update expired permits
@@ -32,14 +34,46 @@ const updateExpiredPermits = async () => {
 
             console.log(`Updated ${updateResult.nModified || updateResult.modifiedCount} expired permits`);
 
-            // Create notifications for each expired permit
+            // Create notifications and send emails for each expired permit
             for (const permit of expiredPermits) {
                 try {
+                    // Send in-app notification
                     await NotificationHelper.createPermitExpirationNotification(
                         permit.userId,
                         permit,
                         '/dashboard'
                     );
+
+                    // Send email notification
+                    try {
+                        // Get user information for the email
+                        const user = await User.findById(permit.userId);
+                        if (user && user.email) {
+                            // Using the reservation confirmation email with customized content for permit expiration
+                            const emailResult = await emailService.sendReservationConfirmation(
+                                user.email,
+                                `${user.firstName} ${user.lastName}`,
+                                {
+                                    _id: permit._id,
+                                    id: permit.permitNumber,
+                                    lotId: { name: permit.lots.map(l => l.lotName).join(', ') },
+                                    startTime: permit.startDate,
+                                    endTime: permit.endDate,
+                                    status: 'Permit Expired',
+                                    totalPrice: permit.price,
+                                    permitDetails: {
+                                        permitName: permit.permitName,
+                                        permitType: permit.permitType,
+                                        message: 'Your permit has expired. Please renew your permit to continue parking in designated areas.'
+                                    }
+                                },
+                                process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+                            );
+                            console.log(`Permit expiration email sent to ${user.email}: ${emailResult.messageId}`);
+                        }
+                    } catch (emailError) {
+                        console.error(`Failed to send permit expiration email for permit ${permit._id}:`, emailError);
+                    }
                 } catch (notifyError) {
                     console.error(`Error creating notification for expired permit ${permit._id}:`, notifyError);
                 }
@@ -61,19 +95,49 @@ const updateExpiredPermits = async () => {
             // Create notifications for each soon-to-expire permit
             for (const permit of expiringPermits) {
                 try {
-                    // Only notify if we haven't already sent a notification in the last 2 days
-                    // This prevents spamming users with multiple notifications for the same permit
-
                     // Calculate days until expiration to ensure we don't send too many notifications
                     const daysUntilExpiry = Math.ceil((new Date(permit.endDate) - today) / (1000 * 60 * 60 * 24));
 
                     // Send notifications at 7 days, 3 days, and 1 day before expiration
                     if (daysUntilExpiry === 7 || daysUntilExpiry === 3 || daysUntilExpiry === 1) {
+                        // Send in-app notification
                         await NotificationHelper.createPermitExpirationNotification(
                             permit.userId,
                             permit,
                             '/dashboard'
                         );
+
+                        // Send email notification
+                        try {
+                            // Get user information for the email
+                            const user = await User.findById(permit.userId);
+                            if (user && user.email) {
+                                // Using the reservation confirmation email with customized content for permit expiration
+                                const emailResult = await emailService.sendReservationConfirmation(
+                                    user.email,
+                                    `${user.firstName} ${user.lastName}`,
+                                    {
+                                        _id: permit._id,
+                                        id: permit.permitNumber,
+                                        lotId: { name: permit.lots.map(l => l.lotName).join(', ') },
+                                        startTime: permit.startDate,
+                                        endTime: permit.endDate,
+                                        status: 'Permit Expiring Soon',
+                                        totalPrice: permit.price,
+                                        permitDetails: {
+                                            permitName: permit.permitName,
+                                            permitType: permit.permitType,
+                                            message: `Your permit will expire in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? '' : 's'}. Please renew your permit to avoid disruption in your parking privileges.`,
+                                            daysRemaining: daysUntilExpiry
+                                        }
+                                    },
+                                    process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+                                );
+                                console.log(`Permit expiring soon email sent to ${user.email}: ${emailResult.messageId}`);
+                            }
+                        } catch (emailError) {
+                            console.error(`Failed to send permit expiring soon email for permit ${permit._id}:`, emailError);
+                        }
                     }
                 } catch (notifyError) {
                     console.error(`Error creating notification for expiring permit ${permit._id}:`, notifyError);

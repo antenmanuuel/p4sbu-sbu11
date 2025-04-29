@@ -76,6 +76,18 @@ const PermitSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'PermitType',
       required: false
+    },
+    // Refund information
+    refundId: {
+      type: String
+    },
+    refundedAt: {
+      type: Date
+    },
+    // Reference to permit this one replaced, if applicable
+    replacesPermitId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Permit'
     }
   },
   { timestamps: true }

@@ -30,6 +30,7 @@ try {
     const reservationRoutes = require('./routes/reservations');
     const carRoutes = require('./routes/cars');
     const revenueStatisticsRoutes = require('./routes/statistics');
+    const contactRoutes = require('./routes/contact');
 
     // Import path module for serving static files
     const path = require('path');
@@ -84,8 +85,11 @@ try {
             }
         },
         credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization']
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+        exposedHeaders: ['Content-Length', 'X-Content-Type-Options'],
+        preflightContinue: false,
+        optionsSuccessStatus: 204
     };
 
     // Middleware
@@ -191,6 +195,7 @@ try {
     app.use('/api/reservations', reservationRoutes);
     app.use('/api/cars', carRoutes);
     app.use('/api/statistics', revenueStatisticsRoutes);
+    app.use('/api/contact', contactRoutes);
 
     // Health check endpoint
     app.get('/health', (req, res) => {

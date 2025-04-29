@@ -13,12 +13,13 @@ const PastPermits = ({ darkMode }) => {
     const [error, setError] = useState(null);
     const [pastPermits, setPastPermits] = useState([]);
 
-    // Fetch past permits from backend
+    // Fetch past permits from backend - modify to always fetch all past permits
     useEffect(() => {
         const fetchPastPermits = async () => {
             setLoading(true);
             setError(null);
             try {
+                // Get all past permits without server-side filtering
                 const response = await PermitService.getUserPastPermits();
 
                 if (response.success) {
@@ -30,7 +31,11 @@ const PastPermits = ({ darkMode }) => {
                             : 'N/A',
                         validFrom: permit.startDate,
                         validUntil: permit.endDate,
-                        status: new Date(permit.endDate) < new Date() ? "Expired" : permit.status || 'Unknown',
+                        // Normalize status to either "Expired" or "Inactive"
+                        status: new Date(permit.endDate) < new Date()
+                            ? "Expired"
+                            : (permit.status?.toLowerCase() === 'inactive' ? "Inactive" : permit.status || 'Unknown'),
+                        rawStatus: permit.status, // Keep original status for debugging
                         price: permit.price
                     }));
                     setPastPermits(formattedPermits);
@@ -76,16 +81,18 @@ const PastPermits = ({ darkMode }) => {
     // Function to get status class for styling
     const getStatusClass = (status) => {
         switch (status?.toLowerCase()) {
-            case "active":
-                return "bg-green-100 text-green-800 border border-green-200";
+            case "inactive":
+                return darkMode
+                    ? "bg-gray-600 text-gray-200 border border-gray-700"
+                    : "bg-gray-100 text-gray-700 border border-gray-200";
             case "expired":
-                return "bg-gray-100 text-gray-700 border border-gray-200";
-            case "cancelled":
-                return "bg-red-100 text-red-800 border border-red-200";
-            case "suspended":
-                return "bg-yellow-100 text-yellow-800 border border-yellow-200";
+                return darkMode
+                    ? "bg-yellow-600 text-yellow-200 border border-yellow-700"
+                    : "bg-yellow-100 text-yellow-700 border border-yellow-200";
             default:
-                return "bg-gray-100 text-gray-500 border border-gray-200";
+                return darkMode
+                    ? "bg-gray-600 text-gray-300 border border-gray-700"
+                    : "bg-gray-100 text-gray-500 border border-gray-200";
         }
     };
 
@@ -197,8 +204,7 @@ const PastPermits = ({ darkMode }) => {
                         >
                             <option value="all">All Statuses</option>
                             <option value="expired">Expired</option>
-                            <option value="cancelled">Cancelled</option>
-                            <option value="suspended">Suspended</option>
+                            <option value="inactive">Inactive</option>
                         </select>
                     </div>
 
