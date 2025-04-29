@@ -65,8 +65,8 @@ const Register = ({ darkMode }) => {
                 }
                 if (!value) {
                     return 'SBU ID is required';
-                } else if (!/^\d{8}$/.test(value)) {
-                    return 'SBU ID must be 8 digits';
+                } else if (!/^\d{9}$/.test(value)) {
+                    return 'SBU ID must be 9 digits';
                 }
                 break;
             case 'userType':
@@ -532,7 +532,7 @@ const Register = ({ darkMode }) => {
                                 {/* SBU ID field - show for all users but make it auto-generated for visitors */}
                                 <div>
                                     <label htmlFor="sbuId" className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                        {formData.userType === 'visitor' ? 'Visitor ID (Auto-generated)' : 'SBU ID* (8 digits)'}
+                                        {formData.userType === 'visitor' ? 'Visitor ID (Auto-generated)' : 'SBU ID* (9 digits)'}
                                     </label>
                                     <div className="relative">
                                         <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -543,7 +543,7 @@ const Register = ({ darkMode }) => {
                                             name="sbuId"
                                             type="text"
                                             inputMode="numeric"
-                                            maxLength={8}
+                                            maxLength={9}
                                             value={formData.userType === 'visitor' ? 'Will be auto-generated' : formData.sbuId}
                                             onChange={handleChange}
                                             onBlur={() => setTouched(prev => ({ ...prev, sbuId: true }))}
@@ -552,7 +552,7 @@ const Register = ({ darkMode }) => {
                                             ${errors.sbuId && touched.sbuId ? 'border-red-500 error-border' : isFieldValid('sbuId') ? 'border-green-500' : 'border'} 
                                             focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-400' : 'focus:ring-red-600'}
                                             ${formData.userType === 'visitor' ? `${darkMode ? 'bg-gray-600' : 'bg-gray-100'} cursor-not-allowed` : ''}`}
-                                            placeholder={formData.userType === 'visitor' ? '' : "12345678"}
+                                            placeholder={formData.userType === 'visitor' ? '' : "123456789"}
                                         />
                                         {isFieldValid('sbuId') && formData.userType !== 'visitor' && (
                                             <FaCheckCircle className="absolute right-3 top-3 text-green-500" />

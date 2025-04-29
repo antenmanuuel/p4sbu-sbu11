@@ -68,6 +68,22 @@ router.post('/register', async (req, res) => {
             user_agent: req.headers['user-agent']
         });
 
+        // Send registration confirmation email
+        try {
+            const baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_URL || 'http://localhost:5173';
+            const userName = `${firstName} ${lastName}`;
+            await emailService.sendAccountRegistrationEmail(
+                email,
+                userName,
+                userType,
+                baseUrl
+            );
+            console.log('Registration confirmation email sent to:', email);
+        } catch (emailError) {
+            console.error('Error sending registration confirmation email:', emailError);
+            // Continue even if email sending fails
+        }
+
         // Create JWT token
         const token = jwt.sign(
             {
@@ -196,7 +212,7 @@ router.post('/forgot-password', async (req, res) => {
         console.log('User saved with reset token');
 
         // Send the reset email
-        const baseUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+        const baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_URL || 'http://localhost:5173';
         console.log('Using client base URL from env:', baseUrl);
 
         const emailResult = await emailService.sendPasswordResetEmail(email, token, baseUrl);

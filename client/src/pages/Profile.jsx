@@ -403,7 +403,7 @@ const Profile = ({ darkMode }) => {
                                         ) : (
                                             <div className="sm:col-span-1">
                                                 <dt className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{user?.userType === 'visitor' ? 'Visitor ID' : 'SBU ID'}</dt>
-                                                <dd className="mt-1 text-sm">{user?.sbuId || '12345678'}</dd>
+                                                <dd className="mt-1 text-sm">{user?.sbuId || '123456789'}</dd>
                                             </div>
                                         )}
                                         <div className="sm:col-span-1">

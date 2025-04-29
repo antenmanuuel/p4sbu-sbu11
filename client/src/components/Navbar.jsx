@@ -475,7 +475,7 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
                             {user?.email || 'user@example.com'}
                           </p>
                           <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                            {user?.userType === 'visitor' ? 'Visitor ID: ' : 'SBU ID: '}{user?.sbuId || user?._id || '12345678'}
+                            {user?.userType === 'visitor' ? 'Visitor ID: ' : 'SBU ID: '}{user?.sbuId || user?._id || '123456789'}
                           </p>
                         </div>
                       </div>

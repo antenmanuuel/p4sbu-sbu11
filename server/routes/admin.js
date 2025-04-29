@@ -52,6 +52,24 @@ router.put('/approve-user/:userId', verifyToken, isAdmin, async (req, res) => {
             // Continue even if notification creation fails
         }
 
+        // Send account approval email notification
+        try {
+            const emailService = require('../services/emailService');
+            const baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_URL || 'http://localhost:5173';
+            const userName = `${updatedUser.firstName} ${updatedUser.lastName}`;
+
+            await emailService.sendAccountApprovalEmail(
+                updatedUser.email,
+                userName,
+                updatedUser.userType,
+                baseUrl
+            );
+            console.log('Account approval email sent to:', updatedUser.email);
+        } catch (emailError) {
+            console.error('Error sending account approval email:', emailError);
+            // Continue even if email sending fails
+        }
+
         res.status(200).json({
             message: 'User approved successfully',
             user: updatedUser

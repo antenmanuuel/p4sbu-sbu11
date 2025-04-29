@@ -30,14 +30,14 @@ const UserSchema = new mongoose.Schema({
                     return /^V\d{10}$/.test(v); // Validates V + 10 digits for visitors
                 }
 
-                // For non-visitors, require 8 digits
-                return /^\d{8}$/.test(v);
+                // For non-visitors, require 9 digits
+                return /^\d{9}$/.test(v);
             },
             message: props => {
                 if (props.value && props.value.startsWith('V')) {
                     return `${props.value} is not a valid visitor ID. Must start with 'V' followed by 10 digits.`;
                 }
-                return `${props.value} is not a valid SBU ID. Must be exactly 8 digits.`;
+                return `${props.value} is not a valid SBU ID. Must be exactly 9 digits.`;
             }
         }
     },

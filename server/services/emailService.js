@@ -126,7 +126,7 @@ const emailService = {
             // Ensure baseUrl is a string to prevent "endsWith is not a function" error
             if (typeof baseUrl !== 'string') {
                 console.warn('Invalid baseUrl provided to sendReservationConfirmation:', baseUrl);
-                baseUrl = process.env.CLIENT_BASE_URL || 'http://localhost:5173';
+                baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_BASE_URL || 'http://localhost:5173';
             }
 
             // Format dates for display
@@ -545,6 +545,165 @@ const emailService = {
             };
         } catch (error) {
             console.error('Failed to send contact follow-up notification email:', error);
+            return { success: false, error: error.message };
+        }
+    },
+
+    /**
+     * Send account registration confirmation email
+     * @param {string} to - Recipient email address
+     * @param {string} userName - User's name for personalization
+     * @param {string} userType - Type of user (student, faculty, visitor, etc.)
+     * @param {string} baseUrl - Base URL for the client application
+     * @returns {Promise} - Promise resolving to the result of the email sending
+     */
+    sendAccountRegistrationEmail: async (to, userName, userType, baseUrl) => {
+        // If email is not configured, just log the action and return success
+        if (!emailConfigured) {
+            console.log('Email service disabled. Would have sent account registration confirmation to:', to);
+            console.log('User type:', userType);
+            return { success: true, messageId: 'email-service-disabled' };
+        }
+
+        try {
+            // Ensure baseUrl is a string
+            if (typeof baseUrl !== 'string') {
+                baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_BASE_URL || 'http://localhost:5173';
+            }
+
+            // Create login URL
+            const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+            const loginUrl = `${cleanBaseUrl}/login`;
+
+            const mailOptions = {
+                from: `"SBU Parking System" <${process.env.EMAIL_USER || 'noreply@sbuparkingsystem.com'}>`,
+                to,
+                subject: 'SBU Parking System - Account Registration Confirmation',
+                html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
+                    <h2 style="color: #cc0000; text-align: center;">Account Registration Confirmation</h2>
+                    
+                    <p>Hello ${userName || ''},</p>
+                    
+                    <p>Thank you for registering with the SBU Parking System. Your account has been created and is currently awaiting administrative approval.</p>
+                    
+                    <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                        <p><strong>Account Type:</strong> ${userType.charAt(0).toUpperCase() + userType.slice(1)}</p>
+                        <p><strong>Status:</strong> <span style="color: #f59e0b; font-weight: bold;">Pending Approval</span></p>
+                    </div>
+                    
+                    <p>You will receive another email once your account has been approved. Once approved, you will be able to access all the features of the SBU Parking System, including:</p>
+                    
+                    <ul style="margin: 15px 0;">
+                        <li>Parking reservations</li>
+                        <li>Permit management</li>
+                        <li>Citation payments</li>
+                        <li>Parking lot availability information</li>
+                    </ul>
+                    
+                    <p>If you have any questions about your account or need assistance, please contact our support team.</p>
+                    
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${loginUrl}" style="background-color: #cc0000; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Login to Your Account</a>
+                    </div>
+                    
+                    <p>Thank you for choosing the SBU Parking System.</p>
+                    
+                    <p>Best regards,<br>SBU Parking System Team</p>
+                    
+                    <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
+                    <p style="color: #666; text-align: center; font-size: 12px;">
+                        &copy; ${new Date().getFullYear()} SBU Parking System. All rights reserved.
+                    </p>
+                </div>
+                `
+            };
+
+            const info = await transporter.sendMail(mailOptions);
+            console.log('Account registration confirmation email sent:', info.messageId);
+            return { success: true, messageId: info.messageId };
+        } catch (error) {
+            console.error('Failed to send account registration confirmation email:', error);
+            return { success: false, error: error.message };
+        }
+    },
+
+    /**
+     * Send account approval notification email
+     * @param {string} to - Recipient email address
+     * @param {string} userName - User's name for personalization
+     * @param {string} userType - Type of user (student, faculty, visitor, etc.)
+     * @param {string} baseUrl - Base URL for the client application
+     * @returns {Promise} - Promise resolving to the result of the email sending
+     */
+    sendAccountApprovalEmail: async (to, userName, userType, baseUrl) => {
+        // If email is not configured, just log the action and return success
+        if (!emailConfigured) {
+            console.log('Email service disabled. Would have sent account approval notification to:', to);
+            console.log('User type:', userType);
+            return { success: true, messageId: 'email-service-disabled' };
+        }
+
+        try {
+            // Ensure baseUrl is a string
+            if (typeof baseUrl !== 'string') {
+                baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_BASE_URL || 'http://localhost:5173';
+            }
+
+            // Create dashboard URL
+            const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+            const dashboardUrl = `${cleanBaseUrl}/dashboard`;
+
+            const mailOptions = {
+                from: `"SBU Parking System" <${process.env.EMAIL_USER || 'noreply@sbuparkingsystem.com'}>`,
+                to,
+                subject: 'SBU Parking System - Your Account Has Been Approved',
+                html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
+                    <h2 style="color: #cc0000; text-align: center;">Account Approved</h2>
+                    
+                    <p>Hello ${userName || ''},</p>
+                    
+                    <p>Great news! Your SBU Parking System account has been approved by our administrators. You now have full access to all the features and services.</p>
+                    
+                    <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                        <p><strong>Account Type:</strong> ${userType.charAt(0).toUpperCase() + userType.slice(1)}</p>
+                        <p><strong>Status:</strong> <span style="color: #10b981; font-weight: bold;">Active</span></p>
+                    </div>
+                    
+                    <p>With your approved account, you can now:</p>
+                    
+                    <ul style="margin: 15px 0;">
+                        <li>Make parking reservations</li>
+                        <li>Manage your parking permits</li>
+                        <li>View parking lot availability</li>
+                        <li>Pay citations (if applicable)</li>
+                        <li>Access your personalized dashboard</li>
+                    </ul>
+                    
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${dashboardUrl}" style="background-color: #cc0000; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Go to Dashboard</a>
+                    </div>
+                    
+                    <p>If you have any questions or need assistance using our system, please don't hesitate to contact our support team.</p>
+                    
+                    <p>Thank you for choosing the SBU Parking System. We look forward to providing you with a convenient parking experience.</p>
+                    
+                    <p>Best regards,<br>SBU Parking System Team</p>
+                    
+                    <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
+                    <p style="color: #666; text-align: center; font-size: 12px;">
+                        &copy; ${new Date().getFullYear()} SBU Parking System. All rights reserved.
+                    </p>
+                </div>
+                `
+            };
+
+            const info = await transporter.sendMail(mailOptions);
+            console.log('Account approval notification email sent:', info.messageId);
+            return { success: true, messageId: info.messageId };
+        } catch (error) {
+            console.error('Failed to send account approval notification email:', error);
             return { success: false, error: error.message };
         }
     }
