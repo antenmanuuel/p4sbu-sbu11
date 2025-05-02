@@ -21,7 +21,7 @@ import { MAPBOX_TOKEN } from '../utils/env';
 import { calculatePathDistances } from '../utils/pathFinding';
 // Import SBU locations data
 import { sbuLocations, searchSbuLocations } from '../utils/sbuLocations';
-import { FaCar, FaWalking, FaBus, FaParking, FaDollarSign } from 'react-icons/fa';
+import { FaCar, FaWalking, FaBus, FaParking, FaDollarSign, FaCheckCircle } from 'react-icons/fa';
 
 // Verify token is available - developers will see this error in console
 if (!MAPBOX_TOKEN) {
@@ -102,6 +102,63 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
     // State for managing form submission
     const [isSubmittingCarInfo, setIsSubmittingCarInfo] = useState(false);
+
+    // Add these hooks at the top level, where other state is defined (near line ~80)
+    // State for permit switching
+    const [checkingForPermits, setCheckingForPermits] = useState(false);
+    const [isSwitchingPermit, setIsSwitchingPermit] = useState(false);
+    const [permitToReplace, setPermitToReplace] = useState(null);
+    const [reservationResponse, setReservationResponse] = useState(null);
+
+    // Add state for existing reservations
+    const [existingReservations, setExistingReservations] = useState([]);
+    const [checkingExistingReservations, setCheckingExistingReservations] = useState(false);
+
+    // Add a useEffect to check for existing reservations when component loads
+    useEffect(() => {
+        if (isAuthenticated) {
+            checkExistingReservations();
+        }
+    }, [isAuthenticated]);
+
+    // Add a useEffect for permit checking at the top level
+    useEffect(() => {
+        const checkForPermitSwitching = async () => {
+            if (!isAuthenticated || !selectedLot || currentView !== 'payment') return;
+
+            // Only check for permit switching if this is a permit-based lot
+            if (!selectedLot.rateType || selectedLot.rateType !== 'Permit-based' || hasValidPermit) return;
+
+            setCheckingForPermits(true);
+            try {
+                // Get all active user permits
+                const activePermitsResult = await PermitService.getUserPermits('active');
+
+                if (activePermitsResult.success && activePermitsResult.permits?.length > 0) {
+                    // Filter permits to only include those that are different from the one being purchased
+                    const otherActivePermits = activePermitsResult.permits.filter(permit =>
+                        permit.permitType.trim() !== selectedPermitType.trim() &&
+                        permit.status === 'active' &&
+                        permit.paymentStatus === 'paid'
+                    );
+
+                    if (otherActivePermits.length > 0) {
+                        // User has permits of different types - they're switching
+                        setIsSwitchingPermit(true);
+                        // Use the first different permit as the one to replace
+                        setPermitToReplace(otherActivePermits[0]);
+                        console.log("User is switching from permit:", otherActivePermits[0].permitType, "to", selectedPermitType);
+                    }
+                }
+            } catch (error) {
+                console.error("Error checking for permit switching:", error);
+            } finally {
+                setCheckingForPermits(false);
+            }
+        };
+
+        checkForPermitSwitching();
+    }, [isAuthenticated, selectedLot, currentView, selectedPermitType, hasValidPermit]);
 
     // Effect to restore reservation data from sessionStorage if present
     useEffect(() => {
@@ -640,10 +697,36 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         }
     };
 
+    // New function to check for existing reservations
+    const checkExistingReservations = async () => {
+        if (!isAuthenticated) return false;
+
+        setCheckingExistingReservations(true);
+        try {
+            const result = await ReservationService.getUserReservations({ status: 'active,pending' });
+
+            if (result.success && result.data?.data?.reservations) {
+                const activeReservations = result.data.data.reservations.filter(
+                    res => ['active', 'pending'].includes(res.status) && new Date(res.endTime) > new Date()
+                );
+
+                setExistingReservations(activeReservations);
+                return activeReservations.length > 0;
+            }
+            return false;
+        } catch (error) {
+            console.error('Error checking existing reservations:', error);
+            return false;
+        } finally {
+            setCheckingExistingReservations(false);
+        }
+    };
+
     // Handle reservation request
     const handleReserve = async (lotId, permitType) => {
         // Save selected permit type
         setSelectedPermitType(permitType);
+        setError(''); // Clear any previous errors
 
         if (!isAuthenticated) {
             // Save reservation data to sessionStorage before redirecting
@@ -671,6 +754,14 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 replace: false
             });
         } else {
+            // Check for existing reservations first
+            const hasExistingReservations = await checkExistingReservations();
+
+            if (hasExistingReservations) {
+                setError('You already have an active reservation. Please complete or cancel your existing reservation before creating a new one.');
+                return;
+            }
+
             // Always check for permit validation, regardless of the next step
             await fetchUserPermits();
 
@@ -755,53 +846,42 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
     // Function to check if permit type is compatible
     const checkPermitTypeCompatibility = (permit, selectedType) => {
+        console.log("Checking permit compatibility:", {
+            permit: permit.permitType,
+            permitName: permit.permitName,
+            selectedType: typeof selectedType === 'string' ? selectedType : selectedType.name || ''
+        });
+
         // First check if we have permit type IDs to compare
         if (permit.permitTypeId && selectedType.id) {
             // If we have IDs, use them for exact matching
             if (permit.permitTypeId === selectedType.id) {
+                console.log("Match found by ID comparison");
                 return true;
             }
         }
 
         // Fall back to name-based matching
         const permitType = permit.permitType || '';
-        // Normalize both types to lowercase for case-insensitive comparison
-        const normalizedPermitType = permitType.toLowerCase();
-        const normalizedSelectedType = (typeof selectedType === 'string' ? selectedType : selectedType.name || '').toLowerCase();
+        // Normalize both types to lowercase for case-insensitive comparison and trim spaces
+        const normalizedPermitType = permitType.toLowerCase().trim();
+        const normalizedSelectedType = (typeof selectedType === 'string' ?
+            selectedType : selectedType.name || '').toLowerCase().trim();
 
-        // Direct match
+        // Direct exact match - strict equality for specific permit types
         if (normalizedPermitType === normalizedSelectedType) {
+            console.log("Direct match found");
             return true;
         }
 
-        // Also check permit name if available
-        if (permit.permitName && permit.permitName.toLowerCase().includes(normalizedSelectedType)) {
+        // Also check permit name if available for a direct match
+        if (permit.permitName && permit.permitName.toLowerCase().trim() === normalizedSelectedType) {
+            console.log("Exact match found in permit name");
             return true;
         }
 
-        // Handle common variations
-        const studentVariations = ['student', 'commuter', 'resident', 'student permit', 'core permit'];
-        const facultyVariations = ['faculty', 'faculty/staff', 'staff', 'faculty permit'];
-        const visitorVariations = ['visitor', 'guest', 'visitor permit'];
-
-        // If permit is a student type and selected is any student variation
-        if (studentVariations.includes(normalizedPermitType) &&
-            (studentVariations.some(v => normalizedSelectedType.includes(v)))) {
-            return true;
-        }
-
-        // If permit is a faculty type and selected is any faculty variation
-        if (facultyVariations.includes(normalizedPermitType) &&
-            (facultyVariations.some(v => normalizedSelectedType.includes(v)))) {
-            return true;
-        }
-
-        // If permit is a visitor type and selected is any visitor variation
-        if (visitorVariations.includes(normalizedPermitType) &&
-            (visitorVariations.some(v => normalizedSelectedType.includes(v)))) {
-            return true;
-        }
-
+        // No match found - only exact matching is supported
+        console.log("No match found - permit types are not compatible");
         return false;
     };
 
@@ -809,19 +889,39 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
     const fetchUserPermits = async () => {
         if (!isAuthenticated || !selectedLot) return;
 
+        console.log("Fetching user permits for lot compatibility check");
+        console.log("Selected lot permitTypes:", selectedLot.permitTypes);
         try {
             const result = await PermitService.getUserPermits('active');
 
             if (result.success) {
+                console.log("User permits fetched successfully:", result.permits);
                 setExistingPermits(result.permits || []);
+
+                // Log the selected permit type for debugging
+                console.log("Selected permit type:", selectedPermitType);
 
                 // Check if user has a valid permit for this lot type
                 const validPermit = result.permits.find(permit => {
                     // Basic permit validity checks
                     // Check if permit types are compatible - flexibly match common variations
-                    const isPermitTypeCompatible = checkPermitTypeCompatibility(permit, selectedPermitType);
+                    const trimmedPermitType = permit.permitType ? permit.permitType.trim() : '';
+                    const trimmedSelectedType = selectedPermitType ? selectedPermitType.trim() : '';
+
+                    const isPermitTypeCompatible = checkPermitTypeCompatibility(
+                        { ...permit, permitType: trimmedPermitType },
+                        trimmedSelectedType
+                    );
                     const isActive = permit.status === 'active';
                     const isPaid = permit.paymentStatus === 'paid' || permit.paymentStatus === 'completed';
+
+                    // Log the permit validity checks
+                    console.log(`Permit ${permit.permitNumber} (${permit.permitType}) valid checks:`, {
+                        isPermitTypeCompatible,
+                        isActive,
+                        isPaid,
+                        endDate: permit.endDate
+                    });
 
                     // Check if permit is expired - compare only the date part (ignore time)
                     // This makes the permit valid until the end of its expiration day
@@ -834,20 +934,28 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
                     const isNotExpired = permitEndDate >= today;
 
-                    // Check if this permit is valid for the selected lot or has no lots specified
-                    const hasNoLots = !permit.lots || permit.lots.length === 0;
-                    const hasMatchingLot = permit.lots && permit.lots.some(lot => lot.lotId === selectedLot.id);
+                    // Check lot compatibility, if applicable
+                    const lotCompatibilityCheck = selectedLot.permitTypes && selectedLot.permitTypes.length > 0
+                        ? selectedLot.permitTypes.includes(permit.permitType)
+                        : true;
 
-                    return isPermitTypeCompatible && isActive && isPaid && isNotExpired && (hasNoLots || hasMatchingLot);
+                    console.log(`Lot direct compatibility check: ${lotCompatibilityCheck} - Lot accepts: ${selectedLot.permitTypes?.join(', ')}`);
+
+                    // No match found - only exact matching is supported
+                    return isPermitTypeCompatible && isActive && isPaid && isNotExpired;
                 });
 
                 if (validPermit) {
+                    console.log("Valid permit found:", validPermit);
                     setHasValidPermit(true);
                     setValidPermitDetails(validPermit);
                 } else {
+                    console.log("No valid permit found");
                     setHasValidPermit(false);
                     setValidPermitDetails(null);
                 }
+            } else {
+                console.error("Failed to fetch user permits:", result.error);
             }
         } catch (error) {
             console.error('Error fetching permits:', error);
@@ -860,76 +968,114 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         setPaymentInfo(paymentData);
 
         try {
+            // Check for existing reservations again right before creating a new one
+            const hasExistingReservations = await checkExistingReservations();
+
+            if (hasExistingReservations) {
+                setError('You already have an active reservation. Please complete or cancel your existing reservation before creating a new one.');
+                setIsLoading(false);
+                return;
+            }
+
+            // Ensure user permits are fetched before calculating price
+            if (isAuthenticated) {
+                await fetchUserPermits();
+            }
+
             // Calculate total price based on lot rate type and features
             let totalPrice = 0;
 
-            // Convert string times to Date objects for time-based pricing
-            const startDateTime = new Date(`${date}T${startTime}:00`);
+            // If user has a valid permit, make the reservation free
+            if (hasValidPermit && validPermitDetails) {
+                console.log("User has valid permit - setting price to 0");
+                totalPrice = 0;
+            } else {
+                // Convert string times to Date objects for time-based pricing
+                const startDateTime = new Date(`${date}T${startTime}:00`);
 
-            if (selectedLot.rateType === 'Hourly') {
-                const endDateTime = new Date(`${date}T${endTime}:00`);
+                if (selectedLot.rateType === 'Hourly') {
+                    const endDateTime = new Date(`${date}T${endTime}:00`);
 
-                // Check if the reservation extends past 7PM (19:00)
-                const sevenPM = new Date(`${date}T19:00:00`);
+                    // Check if the reservation extends past 7PM (19:00)
+                    const sevenPM = new Date(`${date}T19:00:00`);
 
-                // Calculate billable duration respecting the 7PM cutoff
-                let billableDurationHours;
+                    // Calculate billable duration respecting the 7PM cutoff
+                    let billableDurationHours;
 
-                if (startDateTime >= sevenPM) {
-                    // If starting after 7PM, no charge for metered parking
-                    billableDurationHours = 0;
-                } else if (endDateTime > sevenPM) {
-                    // If ending after 7PM, only charge until 7PM
-                    billableDurationHours = (sevenPM - startDateTime) / (1000 * 60 * 60);
+                    if (startDateTime >= sevenPM) {
+                        // If starting after 7PM, no charge for metered parking
+                        billableDurationHours = 0;
+                    } else if (endDateTime > sevenPM) {
+                        // If ending after 7PM, only charge until 7PM
+                        billableDurationHours = (sevenPM - startDateTime) / (1000 * 60 * 60);
+                    } else {
+                        // If entirely before 7PM, charge the full duration
+                        billableDurationHours = (endDateTime - startDateTime) / (1000 * 60 * 60);
+                    }
+
+                    // Calculate price based on rate type and EV status
+                    totalPrice = selectedLot.isEV
+                        ? billableDurationHours * selectedLot.evChargingRate
+                        : billableDurationHours * selectedLot.hourlyRate;
+                } else if (selectedLot.rateType === 'Permit-based') {
+                    // For permit-based lots, check if it's after 4PM (16:00)
+                    const fourPM = new Date(`${date}T16:00:00`);
+
+                    if (startDateTime >= fourPM) {
+                        // If starting after 4PM, permit-based lots are free
+                        totalPrice = 0;
+                    } else {
+                        // Otherwise, use the semester rate
+                        totalPrice = selectedLot.semesterRate || 0;
+                    }
                 } else {
-                    // If entirely before 7PM, charge the full duration
-                    billableDurationHours = (endDateTime - startDateTime) / (1000 * 60 * 60);
-                }
-
-                // Calculate price based on rate type and EV status
-                totalPrice = selectedLot.isEV
-                    ? billableDurationHours * selectedLot.evChargingRate
-                    : billableDurationHours * selectedLot.hourlyRate;
-            } else if (selectedLot.rateType === 'Permit-based') {
-                // For permit-based lots, check if it's after 4PM (16:00)
-                const fourPM = new Date(`${date}T16:00:00`);
-
-                if (startDateTime >= fourPM) {
-                    // If starting after 4PM, permit-based lots are free
-                    totalPrice = 0;
-                } else {
-                    // Otherwise, use the semester rate
+                    // For other rate types, use the semester rate
                     totalPrice = selectedLot.semesterRate || 0;
                 }
-            } else {
-                // For other rate types, use the semester rate
-                totalPrice = selectedLot.semesterRate || 0;
             }
+
+            // Log the final price calculation
+            console.log("Final price calculation:", {
+                hasValidPermit,
+                permitDetails: validPermitDetails ?
+                    { permitType: validPermitDetails.permitType, permitNumber: validPermitDetails.permitNumber } : null,
+                totalPrice
+            });
+
+            // Check if user is switching permit types by looking at existing permits
+            let isSwitchingPermitType = isSwitchingPermit;
+            let permitToReplaceId = permitToReplace ? permitToReplace._id : null;
 
             // Prepare reservation data
             const reservationData = {
                 lotId: selectedLot.id,
                 startTime: `${date}T${startTime}:00`,
                 endTime: `${date}T${endTime}:00`,
-                permitType: selectedPermitType,
+                permitType: selectedPermitType ? selectedPermitType.trim() : selectedPermitType,
                 vehicleInfo: {
                     ...vehicleInfo,
                     // Ensure license plate is uppercase for consistent matching with existing cars
                     plateNumber: vehicleInfo.plateNumber ? vehicleInfo.plateNumber.toUpperCase() : vehicleInfo.plateNumber
                 },
-                paymentInfo: {
+                paymentInfo: totalPrice > 0 ? {
                     ...paymentData,
                     amount: totalPrice
-                },
+                } : null,
                 // Add flag to indicate if user has valid permit
                 useExistingPermit: hasValidPermit,
-                existingPermitId: validPermitDetails ? validPermitDetails._id : null
+                existingPermitId: validPermitDetails ? validPermitDetails._id : null,
+                // Add permit switching information
+                isSwitchingPermitType: isSwitchingPermitType,
+                permitToReplaceId: permitToReplaceId
             };
 
             // Send reservation to backend
             const result = await ReservationService.createReservation(reservationData);
 
             if (result.success) {
+                // Store the full reservation response for the confirmation screen
+                setReservationResponse(result.data);
+
                 // Use real reservation ID from backend if available
                 setReservationId(result.data.reservationId || 'RES' + Math.floor(Math.random() * 1000000));
                 setError('');
@@ -957,6 +1103,12 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
     // Handle back button from car-info or payment views
     const handlePaymentBackClick = () => {
         if (currentView === 'payment') {
+            // Reset permit switching state when going back
+            setIsSwitchingPermit(false);
+            setPermitToReplace(null);
+            setCheckingForPermits(false);
+
+            // Move back to car-info view
             setCurrentView('car-info');
         } else if (currentView === 'car-info') {
             setCurrentView('details');
@@ -968,6 +1120,10 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
             setVehicleInfo(null);
             setPaymentInfo(null);
             setReservationId(null);
+            setReservationResponse(null);
+            setIsSwitchingPermit(false);
+            setPermitToReplace(null);
+            setCheckingForPermits(false);
         }
     };
 
@@ -1051,6 +1207,29 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
             case 'search':
                 return (
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
+                        {/* Show banner if user has existing reservations */}
+                        {existingReservations.length > 0 && (
+                            <div className={`mb-8 p-6 rounded-lg ${darkMode ? 'bg-red-900/50 border border-red-800 text-red-200' : 'bg-red-50 border border-red-200 text-red-800'}`}>
+                                <div className="flex flex-col md:flex-row items-center justify-between">
+                                    <div className="flex items-center mb-4 md:mb-0">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                        </svg>
+                                        <div>
+                                            <h3 className="text-lg font-bold">You Already Have an Active Reservation</h3>
+                                            <p className="mt-1">You must complete or cancel your existing reservation before creating a new one.</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => navigate('/dashboard')}
+                                        className={`px-4 py-2 rounded-md ${darkMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-500 hover:bg-blue-600'} text-white font-medium transition-colors`}
+                                    >
+                                        View My Reservations
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Hero Section */}
                         <div className="relative mb-10">
                             {/* Decorative elements */}
@@ -1346,33 +1525,58 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
             case 'results':
                 return (
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
-                        {/* Hero Section with context */}
-                        <div className="relative mb-10">
-                            {/* Decorative elements */}
-                            <div className="absolute -top-10 -right-10 w-40 h-40 bg-red-600 opacity-5 rounded-full blur-2xl"></div>
-                            <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-blue-500 opacity-5 rounded-full blur-2xl"></div>
-
-                            <div className="text-center relative z-10">
-                                <div className="inline-block mb-4">
-                                    <span className={`inline-flex items-center justify-center p-3 ${darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'} rounded-xl`}>
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                    <div className="max-w-7xl mx-auto px-4 py-8">
+                        {/* Show banner if user has existing reservations */}
+                        {existingReservations.length > 0 && (
+                            <div className={`mb-8 p-6 rounded-lg ${darkMode ? 'bg-red-900/50 border border-red-800 text-red-200' : 'bg-red-50 border border-red-200 text-red-800'}`}>
+                                <div className="flex flex-col md:flex-row items-center justify-between">
+                                    <div className="flex items-center mb-4 md:mb-0">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                         </svg>
-                                    </span>
+                                        <div>
+                                            <h3 className="text-lg font-bold">You Already Have an Active Reservation</h3>
+                                            <p className="mt-1">You must complete or cancel your existing reservation before creating a new one.</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => navigate('/dashboard')}
+                                        className={`px-4 py-2 rounded-md ${darkMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-500 hover:bg-blue-600'} text-white font-medium transition-colors`}
+                                    >
+                                        View My Reservations
+                                    </button>
                                 </div>
-                                <h1 className={`text-4xl md:text-5xl font-bold mb-4 tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                    Available Parking
-                                </h1>
-                                <p className={`text-xl md:text-2xl max-w-3xl mx-auto ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                                    {nearbyParking.length} spots near {selectedLocation ? selectedLocation.name : 'your location'}
-                                </p>
                             </div>
-                        </div>
+                        )}
 
-                        {renderError()}
-                        {renderLoadingIndicator()}
+                        <div className="flex items-center justify-between mb-6">
+                            {/* Hero Section with context */}
+                            <div className="relative mb-10">
+                                {/* Decorative elements */}
+                                <div className="absolute -top-10 -right-10 w-40 h-40 bg-red-600 opacity-5 rounded-full blur-2xl"></div>
+                                <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-blue-500 opacity-5 rounded-full blur-2xl"></div>
+
+                                <div className="text-center relative z-10">
+                                    <div className="inline-block mb-4">
+                                        <span className={`inline-flex items-center justify-center p-3 ${darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'} rounded-xl`}>
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                                            </svg>
+                                        </span>
+                                    </div>
+                                    <h1 className={`text-4xl md:text-5xl font-bold mb-4 tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        Available Parking
+                                    </h1>
+                                    <p className={`text-xl md:text-2xl max-w-3xl mx-auto ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                                        {nearbyParking.length} spots near {selectedLocation ? selectedLocation.name : 'your location'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {renderError()}
+                            {renderLoadingIndicator()}
+                        </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             {/* Left sidebar with results list */}
@@ -1655,6 +1859,9 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                             hasValidPermit={hasValidPermit}
                             validPermitDetails={validPermitDetails}
                             hasReservationError={!!error}
+                            checkingForExistingPermits={checkingForPermits}
+                            isSwitchingPermitType={isSwitchingPermit}
+                            permitToReplace={permitToReplace}
                         />
                     </div>
                 );
@@ -1722,6 +1929,21 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                                 </p>
                             </div>
 
+                            {/* Show permit switching success message if applicable */}
+                            {reservationResponse?.permitSwitched && (
+                                <div className={`mb-6 p-4 rounded-lg ${darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-800'}`}>
+                                    <h3 className="font-bold mb-2">Permit Updated Successfully</h3>
+                                    <p>
+                                        Your {reservationResponse.permitSwitched.oldPermitType} permit has been replaced with a new {reservationResponse.permitSwitched.newPermitType} permit.
+                                    </p>
+                                    {reservationResponse.permitSwitched.refundProcessed && (
+                                        <p className="mt-2">
+                                            A refund of ${reservationResponse.permitSwitched.refundAmount.toFixed(2)} has been processed for your previous permit.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
                             <div className={`p-4 rounded-lg mb-6 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                                 <div className="mb-4">
                                     <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -1781,7 +2003,15 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
                             <div className="text-center">
                                 <button
-                                    onClick={handlePaymentBackClick}
+                                    onClick={() => {
+                                        // Reset the form and go back to the home
+                                        handlePaymentBackClick();
+                                        // Also reset permit switching state
+                                        setReservationResponse(null);
+                                        setIsSwitchingPermit(false);
+                                        setPermitToReplace(null);
+                                        setCheckingForPermits(false);
+                                    }}
                                     className="py-3 px-6 bg-red-600 hover:bg-red-700 text-white font-medium rounded-md shadow-md transition-colors"
                                 >
                                     Back to Home

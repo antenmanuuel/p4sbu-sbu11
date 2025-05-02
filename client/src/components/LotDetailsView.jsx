@@ -150,7 +150,7 @@ const LotDetailsView = ({
     const handleReserveClick = () => {
         // Use either the first permitted type or a default one
         const defaultPermitType = lot.permitTypes && lot.permitTypes.length > 0
-            ? lot.permitTypes[0]
+            ? lot.permitTypes[0].trim() // Trim to remove any spaces
             : "Standard";
 
         console.log(`Using permit type: ${defaultPermitType} for reservation`);
