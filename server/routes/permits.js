@@ -1,3 +1,4 @@
+
 // TP: this .jsx file's code was heavily manipulated, optimized, and contributed to by ChatGPT (after the initial was written by Student) to provide clarity on bugs, modularize, and optimize/provide better solutions during the coding process. 
 // It was prompted to take the initial iteration/changes and modify/optimize it to adapt for more concise techniques to achieve the desired functionalities.
 // It was also prompted to explain all changes in detail (completely studied/understood by the student) before the AI's optimized/modified version of the student written code was added to the code file. 
@@ -7,6 +8,18 @@
 
 // Reference: https://docs.stripe.com/webhooks?lang=node
 
+/**
+ * This module defines API routes for managing parking permits, including:
+ * - Creating, retrieving, updating, and deleting parking permits
+ * - Automatic expiration handling for permits
+ * - Integration with payment systems (Stripe)
+ * - Notification systems (in-app and email)
+ * - Management of related reservations when permits change
+ * - Revenue tracking for permit purchases
+ * 
+ * Permits represent the actual purchased parking rights by users, as opposed to
+ * permit types which are the templates/options available for purchase.
+ */
 
 const express = require('express');
 const router = express.Router();
@@ -21,7 +34,23 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const Reservation = require('../models/reservation');
 const User = require('../models/users');
 
-// GET /api/permits - Retrieve permits with optional filtering & pagination
+/**
+ * GET /api/permits
+ * 
+ * Retrieves a paginated list of permits with optional filtering
+ * Updates expired permits before returning results
+ * Used by users to view their permits and by admins to manage all permits
+ * 
+ * @access Authenticated users (regular users see only their permits)
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @query {string} [status] - Filter by permit status (active, expired, etc.)
+ * @query {string} [permitType] - Filter permits by type
+ * @query {string} [search] - Search term for permit number, name, or user info
+ * @query {number} [page=1] - Page number for pagination
+ * @query {number} [limit=10] - Number of results per page
+ * @query {string} [userId] - Filter permits by specific user ID
+ * @returns {Object} - Permits array and pagination metadata
+ */
 router.get('/', verifyToken, async (req, res) => {
   try {
     // First update any expired permits in the database
@@ -88,7 +117,17 @@ router.get('/', verifyToken, async (req, res) => {
   }
 });
 
-// GET /api/permits/:id - Retrieve a single permit by its ID
+/**
+ * GET /api/permits/:id
+ * 
+ * Retrieves details for a single permit by its ID
+ * Updates expired permits status before returning results
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @param {string} id - Permit ID to retrieve
+ * @returns {Object} - Complete permit information
+ */
 router.get('/:id', verifyToken, async (req, res) => {
   try {
     // Update expired permits first
@@ -105,7 +144,32 @@ router.get('/:id', verifyToken, async (req, res) => {
   }
 });
 
-// POST /api/permits - Create a new permit
+/**
+ * POST /api/permits
+ * 
+ * Creates a new parking permit for a user
+ * Decreases the available quantity for the permit type
+ * Records revenue data for paid permits
+ * Sends notifications and emails to the user
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @body {string} permitNumber - Unique identifier for the permit
+ * @body {string} permitName - Display name for the permit
+ * @body {string} permitType - Type of permit (matches permit types)
+ * @body {string} userId - ID of the user who owns the permit
+ * @body {string} userFullName - Name of the user (for easier querying)
+ * @body {string} userEmail - Email of the user (for easier querying)
+ * @body {Array} lots - Array of parking lots where this permit is valid
+ * @body {Date} startDate - When the permit becomes valid
+ * @body {Date} endDate - When the permit expires
+ * @body {string} status - Current status (active, expired, etc.)
+ * @body {number} price - Cost of the permit
+ * @body {string} paymentStatus - Payment status (paid, unpaid, etc.)
+ * @body {string} paymentId - ID from payment processor
+ * @body {string} permitTypeId - Reference to the permit type template
+ * @returns {Object} - Success message and created permit data
+ */
 router.post('/', verifyToken, async (req, res) => {
   try {
     // Expected body: permitNumber, permitName, permitType, userId, userFullName, userEmail, lots,
@@ -199,7 +263,20 @@ router.post('/', verifyToken, async (req, res) => {
   }
 });
 
-// PUT /api/permits/:id - Update an existing permit
+/**
+ * PUT /api/permits/:id
+ * 
+ * Updates an existing permit's information
+ * Supports partial updates, including just the end date
+ * Records revenue when payment status changes to paid
+ * Sends notifications to users about permit changes
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @param {string} id - ID of permit to update
+ * @body {Object} - Fields to update (all fields optional)
+ * @returns {Object} - Success message and updated permit data
+ */
 router.put('/:id', verifyToken, async (req, res) => {
   try {
     // Get the current permit to compare changes
@@ -327,7 +404,20 @@ router.put('/:id', verifyToken, async (req, res) => {
   }
 });
 
-// DELETE /api/permits/:id - Delete a permit (admin only)
+/**
+ * DELETE /api/permits/:id
+ * 
+ * Deletes a permit and cancels all associated reservations
+ * Processes refunds for paid reservations via Stripe
+ * Sends notifications and emails about permit deletion and reservation cancellations
+ * Updates parking lot available spaces
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} id - ID of permit to delete
+ * @returns {Object} - Success message, list of cancelled reservations, and refund details
+ */
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     // Find the permit first to get user information
@@ -520,7 +610,17 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
-// PUT /api/permits/check-expired - Admin endpoint to manually check and update expired permits
+/**
+ * PUT /api/permits/check-expired
+ * 
+ * Admin endpoint to manually trigger the expired permit check
+ * Updates permits that have passed their end date to "expired" status
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @returns {Object} - Success message and count of updated permits
+ */
 router.put('/check-expired', verifyToken, isAdmin, async (req, res) => {
   try {
     const updatedCount = await updateExpiredPermits();

@@ -1,3 +1,13 @@
+/**
+ * This module defines API routes for administrator operations, including:
+ * - User management (approval, role changes, viewing, updating)
+ * - Permit type management (CRUD operations)
+ * - Reservation management (viewing and statistics)
+ * 
+ * All routes in this module are protected with authentication middleware
+ * and require administrator privileges to access.
+ */
+
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
@@ -9,7 +19,27 @@ const NotificationHelper = require('../utils/notificationHelper');
 const Permit = require('../models/permits');
 const Ticket = require('../models/tickets');
 
-// Get Pending Users
+/**
+ * USER MANAGEMENT ROUTES
+ * 
+ * This section contains routes for managing user accounts, including:
+ * - Viewing pending and approved users
+ * - Approving new user registrations
+ * - Updating user information
+ * - Changing user roles and status
+ * - Deleting user accounts
+ */
+
+/**
+ * GET /api/admin/pending-users
+ * 
+ * Retrieves all users waiting for account approval
+ * Used on the admin dashboard to review new registrations
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @returns {Array} - List of pending users, sorted by creation date
+ */
 router.get('/pending-users', verifyToken, isAdmin, async (req, res) => {
     try {
         const pendingUsers = await User.find({ isApproved: false })
@@ -23,7 +53,17 @@ router.get('/pending-users', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// Approve User
+/**
+ * PUT /api/admin/approve-user/:userId
+ * 
+ * Approves a pending user account, granting them system access
+ * Creates a notification and sends an email to the user
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} userId - ID of the user to approve
+ * @returns {Object} - Message and updated user information
+ */
 router.put('/approve-user/:userId', verifyToken, isAdmin, async (req, res) => {
     try {
         const userId = req.params.userId;
@@ -80,7 +120,22 @@ router.put('/approve-user/:userId', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// Get All Users
+/**
+ * GET /api/admin/users
+ * 
+ * Retrieves a paginated and filtered list of all users in the system
+ * Supports filtering by status, user type, and search term
+ * Returns pagination metadata for front-end display
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @query {string} status - Filter by user status (active, inactive, pending)
+ * @query {string} userType - Filter by user type (student, faculty, admin, visitor)
+ * @query {string} search - Search term for user fields
+ * @query {number} page - Page number for pagination
+ * @query {number} limit - Number of results per page
+ * @returns {Object} - Users array and pagination metadata
+ */
 router.get('/users', verifyToken, isAdmin, async (req, res) => {
     try {
         // Support filtering and pagination
@@ -155,7 +210,17 @@ router.get('/users', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// Get User by ID
+/**
+ * GET /api/admin/users/:userId
+ * 
+ * Retrieves detailed information for a specific user by ID
+ * Used for viewing user profile details in admin interface
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} userId - ID of the user to retrieve
+ * @returns {Object} - Complete user information (except password)
+ */
 router.get('/users/:userId', verifyToken, isAdmin, async (req, res) => {
     try {
         const userId = req.params.userId;
@@ -172,7 +237,18 @@ router.get('/users/:userId', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// Update User
+/**
+ * PUT /api/admin/users/:userId
+ * 
+ * Updates a user's information (excluding password)
+ * Used for modifying user profile data from admin panel
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} userId - ID of the user to update
+ * @body {Object} updates - Object containing fields to update
+ * @returns {Object} - Message and updated user information
+ */
 router.put('/users/:userId', verifyToken, isAdmin, async (req, res) => {
     try {
         const userId = req.params.userId;
@@ -203,7 +279,18 @@ router.put('/users/:userId', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// Toggle User Status (active/inactive)
+/**
+ * PUT /api/admin/users/:userId/toggle-status
+ * 
+ * Activates or deactivates a user account
+ * Deactivated users cannot log in or access the system
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} userId - ID of the user to update
+ * @body {string} status - New status ('active' or 'inactive')
+ * @returns {Object} - Message and updated user information
+ */
 router.put('/users/:userId/toggle-status', verifyToken, isAdmin, async (req, res) => {
     try {
         const userId = req.params.userId;
@@ -235,7 +322,22 @@ router.put('/users/:userId/toggle-status', verifyToken, isAdmin, async (req, res
     }
 });
 
-// Change User Role (student, faculty, visitor, admin)
+/**
+ * PUT /api/admin/users/:userId/change-role
+ * 
+ * Changes a user's role within the system
+ * Includes complex logic to handle data cleanup when changing roles:
+ * - Removes type-specific permits/reservations
+ * - Cleans up vehicles and payment methods
+ * - Creates notifications to inform the user
+ * - Enforces limits on admin count
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} userId - ID of the user to update
+ * @body {string} role - New role ('student', 'faculty', 'visitor', 'admin')
+ * @returns {Object} - Message and updated user information
+ */
 router.put('/users/:userId/change-role', verifyToken, isAdmin, async (req, res) => {
     try {
         const userId = req.params.userId;
@@ -427,7 +529,17 @@ router.put('/users/:userId/change-role', verifyToken, isAdmin, async (req, res) 
     }
 });
 
-// Delete User
+/**
+ * DELETE /api/admin/users/:userId
+ * 
+ * Permanently deletes a user account from the system
+ * Prevents deletion of the default admin account
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} userId - ID of the user to delete
+ * @returns {Object} - Success message
+ */
 router.delete('/users/:userId', verifyToken, isAdmin, async (req, res) => {
     try {
         const userId = req.params.userId;
@@ -453,8 +565,30 @@ router.delete('/users/:userId', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// PERMIT TYPE ROUTES
-// Get All Permit Types with pagination
+/**
+ * PERMIT TYPE MANAGEMENT ROUTES
+ * 
+ * This section contains routes for managing permit types, including:
+ * - Creating new permit types
+ * - Retrieving, updating, and deleting existing types
+ * - Filtering and paginating permit type listings
+ */
+
+/**
+ * GET /api/admin/permit-types
+ * 
+ * Retrieves a paginated and filtered list of all permit types
+ * Supports filtering by category, duration, and search term
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @query {string} category - Filter by permit category
+ * @query {string} duration - Filter by permit duration
+ * @query {string} search - Search term for permit fields
+ * @query {number} page - Page number for pagination
+ * @query {number} limit - Number of results per page
+ * @returns {Object} - Permit types array and pagination metadata
+ */
 router.get('/permit-types', verifyToken, isAdmin, async (req, res) => {
     try {
         const { category, duration, search, page = 1, limit = 10 } = req.query;
@@ -506,7 +640,17 @@ router.get('/permit-types', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// Get a single permit type by ID
+/**
+ * GET /api/admin/permit-types/:permitTypeId
+ * 
+ * Retrieves a single permit type by its ID
+ * Used for viewing and editing detailed permit type information
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} permitTypeId - ID of the permit type to retrieve
+ * @returns {Object} - Complete permit type information
+ */
 router.get('/permit-types/:permitTypeId', verifyToken, isAdmin, async (req, res) => {
     try {
         const permitType = await PermitType.findById(req.params.permitTypeId);
@@ -522,7 +666,17 @@ router.get('/permit-types/:permitTypeId', verifyToken, isAdmin, async (req, res)
     }
 });
 
-// Create a new permit type
+/**
+ * POST /api/admin/permit-types
+ * 
+ * Creates a new permit type in the system
+ * Permit types define what permits users can purchase
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @body {Object} permitTypeData - Complete permit type information
+ * @returns {Object} - Success message and created permit type
+ */
 router.post('/permit-types', verifyToken, isAdmin, async (req, res) => {
     try {
         const newPermitType = new PermitType(req.body);
@@ -538,7 +692,18 @@ router.post('/permit-types', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// Update a permit type
+/**
+ * PUT /api/admin/permit-types/:permitTypeId
+ * 
+ * Updates an existing permit type
+ * Validates the updated data and updates the last modified timestamp
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} permitTypeId - ID of the permit type to update
+ * @body {Object} updates - Fields to update on the permit type
+ * @returns {Object} - Success message and updated permit type
+ */
 router.put('/permit-types/:permitTypeId', verifyToken, isAdmin, async (req, res) => {
     try {
         const permitType = await PermitType.findByIdAndUpdate(
@@ -561,7 +726,17 @@ router.put('/permit-types/:permitTypeId', verifyToken, isAdmin, async (req, res)
     }
 });
 
-// Delete a permit type
+/**
+ * DELETE /api/admin/permit-types/:permitTypeId
+ * 
+ * Deletes a permit type from the system
+ * This does not affect existing permits of this type
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} permitTypeId - ID of the permit type to delete
+ * @returns {Object} - Success message
+ */
 router.delete('/permit-types/:permitTypeId', verifyToken, isAdmin, async (req, res) => {
     try {
         const permitType = await PermitType.findByIdAndDelete(req.params.permitTypeId);
@@ -579,7 +754,32 @@ router.delete('/permit-types/:permitTypeId', verifyToken, isAdmin, async (req, r
     }
 });
 
-// Get all reservations (admin only)
+/**
+ * RESERVATION MANAGEMENT ROUTES
+ * 
+ * This section contains routes for administrators to manage parking reservations:
+ * - Viewing all reservations with filtering and pagination
+ * - Getting reservation statistics
+ */
+
+/**
+ * GET /api/admin/reservations
+ * 
+ * Retrieves a paginated and filtered list of all parking reservations
+ * Supports complex filtering by multiple fields and search terms
+ * Populates related data (user, lot, vehicle) for complete information
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @query {string} status - Filter by reservation status
+ * @query {string} startDate - Filter by minimum start date
+ * @query {string} endDate - Filter by maximum start date
+ * @query {string} userId - Filter by specific user
+ * @query {string} search - Search term across multiple fields
+ * @query {number} page - Page number for pagination
+ * @query {number} limit - Number of results per page
+ * @returns {Object} - Reservations array and pagination metadata
+ */
 router.get('/reservations', verifyToken, isAdmin, async (req, res) => {
     try {
         // Support filtering and pagination
@@ -677,7 +877,17 @@ router.get('/reservations', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// Get active reservations count
+/**
+ * GET /api/admin/reservations/count
+ * 
+ * Gets a count of active reservations for dashboard metrics
+ * Can be filtered by different reservation statuses
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @query {string} status - Status to count (defaults to 'active')
+ * @returns {Object} - Count and status queried
+ */
 router.get('/reservations/count', verifyToken, isAdmin, async (req, res) => {
     try {
         const { status = 'active' } = req.query;
@@ -704,4 +914,4 @@ router.get('/reservations/count', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-module.exports = router; 
+module.exports = router;

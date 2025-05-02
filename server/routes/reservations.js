@@ -1,3 +1,13 @@
+/**
+ * This module defines API routes for managing parking reservations, including:
+ * - Creating new reservations with flexible payment options
+ * - Managing existing reservations (view, cancel, extend)
+ * - Processing payments and refunds through Stripe
+ * - Handling permit-based vs. hourly parking rates
+ * - Time-based pricing rules (after 4PM/7PM)
+ * - Tracking revenue from reservations
+ */
+
 const express = require('express');
 const router = express.Router();
 const Reservation = require('../models/reservation');
@@ -13,7 +23,10 @@ const { updateExpiredReservations } = require('../utils/reservationUtils');
 const NotificationHelper = require('../utils/notificationHelper');
 const emailService = require('../services/emailService');
 
-// Helper function to generate a unique reservation ID
+/**
+ * Helper function to generate a unique reservation ID
+ * @returns {string} Unique reservation identifier
+ */
 const generateReservationId = () => {
     // Generate a reservation ID in format: RES-YYYYMMDD-XXXX
     const date = new Date();
@@ -28,7 +41,14 @@ const generateReservationId = () => {
     return `RES-${dateStr}-${randomSuffix}`;
 };
 
-// POST /api/reservations - Create a new reservation
+/**
+ * POST /api/reservations
+ * 
+ * Creates a new parking reservation with complex payment handling
+ * Manages permit validation, time-based pricing, and vehicle tracking
+ * 
+ * @access Authenticated users
+ */
 router.post('/', verifyToken, async (req, res) => {
     try {
         const { lotId, startTime, endTime, permitType, vehicleInfo, paymentInfo } = req.body;
@@ -806,7 +826,14 @@ router.post('/', verifyToken, async (req, res) => {
     }
 });
 
-// GET /api/reservations - Get all reservations for the current user
+/**
+ * GET /api/reservations
+ * 
+ * Retrieves all reservations for the authenticated user
+ * Supports filtering by status, date range, and search terms
+ * 
+ * @access Authenticated users
+ */
 router.get('/', verifyToken, async (req, res) => {
     try {
         // First update any expired reservations in the database
@@ -891,7 +918,14 @@ router.get('/', verifyToken, async (req, res) => {
     }
 });
 
-// GET /api/reservations/:id - Get a specific reservation
+/**
+ * GET /api/reservations/:id
+ * 
+ * Retrieves detailed information for a specific reservation
+ * Includes populated lot and vehicle information
+ * 
+ * @access Authenticated users
+ */
 router.get('/:id', verifyToken, async (req, res) => {
     try {
         // First update any expired reservations in the database
@@ -925,7 +959,14 @@ router.get('/:id', verifyToken, async (req, res) => {
     }
 });
 
-// POST /api/reservations/:id/cancel - Cancel a reservation
+/**
+ * POST /api/reservations/:id/cancel
+ * 
+ * Cancels an existing reservation and processes refunds if applicable
+ * Handles permit retention logic and updates lot availability
+ * 
+ * @access Authenticated users
+ */
 router.post('/:id/cancel', verifyToken, async (req, res) => {
     try {
         const reservationId = req.params.id;
@@ -959,6 +1000,7 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
                 success: false,
                 message: 'Cannot cancel a completed reservation'
             });
+
         }
 
         // Determine if reservation created a new permit
@@ -1153,7 +1195,14 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
     }
 });
 
-// POST /api/reservations/:id/extend - Extend a reservation's end time
+/**
+ * POST /api/reservations/:id/extend
+ * 
+ * Extends the end time of an existing reservation
+ * Handles pricing rules based on time of day and permit status
+ * 
+ * @access Authenticated users
+ */
 router.post('/:id/extend', verifyToken, async (req, res) => {
     try {
         const { additionalHours, isMetered } = req.body;
@@ -1505,7 +1554,14 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
     }
 });
 
-// PUT /api/reservations/check-expired - Admin endpoint to manually check and update expired reservations
+/**
+ * PUT /api/reservations/check-expired
+ * 
+ * Admin endpoint to manually update expired reservations
+ * Runs the expiration check utility and reports number of affected reservations
+ * 
+ * @access Authenticated users
+ */
 router.put('/check-expired', verifyToken, async (req, res) => {
     try {
         const updatedCount = await updateExpiredReservations();
@@ -1519,4 +1575,4 @@ router.put('/check-expired', verifyToken, async (req, res) => {
     }
 });
 
-module.exports = router; 
+module.exports = router;
