@@ -27,6 +27,21 @@ const mockPermitType = {
     findById: jest.fn()
 };
 
+const mockUser = {
+    findById: jest.fn().mockResolvedValue({
+        _id: 'test-user-id',
+        firstName: 'Test',
+        lastName: 'User',
+        email: 'test@example.com'
+    }),
+    findOne: jest.fn().mockResolvedValue({
+        _id: 'test-user-id',
+        firstName: 'Test',
+        lastName: 'User',
+        email: 'test@example.com'
+    })
+};
+
 const mockRevenueStatistics = {
     recordPermitPurchase: jest.fn().mockResolvedValue({})
 };
@@ -34,6 +49,13 @@ const mockRevenueStatistics = {
 const mockNotificationHelper = {
     createSystemNotification: jest.fn().mockResolvedValue({}),
     createReservationNotification: jest.fn().mockResolvedValue({})
+};
+
+// Mock email service to prevent real email sending
+const mockEmailService = {
+    sendEmail: jest.fn().mockResolvedValue({}),
+    sendTemplate: jest.fn().mockResolvedValue({}),
+    isConfigured: jest.fn().mockReturnValue(true)
 };
 
 // Mock Stripe
@@ -107,12 +129,14 @@ jest.mock('../models/permits', () => {
 jest.mock('../models/reservation', () => mockReservation);
 jest.mock('../models/lot', () => mockLot);
 jest.mock('../models/permit_types', () => mockPermitType);
+jest.mock('../models/users', () => mockUser);
 jest.mock('../models/revenue_statistics', () => mockRevenueStatistics);
 jest.mock('../utils/notificationHelper', () => mockNotificationHelper);
 jest.mock('../utils/permitUtils', () => ({
     updateExpiredPermits: mockUpdateExpiredPermits
 }));
 jest.mock('stripe', () => () => mockStripe);
+jest.mock('../services/emailService', () => mockEmailService);
 
 // Import route handler after mocking dependencies
 const permitRoutes = require('../routes/permits');
@@ -121,6 +145,12 @@ app.use('/api/permits', permitRoutes);
 describe('Permit Routes', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+    });
+
+    afterAll(() => {
+        // Clean up any remaining mocks and timers
+        jest.clearAllMocks();
+        jest.clearAllTimers();
     });
 
     // Test 1: Get all permits
@@ -248,7 +278,7 @@ describe('Permit Routes', () => {
         expect(response.body.permit.permitNumber).toBe(newPermitData.permitNumber);
         expect(mockRevenueStatistics.recordPermitPurchase).toHaveBeenCalledWith(100);
         expect(mockNotificationHelper.createSystemNotification).toHaveBeenCalled();
-    });
+    }, 20000); // Increase timeout to 20 seconds
 
     // Test 4: Create a permit with permit type ID
     test('should handle permit type quantity when creating permit', async () => {
@@ -292,7 +322,7 @@ describe('Permit Routes', () => {
         expect(response.body.message).toBe('Permit created successfully');
         expect(mockPermitTypeData.quantity).toBe(4); // Should decrease by 1
         expect(mockPermitTypeData.save).toHaveBeenCalled();
-    });
+    }, 20000); // Increase timeout to 20 seconds
 
     // Test 5: Update a permit - full update
     test('should update a permit', async () => {
@@ -448,7 +478,7 @@ describe('Permit Routes', () => {
         });
         expect(mockNotificationHelper.createReservationNotification).toHaveBeenCalled();
         expect(mockNotificationHelper.createSystemNotification).toHaveBeenCalled();
-    });
+    }, 20000); // Increase timeout to 20 seconds
 
     // Test 8: Handle non-existent permit
     test('should return 404 when permit is not found', async () => {

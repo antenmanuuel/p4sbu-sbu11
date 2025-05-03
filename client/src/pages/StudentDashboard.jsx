@@ -1670,37 +1670,53 @@ const StudentDashboard = ({ darkMode }) => {
           <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any billing history.</p>
         ) : (
           <div className="space-y-4">
-            {/* Show only the most recent billing transaction */}
-            {billingHistory.slice(0, 1).map((bill, index) => (
-              <div key={index} className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}>
-                <div className="flex flex-col md:flex-row justify-between">
-                  <div>
-                    <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>
-                      {bill.date}
-                    </span>
-                    <h3 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {bill.description}
-                    </h3>
+            {/* Display all permit switch related transactions and show the most recent transaction for other types */}
+            {billingHistory
+              .filter((bill, index, self) => {
+                // Check if this is part of a permit switch transaction
+                const isPermitSwitch = bill.description.includes('Permit Switch') ||
+                  (bill.description.includes('Permit') &&
+                    self.some(b => b.description.includes('Refund') &&
+                      b.description.includes('Permit Switch')));
+
+                // If it's part of a permit switch, include it
+                // Otherwise, only include it if it's the most recent transaction
+                return isPermitSwitch || index === 0;
+              })
+              .slice(0, 5) // Limit to the 5 most recent/relevant transactions
+              .map((bill, index) => (
+                <div key={index} className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}>
+                  <div className="flex flex-col md:flex-row justify-between">
+                    <div>
+                      <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>
+                        {bill.date}
+                      </span>
+                      <h3 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                        {bill.description}
+                      </h3>
+                    </div>
+                    <div className="flex items-center mt-2 md:mt-0">
+                      <span className={`font-bold text-lg mr-4 ${bill.description.includes('Refund')
+                        ? 'text-green-600'
+                        : darkMode ? 'text-white' : 'text-gray-900'
+                        }`}>
+                        {bill.amount}
+                      </span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(bill.status)}`}>
+                        {bill.status}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center mt-2 md:mt-0">
-                    <span className={`font-bold text-lg mr-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {bill.amount}
-                    </span>
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(bill.status)}`}>
-                      {bill.status}
-                    </span>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      onClick={() => handleViewBillingDetails(bill)}
+                      className={`text-sm ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
+                    >
+                      View Details
+                    </button>
                   </div>
                 </div>
-                <div className="mt-3 flex justify-end">
-                  <button
-                    onClick={() => handleViewBillingDetails(bill)}
-                    className={`text-sm ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
-                  >
-                    View Details
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))}
           </div>
         )}
       </div>

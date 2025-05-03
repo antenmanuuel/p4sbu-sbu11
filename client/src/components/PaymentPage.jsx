@@ -25,7 +25,10 @@ const PaymentPage = ({
     onCompletePayment,
     hasValidPermit,
     validPermitDetails,
-    hasReservationError = false
+    hasReservationError = false,
+    checkingForExistingPermits = false,
+    isSwitchingPermitType = false,
+    permitToReplace = null
 }) => {
     return (
         <Elements stripe={stripePromise}>
@@ -39,6 +42,9 @@ const PaymentPage = ({
                 hasValidPermit={hasValidPermit}
                 validPermitDetails={validPermitDetails}
                 hasReservationError={hasReservationError}
+                checkingForExistingPermits={checkingForExistingPermits}
+                isSwitchingPermitType={isSwitchingPermitType}
+                permitToReplace={permitToReplace}
             />
         </Elements>
     );
@@ -54,7 +60,10 @@ const PaymentForm = ({
     onCompletePayment,
     hasValidPermit,
     validPermitDetails,
-    hasReservationError = false
+    hasReservationError = false,
+    checkingForExistingPermits = false,
+    isSwitchingPermitType = false,
+    permitToReplace = null
 }) => {
     const stripe = useStripe();
     const elements = useElements();
@@ -296,6 +305,30 @@ const PaymentForm = ({
                             <p className="text-sm">Permit #{validPermitDetails.permitNumber} valid until {formatDate(validPermitDetails.endDate)}</p>
                             <p className="text-sm mt-1">No payment required for this reservation.</p>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Permit switching notification */}
+            {isSwitchingPermitType && permitToReplace && (
+                <div className={`p-4 rounded-lg mb-6 ${darkMode ? 'bg-blue-700' : 'bg-blue-100'} ${darkMode ? 'text-white' : 'text-blue-800'}`}>
+                    <div className="flex items-start">
+                        <FaExclamationCircle className="mr-2 text-xl mt-1" />
+                        <div>
+                            <p className="font-semibold">You're switching permit types</p>
+                            <p className="text-sm">Your existing {permitToReplace.permitType} permit will be refunded and replaced with a new permit.</p>
+                            <p className="text-sm mt-1">New permit price: {price}</p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Loading notification for permit check */}
+            {checkingForExistingPermits && (
+                <div className={`p-4 rounded-lg mb-6 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'} ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                    <div className="flex items-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-blue-500 mr-2"></div>
+                        <p>Checking for existing permits...</p>
                     </div>
                 </div>
             )}
