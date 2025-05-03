@@ -1,3 +1,15 @@
+/**
+ * This module defines API routes for managing user accounts and profiles, including:
+ * - User profile management (view, update, change password)
+ * - Account activity and billing history tracking
+ * - Payment method management through Stripe integration
+ * - Notification system with preferences and settings
+ * - User activity logging for security and compliance
+ * 
+ * The module provides both standard user routes and secure mechanisms
+ * for managing personal data, payment information, and notification preferences.
+ */
+
 const express = require('express');
 const router = express.Router();
 const User = require('../models/users');
@@ -10,7 +22,16 @@ const Notification = require('../models/notification');
 const NotificationPreferences = require('../models/notification_preferences');
 const Permit = require('../models/permits');
 
-// Get user profile
+/**
+ * GET /api/users/profile
+ * 
+ * Retrieves the authenticated user's profile information
+ * Includes basic user data, permits, and additional admin statistics for admin users
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @returns {Object} User profile details, permits, and optional admin statistics
+ */
 router.get('/profile', verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -125,7 +146,20 @@ router.get('/profile', verifyToken, async (req, res) => {
     }
 });
 
-// Update user profile
+/**
+ * PUT /api/users/profile
+ * 
+ * Updates the authenticated user's profile information
+ * Supports updating phone, address, and emergency contact details
+ * Logs user activity for security and audit purposes
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @body {string} [phone] - User's phone number
+ * @body {string} [address] - User's address
+ * @body {string} [emergencyContact] - User's emergency contact information
+ * @returns {Object} Updated user profile information
+ */
 router.put('/profile', verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -200,7 +234,19 @@ router.put('/profile', verifyToken, async (req, res) => {
     }
 });
 
-// Change password
+/**
+ * PUT /api/users/change-password
+ * 
+ * Changes the authenticated user's password
+ * Validates current password before allowing change
+ * Logs security-related activity for audit purposes
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @body {string} currentPassword - User's current password for verification
+ * @body {string} newPassword - New password to set
+ * @returns {Object} Success message for password change
+ */
 router.put('/change-password', verifyToken, async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
@@ -251,7 +297,16 @@ router.put('/change-password', verifyToken, async (req, res) => {
     }
 });
 
-// Get user's activity history
+/**
+ * GET /api/users/activity
+ * 
+ * Retrieves the authenticated user's recent account activity
+ * Limited to the 10 most recent activities
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @returns {Array} List of recent user activities with timestamps
+ */
 router.get('/activity', verifyToken, async (req, res) => {
     try {
         // Get the most recent activities for the user, limited to 10
@@ -266,7 +321,17 @@ router.get('/activity', verifyToken, async (req, res) => {
     }
 });
 
-// Get user's billing history
+/**
+ * GET /api/users/billing-history
+ * 
+ * Retrieves the authenticated user's complete billing history
+ * Includes permits, reservations, and any associated refunds
+ * Combines all transaction types into a chronological history
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @returns {Object} Comprehensive billing history with transaction details
+ */
 router.get('/billing-history', verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -505,7 +570,16 @@ router.get('/billing-history', verifyToken, async (req, res) => {
     }
 });
 
-// Get user's saved payment methods
+/**
+ * GET /api/users/payment-methods
+ * 
+ * Retrieves the authenticated user's saved payment methods from Stripe
+ * Returns formatted card information with masked details for security
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @returns {Object} List of saved payment methods with card details
+ */
 router.get('/payment-methods', verifyToken, async (req, res) => {
     try {
         // Get user to check for Stripe customer ID
@@ -542,7 +616,19 @@ router.get('/payment-methods', verifyToken, async (req, res) => {
     }
 });
 
-// Save a payment method
+/**
+ * POST /api/users/payment-methods
+ * 
+ * Saves a new payment method for the authenticated user
+ * Creates Stripe customer if user doesn't have one
+ * Optionally sets the payment method as default
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @body {string} paymentMethodId - Stripe payment method ID to save
+ * @body {boolean} [isDefault] - Whether to set as default payment method
+ * @returns {Object} Saved payment method details
+ */
 router.post('/payment-methods', verifyToken, async (req, res) => {
     try {
         const { paymentMethodId, isDefault } = req.body;
@@ -607,7 +693,17 @@ router.post('/payment-methods', verifyToken, async (req, res) => {
     }
 });
 
-// Delete a payment method
+/**
+ * DELETE /api/users/payment-methods/:paymentMethodId
+ * 
+ * Deletes a specific payment method for the authenticated user
+ * Handles default payment method reassignment if needed
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @param {string} paymentMethodId - ID of the payment method to delete
+ * @returns {Object} Success confirmation
+ */
 router.delete('/payment-methods/:paymentMethodId', verifyToken, async (req, res) => {
     try {
         const { paymentMethodId } = req.params;
@@ -650,7 +746,17 @@ router.delete('/payment-methods/:paymentMethodId', verifyToken, async (req, res)
     }
 });
 
-// Set a payment method as default
+/**
+ * PUT /api/users/payment-methods/:paymentMethodId/default
+ * 
+ * Sets a specific payment method as the default for the authenticated user
+ * Used for streamlining future payments
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @param {string} paymentMethodId - ID of the payment method to set as default
+ * @returns {Object} Updated payment method with default status
+ */
 router.put('/payment-methods/:paymentMethodId/default', verifyToken, async (req, res) => {
     try {
         const { paymentMethodId } = req.params;
@@ -690,7 +796,20 @@ router.put('/payment-methods/:paymentMethodId/default', verifyToken, async (req,
     }
 });
 
-// Get user notifications
+/**
+ * GET /api/users/notifications
+ * 
+ * Retrieves notifications for the authenticated user
+ * Supports pagination and filtering for unread notifications
+ * Includes metadata about notification counts
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @query {number} [limit=10] - Maximum number of notifications to return
+ * @query {boolean} [unreadOnly=false] - Whether to only return unread notifications
+ * @query {number} [skip=0] - Number of notifications to skip (for pagination)
+ * @returns {Object} List of notifications with count metadata
+ */
 router.get('/notifications', verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -730,7 +849,17 @@ router.get('/notifications', verifyToken, async (req, res) => {
     }
 });
 
-// Mark notification as read
+/**
+ * PUT /api/users/notifications/:notificationId/read
+ * 
+ * Marks a specific notification as read for the authenticated user
+ * Verifies notification ownership before updating
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @param {string} notificationId - ID of the notification to mark as read
+ * @returns {Object} Updated notification information
+ */
 router.put('/notifications/:notificationId/read', verifyToken, async (req, res) => {
     try {
         const { notificationId } = req.params;
@@ -760,7 +889,16 @@ router.put('/notifications/:notificationId/read', verifyToken, async (req, res) 
     }
 });
 
-// Mark all notifications as read
+/**
+ * PUT /api/users/notifications/read-all
+ * 
+ * Marks all unread notifications as read for the authenticated user
+ * Updates multiple notifications in a single operation
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @returns {Object} Success message with count of updated notifications
+ */
 router.put('/notifications/read-all', verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -781,7 +919,17 @@ router.put('/notifications/read-all', verifyToken, async (req, res) => {
     }
 });
 
-// Delete a notification
+/**
+ * DELETE /api/users/notifications/:notificationId
+ * 
+ * Deletes a specific notification for the authenticated user
+ * Verifies notification ownership before deletion
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @param {string} notificationId - ID of the notification to delete
+ * @returns {Object} Success confirmation message
+ */
 router.delete('/notifications/:notificationId', verifyToken, async (req, res) => {
     try {
         const { notificationId } = req.params;
@@ -809,7 +957,16 @@ router.delete('/notifications/:notificationId', verifyToken, async (req, res) =>
     }
 });
 
-// Get user notification preferences
+/**
+ * GET /api/users/notification-preferences
+ * 
+ * Retrieves notification preferences for the authenticated user
+ * Creates default preferences if none exist
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @returns {Object} User's notification preference settings
+ */
 router.get('/notification-preferences', verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -833,7 +990,17 @@ router.get('/notification-preferences', verifyToken, async (req, res) => {
     }
 });
 
-// Update user notification preferences
+/**
+ * PUT /api/users/notification-preferences
+ * 
+ * Updates notification preferences for the authenticated user
+ * Supports granular control over email and push notification settings
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @body {Object} - Notification preference fields to update
+ * @returns {Object} Updated notification preferences
+ */
 router.put('/notification-preferences', verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;

@@ -1,3 +1,17 @@
+/**
+ * This module defines API routes for user authentication, including:
+ * - User registration and account creation
+ * - Login and session management
+ * - Password reset functionality (forgot/reset password)
+ * - Session management and timeout logging
+ * 
+ * The module enforces security by:
+ * - Password hashing with bcrypt
+ * - JWT token generation for stateless authentication
+ * - Secure password reset flows
+ * - Activity logging
+ */
+
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
@@ -8,7 +22,25 @@ const crypto = require('crypto');
 const emailService = require('../services/emailService');
 const { verifyToken } = require('../middleware/auth');
 
-// User Registration
+/**
+ * POST /api/auth/register
+ * 
+ * Registers a new user in the system with pending approval status
+ * Handles different registration flows based on user type:
+ * - Students/Faculty: Requires valid SBU ID
+ * - Visitors: Generates a unique visitor ID automatically
+ * 
+ * Creates user record, logs the activity, sends confirmation email,
+ * and generates an initial authentication token.
+ * 
+ * @body {string} firstName - User's first name
+ * @body {string} lastName - User's last name
+ * @body {string} email - User's email address (used for login)
+ * @body {string} password - User's password (will be hashed)
+ * @body {string} sbuId - SBU ID number (required for students/faculty, ignored for visitors)
+ * @body {string} userType - Type of user (student, faculty, visitor, admin)
+ * @returns {Object} - Registration status, user data, and authentication token
+ */
 router.post('/register', async (req, res) => {
     try {
         const { firstName, lastName, email, password, sbuId, userType } = req.body;
@@ -111,7 +143,18 @@ router.post('/register', async (req, res) => {
     }
 });
 
-// User Login
+/**
+ * POST /api/auth/login
+ * 
+ * Authenticates a user and generates an access token
+ * Verifies credentials, checks approval status, and logs login activity
+ * Supports extended sessions with "remember me" functionality
+ * 
+ * @body {string} email - User's email address
+ * @body {string} password - User's password
+ * @body {boolean} rememberMe - Whether to create a long-lived token (30 days vs 24 hours)
+ * @returns {Object} - Authentication token and user data on success
+ */
 router.post('/login', async (req, res) => {
     try {
         const { email, password, rememberMe } = req.body;
@@ -180,7 +223,19 @@ router.post('/login', async (req, res) => {
     }
 });
 
-// Forgot Password Route
+/**
+ * POST /api/auth/forgot-password
+ * 
+ * Initiates the password reset process for a user
+ * Generates a secure token, stores it with expiration, and sends reset email
+ * Implements security best practices:
+ * - Same response message whether account exists or not (prevent user enumeration)
+ * - Limited token validity (1 hour)
+ * - Server-side logging of reset requests
+ * 
+ * @body {string} email - Email address of the account to reset
+ * @returns {Object} - Generic success message (intentionally vague for security)
+ */
 router.post('/forgot-password', async (req, res) => {
     try {
         const { email } = req.body;
@@ -234,7 +289,16 @@ router.post('/forgot-password', async (req, res) => {
     }
 });
 
-// Reset Password Route
+/**
+ * POST /api/auth/reset-password
+ * 
+ * Completes the password reset process by setting a new password
+ * Verifies the reset token validity and expiration
+ * 
+ * @body {string} token - Password reset token from the reset email
+ * @body {string} password - New password to set (will be hashed)
+ * @returns {Object} - Success or error message
+ */
 router.post('/reset-password', async (req, res) => {
     try {
         const { token, password } = req.body;
@@ -270,7 +334,15 @@ router.post('/reset-password', async (req, res) => {
     }
 });
 
-// Session timeout endpoint
+/**
+ * POST /api/auth/session-timeout
+ * 
+ * Logs user session timeouts for security monitoring
+ * Called by the client when a session expires due to inactivity
+ * 
+ * @middleware verifyToken - Ensures the request has valid authentication
+ * @returns {Object} - Confirmation message
+ */
 router.post('/session-timeout', verifyToken, async (req, res) => {
     try {
         // Log session timeout

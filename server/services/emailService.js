@@ -1,10 +1,33 @@
+ /**
+ * This module provides email delivery functionality throughout the application,
+ * handling various types of notifications including:
+ * - Password reset requests
+ * - Reservation confirmations and updates
+ * - Citation/fine notifications
+ * - Contact form submissions and responses
+ * - Account registration and approval
+ * 
+ * It uses nodemailer with Gmail SMTP for delivery and includes fallback
+ * behavior when email credentials are not configured.
+ */
+
+// Import the nodemailer library for sending emails
 const nodemailer = require('nodemailer');
+// Load environment variables for email configuration
 require('dotenv').config();
 
+// Variables to track email configuration state
 let transporter;
 let emailConfigured = false;
 
-// Configure Nodemailer with Gmail SMTP
+/**
+ * EMAIL SERVICE INITIALIZATION
+ * 
+ * This section configures the email transport service when the application starts.
+ * It requires EMAIL_USER and EMAIL_PASSWORD environment variables to be set.
+ * If these are missing, the service will operate in "log-only" mode.
+ */
+// Only configure email if credentials are provided
 if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
     console.log('Initializing email service with:', process.env.EMAIL_USER);
 
@@ -17,7 +40,8 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
         }
     });
 
-    // Verify transport configuration
+    // Verify transport configuration on startup
+    // This ensures we detect configuration issues early
     transporter.verify((error, success) => {
         if (error) {
             console.error('Email service setup error:', error);
@@ -35,21 +59,37 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
         }
     });
 } else {
+    // Detailed warning if email is not configured
     console.warn('Email credentials not provided in .env file. EMAIL_USER and EMAIL_PASSWORD are required.');
     console.warn('Email service will be disabled - notifications will be logged but not sent.');
     emailConfigured = false;
 }
 
+/**
+ * Email Service Object
+ * 
+ * This object contains methods for sending different types of emails.
+ * Each method follows a similar pattern:
+ * 1. Check if email is configured (if not, log and return success)
+ * 2. Format data for the email
+ * 3. Define email content with HTML templates
+ * 4. Send the email and capture the result
+ * 5. Return success/failure information
+ */
 const emailService = {
     /**
-     * Send password reset email
-     * @param {string} to - Recipient email address
-     * @param {string} token - Password reset token
+     * Sends a password reset email with a secure token link
+     * 
+     * When users request a password reset, this email provides them
+     * with a time-limited secure link to set a new password.
+     * 
+     * @param {string} to - User's email address
+     * @param {string} token - Secure token for password reset
      * @param {string} baseUrl - Base URL for the client application
-     * @returns {Promise} - Promise resolving to the result of the email sending
+     * @returns {Promise<Object>} Result with success status and message ID
      */
     sendPasswordResetEmail: async (to, token, baseUrl) => {
-        // If email is not configured, just log the action and return success
+        // Skip actual sending if email is not configured
         if (!emailConfigured) {
             console.log('Email service disabled. Would have sent reset email to:', to);
             console.log('Reset token:', token);
@@ -58,20 +98,21 @@ const emailService = {
         }
 
         try {
-            // Log for debugging
+            // Log for debugging email issues
             console.log('Reset email parameters:');
             console.log('- Client base URL:', baseUrl);
             console.log('- Token:', token);
             console.log('- Recipient:', to);
 
-            // Ensure baseUrl doesn't have a trailing slash
+            // Sanitize the base URL to prevent URL construction issues
             const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 
-            // Create the reset URL
+            // Construct the complete reset URL for the user to click
             const resetUrl = `${cleanBaseUrl}/reset-password/${token}`;
 
             console.log('Generated reset URL:', resetUrl);
 
+            // Configure email content with HTML template
             const mailOptions = {
                 from: `"SBU Parking System" <${process.env.EMAIL_USER || 'noreply@sbuparkingsystem.com'}>`,
                 to,
@@ -96,26 +137,34 @@ const emailService = {
         `
             };
 
+            // Send the email and capture the result
             const info = await transporter.sendMail(mailOptions);
             console.log('Password reset email sent:', info.messageId);
             return { success: true, messageId: info.messageId };
         } catch (error) {
+            // Log errors but don't expose details to the client
             console.error('Failed to send password reset email:', error);
             return { success: false, error: error.message };
         }
     },
 
     /**
-     * Send reservation confirmation email
-     * @param {string} to - Recipient email address
-     * @param {string} userName - User's name for personalization
-     * @param {Object} reservation - Reservation details
+     * Sends a reservation confirmation, reminder, or status update email
+     * 
+     * This multipurpose function handles multiple reservation-related emails:
+     * - New reservation confirmations
+     * - Reminders about upcoming reservations
+     * - Status updates (like cancellations)
+     * 
+     * @param {string} to - User's email address
+     * @param {string} userName - User's full name for personalization
+     * @param {Object} reservation - Reservation details (lot, times, status, etc.)
      * @param {string} baseUrl - Base URL for the client application
-     * @param {boolean} isReminder - Whether this is a reminder email (default: false)
-     * @returns {Promise} - Promise resolving to the result of the email sending
+     * @param {boolean} isReminder - Whether this is a reminder email
+     * @returns {Promise<Object>} Result with success status and message ID
      */
     sendReservationConfirmation: async (to, userName, reservation, baseUrl, isReminder = false) => {
-        // If email is not configured, just log the action and return success
+        // Skip actual sending if email is not configured
         if (!emailConfigured) {
             console.log(`Email service disabled. Would have sent ${isReminder ? 'reminder' : 'confirmation'} to:`, to);
             console.log('Reservation details:', JSON.stringify(reservation, null, 2));
@@ -123,24 +172,24 @@ const emailService = {
         }
 
         try {
-            // Ensure baseUrl is a string to prevent "endsWith is not a function" error
+            // Validate baseUrl to prevent errors
             if (typeof baseUrl !== 'string') {
                 console.warn('Invalid baseUrl provided to sendReservationConfirmation:', baseUrl);
                 baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_BASE_URL || 'http://localhost:5173';
             }
 
-            // Format dates for display
+            // Format dates for user-friendly display
             const startTime = new Date(reservation.startTime).toLocaleString();
             const endTime = new Date(reservation.endTime).toLocaleString();
 
-            // Create reservation link
+            // Prepare URL for the user to view their reservation
             const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
             const reservationUrl = `${cleanBaseUrl}/dashboard`;
 
-            // Check if this is a cancellation notification
+            // Determine the type of notification (cancellation, reminder, or confirmation)
             const isCancelled = reservation.status === 'cancelled';
 
-            // Set the appropriate subject line
+            // Set appropriate subject based on notification type
             let subject;
             if (isReminder) {
                 subject = 'Parking Reservation Reminder';
@@ -163,6 +212,7 @@ const emailService = {
                 message = 'Your parking reservation has been confirmed. Here are the details:';
             }
 
+            // Configure email content with reservation details
             const mailOptions = {
                 from: `"SBU Parking System" <${process.env.EMAIL_USER || 'noreply@sbuparkingsystem.com'}>`,
                 to,
@@ -180,7 +230,7 @@ const emailService = {
               <p><strong>End Time:</strong> ${endTime}</p>
               <p><strong>Status:</strong> ${reservation.status || 'Confirmed'}</p>
               <p><strong>Payment:</strong> ${
-                    // Check various possible price fields
+                    // Handle various price fields that might be present in different versions of the data
                     (reservation.amount > 0 || reservation.totalAmount > 0 || reservation.price > 0 || reservation.totalPrice > 0)
                         ? `$${parseFloat(reservation.amount || reservation.totalAmount || reservation.price || reservation.totalPrice).toFixed(2)}`
                         : reservation.freeReservation || reservation.permitToCancel || (reservation.freeParkingReason && reservation.freeParkingReason.includes('permit'))
@@ -209,6 +259,7 @@ const emailService = {
         `
             };
 
+            // Send the email
             const info = await transporter.sendMail(mailOptions);
             console.log(`Reservation ${isReminder ? 'reminder' : (isCancelled ? 'cancellation' : 'confirmation')} email sent:`, info.messageId);
             return { success: true, messageId: info.messageId };
@@ -219,15 +270,19 @@ const emailService = {
     },
 
     /**
-     * Send citation notification email
-     * @param {string} to - Recipient email address
-     * @param {Object} citation - Citation details
+     * Sends a citation/fine notification or payment confirmation
+     * 
+     * Notifies users about parking violations they've received or 
+     * confirms that their citation has been paid.
+     * 
+     * @param {string} to - User's email address
+     * @param {Object} citation - Citation details (amount, reason, date, etc.)
      * @param {boolean} isPaid - Whether the citation has been paid
      * @param {string} baseUrl - Base URL for the client application
-     * @returns {Promise} - Promise resolving to the result of the email sending
+     * @returns {Promise<Object>} Result with success status and message ID
      */
     sendCitationNotification: async (to, citation, isPaid, baseUrl) => {
-        // If email is not configured, just log the action and return success
+        // Skip actual sending if email is not configured
         if (!emailConfigured) {
             console.log('Email service disabled. Would have sent citation notification to:', to);
             console.log('Citation details:', JSON.stringify(citation, null, 2));
@@ -236,19 +291,21 @@ const emailService = {
         }
 
         try {
-            // Format date for display
+            // Format issue date for display, handling different possible field names
             const issueDate = citation.date_posted ? new Date(citation.date_posted).toLocaleDateString() :
                 new Date(citation.issueDate || citation.createdAt).toLocaleDateString();
 
-            // Format due date - this will show the 2 week deadline
+            // Format due date (typically 2 weeks from issue date)
             const dueDate = citation.dueDate ? new Date(citation.dueDate).toLocaleDateString() : 'Two weeks from issue date';
 
-            // Create citation link
+            // Create URL for viewing/paying the citation
             const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
             const citationUrl = `${cleanBaseUrl}/past-citations`;
 
+            // Set subject based on whether this is a payment confirmation or citation notice
             const subject = isPaid ? 'Parking Citation Payment Confirmation' : 'Parking Citation Notification';
 
+            // Configure email content with citation details
             const mailOptions = {
                 from: `"SBU Parking System" <${process.env.EMAIL_USER || 'noreply@sbuparkingsystem.com'}>`,
                 to,
@@ -290,6 +347,7 @@ const emailService = {
         `
             };
 
+            // Send the email
             const info = await transporter.sendMail(mailOptions);
             console.log(`Citation ${isPaid ? 'payment' : 'notification'} email sent:`, info.messageId);
             return { success: true, messageId: info.messageId };
@@ -300,13 +358,18 @@ const emailService = {
     },
 
     /**
-     * Send a notification about a new contact form submission
+     * Sends notifications for contact form submissions
+     * 
+     * When users submit a contact form:
+     * 1. An admin notification is sent to staff
+     * 2. A confirmation email is sent to the user
+     * 
      * @param {Object} contactData - Contact form submission data
-     * @param {string} adminEmail - Admin email to send notification to
-     * @returns {Promise} - Promise resolving to the result of the email sending
+     * @param {string} adminEmail - Optional override for admin recipient
+     * @returns {Promise<Object>} Result with success status and message IDs
      */
     sendContactFormNotification: async (contactData, adminEmail = null) => {
-        // If email is not configured, just log the action and return success
+        // Skip actual sending if email is not configured
         if (!emailConfigured) {
             console.log('Email service disabled. Would have sent contact form notification.');
             console.log('Contact form data:', JSON.stringify(contactData, null, 2));
@@ -314,9 +377,10 @@ const emailService = {
         }
 
         try {
-            // Determine recipient - use admin email if provided, otherwise use the configured email
+            // Determine admin recipient email address
             const recipient = adminEmail || process.env.EMAIL_USER || 'noreply@sbuparkingsystem.com';
 
+            // Configure admin notification email
             const mailOptions = {
                 from: `"SBU Parking System" <${process.env.EMAIL_USER || 'noreply@sbuparkingsystem.com'}>`,
                 to: recipient,
@@ -345,7 +409,7 @@ const emailService = {
                 `
             };
 
-            // Also send an auto-reply to the user
+            // Configure auto-reply email for the user who submitted the form
             const userMailOptions = {
                 from: `"SBU Parking System" <${process.env.EMAIL_USER || 'noreply@sbuparkingsystem.com'}>`,
                 to: contactData.email,
@@ -386,6 +450,7 @@ const emailService = {
             const userInfo = await transporter.sendMail(userMailOptions);
             console.log('Contact form auto-reply sent to user:', userInfo.messageId);
 
+            // Return both message IDs
             return {
                 success: true,
                 adminMessageId: adminInfo.messageId,
@@ -709,4 +774,5 @@ const emailService = {
     }
 };
 
-module.exports = emailService; 
+// Export the service for use throughout the application
+module.exports = emailService;

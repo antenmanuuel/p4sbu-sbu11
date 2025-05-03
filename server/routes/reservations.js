@@ -1,3 +1,15 @@
+/**
+ * Reservation Routes - Handles all reservation-related API endpoints
+ * 
+ * This file contains all API endpoints for managing parking reservations, including:
+ * - Creating new reservations
+ * - Retrieving user reservations
+ * - Canceling reservations
+ * - Extending reservations
+ * - Processing payments and refunds
+ * - Managing permit-related functionality for reservations
+ */
+
 const express = require('express');
 const router = express.Router();
 const Reservation = require('../models/reservation');
@@ -13,7 +25,15 @@ const { updateExpiredReservations } = require('../utils/reservationUtils');
 const NotificationHelper = require('../utils/notificationHelper');
 const emailService = require('../services/emailService');
 
-// Helper function to generate a unique reservation ID
+/**
+ * Helper function to generate a unique reservation ID
+ * 
+ * Format: RES-YYYYMMDD-XXXX where:
+ * - YYYYMMDD is the current date
+ * - XXXX is a random 4-digit number
+ * 
+ * @returns {string} A unique reservation ID
+ */
 const generateReservationId = () => {
     // Generate a reservation ID in format: RES-YYYYMMDD-XXXX
     const date = new Date();
@@ -28,7 +48,18 @@ const generateReservationId = () => {
     return `RES-${dateStr}-${randomSuffix}`;
 };
 
-// GET /api/reservations - Get all reservations for the current user
+/**
+ * @route GET /api/reservations
+ * @desc Get all reservations for the current user
+ * @access Private - Requires authentication
+ * 
+ * Query parameters:
+ * - status: Filter by reservation status
+ * - startDate: Filter by reservations after this date
+ * - endDate: Filter by reservations before this date
+ * - showPastOnly: If true, show only completed or cancelled reservations
+ * - search: Search by lot name, address, permit type, or vehicle info
+ */
 router.get('/', verifyToken, async (req, res) => {
     try {
         // First update any expired reservations in the database
@@ -113,7 +144,14 @@ router.get('/', verifyToken, async (req, res) => {
     }
 });
 
-// GET /api/reservations/:id - Get a specific reservation
+/**
+ * @route GET /api/reservations/:id
+ * @desc Get a specific reservation by ID
+ * @access Private - Requires authentication
+ * 
+ * Path parameters:
+ * - id: The reservation ID to retrieve
+ */
 router.get('/:id', verifyToken, async (req, res) => {
     try {
         // First update any expired reservations in the database
@@ -147,7 +185,17 @@ router.get('/:id', verifyToken, async (req, res) => {
     }
 });
 
-// POST /api/reservations/:id/cancel - Cancel a reservation
+/**
+ * @route POST /api/reservations/:id/cancel
+ * @desc Cancel a reservation and process refund if applicable
+ * @access Private - Requires authentication
+ * 
+ * Path parameters:
+ * - id: The reservation ID to cancel
+ * 
+ * Request body:
+ * - reason: Optional reason for cancellation
+ */
 router.post('/:id/cancel', verifyToken, async (req, res) => {
     try {
         const reservationId = req.params.id;
@@ -273,7 +321,19 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
     }
 });
 
-// POST /api/reservations/:id/extend - Extend a reservation's end time
+/**
+ * @route POST /api/reservations/:id/extend
+ * @desc Extend a reservation's end time
+ * @access Private - Requires authentication
+ * 
+ * Path parameters:
+ * - id: The reservation ID to extend
+ * 
+ * Request body:
+ * - additionalHours: Number of hours to extend the reservation
+ * - isMetered: Whether this is a metered parking spot (optional)
+ * - paymentMethodId: Stripe payment method ID for additional charges (optional)
+ */
 router.post('/:id/extend', verifyToken, async (req, res) => {
     try {
         const { additionalHours, isMetered } = req.body;
@@ -415,7 +475,14 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
     }
 });
 
-// PUT /api/reservations/check-expired - Admin endpoint to manually check and update expired reservations
+/**
+ * @route PUT /api/reservations/check-expired
+ * @desc Manual endpoint to check and update expired reservations
+ * @access Private - Requires authentication
+ * 
+ * This endpoint is typically called by an admin or scheduled job
+ * to ensure reservation statuses are updated appropriately
+ */
 router.put('/check-expired', verifyToken, async (req, res) => {
     try {
         const updatedCount = await updateExpiredReservations();
@@ -429,7 +496,21 @@ router.put('/check-expired', verifyToken, async (req, res) => {
     }
 });
 
-// POST /api/reservations - Create a new reservation
+/**
+ * @route POST /api/reservations
+ * @desc Create a new parking reservation
+ * @access Private - Requires authentication
+ * 
+ * Request body:
+ * - lotId: ID of the parking lot
+ * - startTime: Start time of the reservation
+ * - endTime: End time of the reservation
+ * - permitType: Type of permit (e.g., 'student', 'faculty')
+ * - vehicleInfo: Either a vehicle ID or complete vehicle information
+ * - paymentInfo: Payment method details
+ * - isSwitchingPermitType: Boolean indicating if user is switching permit types
+ * - permitToReplaceId: ID of permit to replace (if switching)
+ */
 router.post('/', verifyToken, async (req, res) => {
     try {
         const { lotId, startTime, endTime, permitType, vehicleInfo, paymentInfo, isSwitchingPermitType, permitToReplaceId } = req.body;
@@ -458,7 +539,7 @@ router.post('/', verifyToken, async (req, res) => {
             endTime: { $gt: new Date() }
         });
 
-        if (existingActiveReservations.length > 0) {
+        if (existingActiveReservations && existingActiveReservations.length > 0) {
             return res.status(400).json({
                 message: 'You already have an active reservation. Please complete or cancel your existing reservation before creating a new one.'
             });

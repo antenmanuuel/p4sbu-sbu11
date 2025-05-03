@@ -5,6 +5,17 @@
 // It can be credited that AI played a crucial role in heavily contributing/modifying/optimizing this entire file's code (after the initial changes were written by Student). 
 // Commits and pushes are executed after the final version have been made for the specific implementation changes during that coding session. 
 
+/**
+ * This module defines API routes for managing parking citation tickets, including:
+ * - User routes for viewing and paying issued tickets
+ * - Admin routes for creating, managing, and tracking tickets
+ * - Payment processing through Stripe for citation payments
+ * - Notification and email systems for communicating ticket status
+ * - Revenue tracking for paid citations
+ * 
+ * Citations/tickets represent violations issued to users, which can be paid
+ * through various payment methods and contribute to parking system revenue.
+ */
 
 const express = require('express');
 const router = express.Router();
@@ -61,7 +72,16 @@ if (process.env.STRIPE_SECRET_KEY) {
 
 // USER TICKET ROUTES
 
-// Get user's tickets
+/**
+ * GET /api/tickets/user/tickets
+ * 
+ * Retrieves all tickets (citations) for the currently authenticated user
+ * Sorted by creation date with most recent tickets first
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @returns {Array} - List of ticket objects belonging to the user
+ */
 router.get('/user/tickets', verifyToken, async (req, res) => {
     try {
         const tickets = await Ticket.find({ user: req.user.userId }).sort({ createdAt: -1 });
@@ -71,7 +91,19 @@ router.get('/user/tickets', verifyToken, async (req, res) => {
     }
 });
 
-// Pay a ticket
+/**
+ * POST /api/tickets/user/tickets/:ticketId/pay
+ * 
+ * Processes payment for a specific ticket
+ * Supports credit card payments via Stripe or student account payments
+ * Updates ticket status, sends notifications, and records revenue
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @param {string} ticketId - ID of the ticket to pay
+ * @body {string} [paymentMethodId] - Stripe payment method ID for credit card payments
+ * @returns {Object} - Updated ticket information and payment details
+ */
 router.post('/user/tickets/:ticketId/pay', verifyToken, async (req, res) => {
     try {
         const ticket = await Ticket.findOne({
@@ -260,7 +292,20 @@ router.post('/user/tickets/:ticketId/pay', verifyToken, async (req, res) => {
 
 // ADMIN TICKET ROUTES
 
-// Create a new ticket (admin only)
+/**
+ * POST /api/tickets/admin/tickets
+ * 
+ * Creates a new citation ticket for a user
+ * Sends notification and email to the cited user
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @body {string} name - Name/description of the violation
+ * @body {number} amount - Fine amount for the citation
+ * @body {string} userId - ID of the user receiving the citation
+ * @returns {Object} - Created ticket information
+ */
 router.post('/admin/tickets', verifyToken, isAdmin, async (req, res) => {
     try {
         const { name, amount, userId } = req.body;
@@ -325,7 +370,21 @@ router.post('/admin/tickets', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// Get all tickets (admin)
+/**
+ * GET /api/tickets/admin/tickets
+ * 
+ * Retrieves a paginated and filterable list of all citation tickets
+ * Supports filtering by user and payment status
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @query {string} [userId] - Filter tickets by specific user
+ * @query {boolean} [isPaid] - Filter tickets by payment status
+ * @query {number} [page=1] - Page number for pagination
+ * @query {number} [limit=10] - Number of tickets per page
+ * @returns {Object} - List of tickets and pagination metadata
+ */
 router.get('/admin/tickets', verifyToken, isAdmin, async (req, res) => {
     try {
         // Support filtering and pagination
@@ -370,7 +429,18 @@ router.get('/admin/tickets', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// Get ticket by ID (admin)
+/**
+ * GET /api/tickets/admin/tickets/:ticketId
+ * 
+ * Retrieves detailed information for a single ticket
+ * Includes populated user information
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} ticketId - ID of the ticket to retrieve
+ * @returns {Object} - Complete ticket information with user details
+ */
 router.get('/admin/tickets/:ticketId', verifyToken, isAdmin, async (req, res) => {
     try {
         const ticketId = req.params.ticketId;
@@ -388,7 +458,19 @@ router.get('/admin/tickets/:ticketId', verifyToken, isAdmin, async (req, res) =>
     }
 });
 
-// Update ticket (admin)
+/**
+ * PUT /api/tickets/admin/tickets/:ticketId
+ * 
+ * Updates an existing ticket's information
+ * Can update any fields (amount, status, etc.)
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} ticketId - ID of the ticket to update
+ * @body {Object} - Fields to update (all fields optional)
+ * @returns {Object} - Success message and updated ticket
+ */
 router.put('/admin/tickets/:ticketId', verifyToken, isAdmin, async (req, res) => {
     try {
         const ticketId = req.params.ticketId;
@@ -414,7 +496,18 @@ router.put('/admin/tickets/:ticketId', verifyToken, isAdmin, async (req, res) =>
     }
 });
 
-// Delete ticket (admin)
+/**
+ * DELETE /api/tickets/admin/tickets/:ticketId
+ * 
+ * Removes a ticket from the system
+ * Permanently deletes the record
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} ticketId - ID of the ticket to delete
+ * @returns {Object} - Success message
+ */
 router.delete('/admin/tickets/:ticketId', verifyToken, isAdmin, async (req, res) => {
     try {
         const ticketId = req.params.ticketId;
@@ -435,4 +528,4 @@ router.delete('/admin/tickets/:ticketId', verifyToken, isAdmin, async (req, res)
     }
 });
 
-module.exports = router; 
+module.exports = router;
