@@ -1,3 +1,14 @@
+/**
+ * This module defines API routes for contact form submissions management, including:
+ * - Public submission of contact forms by users
+ * - Admin retrieval of submissions with filtering and pagination
+ * - Status updates and admin responses to submissions
+ * - Email notifications for status changes and follow-ups
+ * 
+ * The module handles both public access for submissions and restricted
+ * admin-only routes for managing the contact form workflow.
+ */
+
 const express = require('express');
 const router = express.Router();
 const emailService = require('../services/emailService');
@@ -7,9 +18,20 @@ const mongoose = require('mongoose');
 const User = require('../models/users');
 
 /**
- * @route POST /api/contact
- * @desc Submit contact form
+ * POST /api/contact
+ * 
+ * Submits a new contact form from a user
+ * Creates a database record and sends notification emails to admin and confirmation to user
+ * This is a public endpoint - no authentication required
+ * 
  * @access Public
+ * @body {string} firstName - User's first name
+ * @body {string} lastName - User's last name
+ * @body {string} email - User's email address for response
+ * @body {string} [phone] - Optional phone number
+ * @body {string} subject - Subject/topic of inquiry
+ * @body {string} message - Detailed message from user
+ * @returns {Object} - Success status and contact submission ID
  */
 router.post('/', async (req, res) => {
     try {
@@ -77,9 +99,20 @@ router.post('/', async (req, res) => {
 });
 
 /**
- * @route GET /api/contact
- * @desc Get all contact form submissions
- * @access Admin
+ * GET /api/contact
+ * 
+ * Retrieves a paginated and filtered list of all contact form submissions
+ * Supports complex searching by name, email, subject, or message content
+ * Includes robust name search handling both first+last and last+first patterns
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @query {string} [status] - Filter by submission status ('new', 'in-progress', 'resolved')
+ * @query {string} [search] - Search term for filtering submissions
+ * @query {number} [page=1] - Page number for pagination
+ * @query {number} [limit=10] - Number of results per page
+ * @returns {Object} - Submissions array and pagination metadata
  */
 router.get('/', verifyToken, isAdmin, async (req, res) => {
     try {
@@ -175,9 +208,15 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
 });
 
 /**
- * @route GET /api/contact/count
- * @desc Get count of contact submissions by status
- * @access Admin
+ * GET /api/contact/count
+ * 
+ * Retrieves count statistics of contact submissions by status
+ * Used for dashboard metrics and monitoring workload
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @returns {Object} - Counts for total, new, in-progress, and resolved submissions
  */
 router.get('/count', verifyToken, isAdmin, async (req, res) => {
     try {
@@ -206,9 +245,16 @@ router.get('/count', verifyToken, isAdmin, async (req, res) => {
 });
 
 /**
- * @route GET /api/contact/:id
- * @desc Get a single contact submission
- * @access Admin
+ * GET /api/contact/:id
+ * 
+ * Retrieves a single contact submission by ID
+ * Includes all details and follow-up message history
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} id - MongoDB ID of the submission to retrieve
+ * @returns {Object} - Complete contact submission data
  */
 router.get('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
@@ -244,9 +290,19 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 /**
- * @route PUT /api/contact/:id
- * @desc Update contact submission status
- * @access Admin
+ * PUT /api/contact/:id
+ * 
+ * Updates the status and notes for a contact submission
+ * Sends email notifications to users when status changes
+ * Status transitions trigger different email templates
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} id - MongoDB ID of the submission to update
+ * @body {string} status - New status ('new', 'in-progress', 'resolved')
+ * @body {string} [notes] - Admin notes about the submission
+ * @returns {Object} - Updated contact submission data
  */
 router.put('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
@@ -322,9 +378,19 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 /**
- * @route POST /api/contact/:id/followup
- * @desc Add a follow-up to a contact submission
- * @access Admin
+ * POST /api/contact/:id/followup
+ * 
+ * Adds a follow-up message to an existing contact submission
+ * Supports both internal notes (admin-only) and external follow-ups (emailed to user)
+ * Automatically updates status to 'in-progress' if previously 'new'
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} id - MongoDB ID of the submission
+ * @body {string} message - Follow-up message content
+ * @body {boolean} [isInternal=false] - Whether this is an internal note (not sent to user)
+ * @returns {Object} - Updated submission with new follow-up added
  */
 router.post('/:id/followup', verifyToken, isAdmin, async (req, res) => {
     try {

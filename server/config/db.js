@@ -1,8 +1,29 @@
+/**
+ * This module provides functionality for:
+ * - Establishing a reliable MongoDB connection with retry logic
+ * - Creating initial application data for the database
+ * - Setting up event handlers for database connection states
+ * - Properly closing database connections on application termination
+ * 
+ * The module creates default admin users and parking lots when
+ * the database is first initialized to ensure the application
+ * has baseline data to operate with.
+ */
+
 const mongoose = require('mongoose');
 const User = require('../models/users');
 const Lot = require('../models/lot');
 
-// Create default admin user function
+/**
+ * Creates a default admin user if none exists in the database
+ * 
+ * This function ensures there's always at least one admin user
+ * available in the system for first-time setup. The default
+ * admin credentials are logged to the console for initial access.
+ * 
+ * @async
+ * @returns {Promise<void>}
+ */
 const createDefaultAdmin = async () => {
     try {
         // Check if admin user already exists
@@ -31,7 +52,16 @@ const createDefaultAdmin = async () => {
     }
 };
 
-// Create default lots
+/**
+ * Creates default parking lots if none exist in the database
+ * 
+ * This function ensures the system has initial parking lot data
+ * for testing and demonstration purposes. Each lot is created with
+ * default values for capacity, rates, and features.
+ * 
+ * @async
+ * @returns {Promise<void>}
+ */
 const createDefaultLots = async () => {
     try {
         const lotsCount = await Lot.countDocuments();
@@ -197,7 +227,19 @@ const createDefaultLots = async () => {
     }
 };
 
-// Enhanced connect function with retry logic
+/**
+ * Establishes a connection to the MongoDB database with retry logic
+ * 
+ * This function attempts to connect to MongoDB using the connection
+ * string from environment variables. If connection fails, it will
+ * retry with a configurable delay up to a maximum number of attempts.
+ * After successful connection, it initializes default data.
+ * 
+ * @async
+ * @param {number} retryCount - Maximum number of connection attempts
+ * @param {number} delay - Delay in milliseconds between retry attempts
+ * @returns {Promise<boolean>} True if connection is successful
+ */
 const connectDB = async (retryCount = 3, delay = 3000) => {
     let attempts = 0;
 
@@ -260,4 +302,4 @@ process.on('SIGINT', async () => {
     process.exit(0);
 });
 
-module.exports = { connectDB }; 
+module.exports = { connectDB };
