@@ -11,10 +11,18 @@ import { Elements, CardElement, useStripe, useElements } from '@stripe/react-str
 import { loadStripe } from '@stripe/stripe-js';
 import { PaymentMethodService } from '../utils/api';
 
-// Load Stripe outside of component to avoid recreating it on re-renders
-// Replace with your publishable key from Stripe dashboard
+/* ============================================================================
+      Initialize Stripe once, outside of any component, to avoid re-creating
+      the Stripe instance on every render. Replace the env var with your own
+      Stripe publishable key in VITE_STRIPE_PUBLISHABLE_KEY.
+   ============================================================================ */
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
+/* ============================================================================
+      PaymentPage: Top-level wrapper that injects the Stripe context into our
+      app via <Elements>.  All child components (PaymentForm) can use
+      useStripe() and useElements() hooks once this is present. (referenced/implemented via stripe docs example)  
+   ============================================================================ */
 // The wrapper component that provides Stripe context
 const PaymentPage = ({
     darkMode,
@@ -50,7 +58,11 @@ const PaymentPage = ({
     );
 };
 
-// The actual payment form component
+/* ============================================================================
+      PaymentForm: Contains all state, handlers, and JSX for selecting payment
+      methods, displaying saved cards, new card entry, and submitting payment.
+   ============================================================================ */
+
 const PaymentForm = ({
     darkMode,
     lotName,
@@ -67,6 +79,19 @@ const PaymentForm = ({
 }) => {
     const stripe = useStripe();
     const elements = useElements();
+
+    /* ----------------------------------------------------------------------------
+       Component state: 
+       - paymentMethod: dedicated to hold the payment method chosen by the user: 'existingPermit', 'card', or 'solar'
+       - isProcessing: whether a payment flow is in progress
+       - paymentStatus: tracks 'success' or 'error' after submitting
+       - cardError: validation message from Stripe CardElement
+       - savedPaymentMethods: array of user's stored cards
+       - loadingSavedCards: spinner while we fetch saved cards
+       - selectedSavedCard: which stores the card the user clicked
+       - showNewCardForm: toggles between saved-card list vs. new-card input
+  ---------------------------------------------------------------------------- */
+    
     const [paymentMethod, setPaymentMethod] = useState(hasValidPermit ? 'existingPermit' : 'card');
     const [isProcessing, setIsProcessing] = useState(false);
     const [paymentStatus, setPaymentStatus] = useState(null);
@@ -76,6 +101,11 @@ const PaymentForm = ({
     const [selectedSavedCard, setSelectedSavedCard] = useState(null);
     const [showNewCardForm, setShowNewCardForm] = useState(true);
 
+     /* ----------------------------------------------------------------------------
+       Sync with incoming props:
+       - If the parent tells us there's a valid permit, auto-select that method.
+   ---------------------------------------------------------------------------- */
+    
     // Update payment method when the hasValidPermit prop changes
     useEffect(() => {
         if (hasValidPermit && validPermitDetails) {
@@ -83,6 +113,10 @@ const PaymentForm = ({
         }
     }, [hasValidPermit, validPermitDetails]);
 
+
+    /* ----------------------------------------------------------------------------
+              Reset the status if a reservation error comes from parent.
+   ---------------------------------------------------------------------------- */
     // Reset payment status when reservation error appears
     useEffect(() => {
         if (hasReservationError) {
@@ -90,6 +124,13 @@ const PaymentForm = ({
         }
     }, [hasReservationError]);
 
+    /* ----------------------------------------------------------------------------
+          Get the saved payment methods from the backend when the user switches to the card option:
+         - Show loading spinner
+         - Save methods or log errors
+         - Pre-select the default card
+         - Retry once after 2s in case of a race condition
+   ---------------------------------------------------------------------------- */
     // Fetch saved payment methods
     useEffect(() => {
         const fetchSavedPaymentMethods = async () => {
@@ -151,7 +192,7 @@ const PaymentForm = ({
         }
     }, [paymentMethod]);
 
-    // Handle Stripe card element change
+    // Handle live validation errors from Stripe CardElement
     const handleCardChange = (event) => {
         if (event.error) {
             setCardError(event.error.message);
@@ -160,6 +201,14 @@ const PaymentForm = ({
         }
     };
 
+    /* ----------------------------------------------------------------------------
+        Form submit handler:
+       - Prevent default form behavior
+       - Branch by the chosen payment method:
+         - existingPermit means that they should get a free reservation
+         - solar means thet we should simulate a Solar payment
+         - card means it should access real Stripe API and continue with the flow (new or saved card)
+   ---------------------------------------------------------------------------- */
     const handleSubmit = async (e) => {
         e.preventDefault();
 
