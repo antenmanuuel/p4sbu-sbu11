@@ -332,7 +332,7 @@ const CarInfoForm = ({ darkMode, lotName, permitType, onBackClick, onContinue, i
                 <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Reserving spot at:</p>
                 <p className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{lotName}</p>
 
-                {permitType && (
+                {permitType && !lotName.includes('Metered') && (
                     <div className="mt-2 flex items-center">
                         <FaTicketAlt className={`mr-2 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
                         <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>

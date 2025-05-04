@@ -158,6 +158,9 @@ npx cypress run
   - `editLot.cy.js`: Tests editing parking lot information
   - `editPermit.cy.js`: Tests permit management functions
 
+- **Concurrency Testing**: Tests for concurrency handling
+  - `concurrencyTest.cy.js`: Tests concurrency scenarios
+
 #### Adding New Tests
 
 To add new Cypress tests:
@@ -202,25 +205,71 @@ npx jest tests/lots.test.js
 #### Existing Test Suites
 
 - **Authentication Tests**: Tests for user authentication endpoints
-  - `auth.test.js`: Tests login, registration, password reset
+  - `auth.test.js`: Tests login, registration, password reset, and token verification
 
 - **User Management Tests**: Tests for user-related endpoints
-  - `users.test.js`: Tests profile management, password changes
+  - `users.test.js`: Tests profile management, password changes, and user data retrieval
 
 - **Parking Lot Tests**: Tests for parking lot management API
-  - `lots.test.js`: Tests CRUD operations, filtering, pagination
+  - `lots.test.js`: Tests CRUD operations, filtering, availability checking, and pagination
 
 - **Permit Type Tests**: Tests for permit type management
-  - `permit_types.test.js`: Tests permit type creation and management
+  - `permit_types.test.js`: Tests permit type creation, retrieval, updating, and deletion
 
-- **Ticket Tests**: Tests for parking ticket management
-  - `tickets.test.js`: Tests ticket creation, payment, and queries
+- **Permits Tests**: Tests for permit management functionality 
+  - `permits.test.js`: Tests permit creation, retrieval, updating, and cancellation
+
+- **Reservation Tests**: Tests for parking reservation functionality
+  - `reservations.test.js`: Tests creating, retrieving, canceling, and extending reservations
+
+- **Car Management Tests**: Tests for vehicle registration and management
+  - `cars.test.js`: Tests adding, updating, and removing vehicles from user accounts
+
+- **Ticket/Citation Tests**: Tests for parking ticket management
+  - `tickets.test.js`: Tests ticket creation, payment processing, and status updates
+
+- **Event Parking Tests**: Tests for event parking request functionality
+  - `eventParking.test.js`: Tests event parking request creation, approval, and management
+
+- **Contact/Support Tests**: Tests for user support functionality
+  - `contact.test.js`: Tests contact form submissions and support ticket management
 
 - **Admin Tests**: Tests for admin-only functionality
-  - `admin.test.js`: Tests user approval, admin-only operations
+  - `admin.test.js`: Tests user approval, admin-only operations, and system management
 
-- **Statistics Tests**: Tests for reporting and statistics
-  - `statistics.test.js`: Tests revenue and usage reports
+#### Concurrency Testing
+
+The project includes a concurrency test script to verify that the parking reservation system correctly handles multiple simultaneous reservation attempts when parking spaces are limited.
+
+##### Running Concurrency Tests
+
+To run the concurrency test:
+
+```bash
+# From the project root directory
+node server/tests/concurrencyTest.js
+
+# Run with specific number of users (e.g., 15 users competing for 2 spots)
+node server/tests/concurrencyTest.js 15
+
+# Run with specific users and capacity
+node server/tests/concurrencyTest.js --users 20 --capacity 5
+# Or using short options
+node server/tests/concurrencyTest.js -u 20 -c 5
+
+# Display help information
+node server/tests/concurrencyTest.js --help
+```
+
+The concurrency test:
+- Creates a test parking lot with limited capacity
+- Simulates multiple users trying to reserve parking spaces simultaneously
+- Uses MongoDB transactions to ensure atomic operations
+- Reports detailed results of which users succeeded and which failed
+- Provides timing information and concurrency metrics
+- Cleans up all test data after completion
+
+This test is essential for verifying the system's ability to handle race conditions and maintain data integrity during peak usage periods.
 
 #### Coverage Reporting
 
@@ -267,15 +316,21 @@ Test fixtures are located in the `cypress/fixtures` directory:
 
 ### Authentication Endpoints
 
-- `POST /api/login` - Login a user
-- `POST /api/register` - Register a new user
+- `POST /api/auth/login` - Login a user
+- `POST /api/auth/register` - Register a new user
+- `POST /api/auth/forgot-password` - Request password reset
+- `POST /api/auth/reset-password` - Reset password with token
+- `GET /api/auth/verify-token` - Verify JWT token validity
 
 ### User Endpoints
 
-- `GET /api/user/profile` - Get user profile
-- `PUT /api/user/profile` - Update user profile
-- `PUT /api/user/change-password` - Change user password
-- `GET /api/user/activity` - Get user activity history
+- `GET /api/users/profile` - Get user profile
+- `PUT /api/users/profile` - Update user profile
+- `PUT /api/users/change-password` - Change user password
+- `GET /api/users/activity` - Get user activity history
+- `GET /api/users/billing-history` - Get billing and payment history
+- `GET /api/users/receipt/:id` - Get receipt for a specific payment
+- `POST /api/users/feedback` - Submit user feedback
 
 ### Parking Lot Endpoints
 
@@ -284,17 +339,71 @@ Test fixtures are located in the `cypress/fixtures` directory:
 - `POST /api/lots` - Create a new parking lot (admin only)
 - `PUT /api/lots/:id` - Update a parking lot (admin only)
 - `PATCH /api/lots/:id/status` - Update a lot's status (admin only)
+- `GET /api/lots/availability` - Get real-time parking lot availability
+
+### Reservation Endpoints
+
+- `GET /api/reservations` - Get user's reservations with filtering options
+- `GET /api/reservations/:id` - Get a specific reservation details
+- `POST /api/reservations` - Create a new parking reservation
+- `POST /api/reservations/:id/cancel` - Cancel an existing reservation
+- `POST /api/reservations/:id/extend` - Extend reservation time
+- `PUT /api/reservations/check-expired` - Check and update expired reservations
+
+### Car Management Endpoints
+
+- `GET /api/cars` - Get user's registered vehicles
+- `GET /api/cars/primary` - Get user's primary vehicle
+- `POST /api/cars` - Register a new vehicle
+- `PUT /api/cars/:id` - Update vehicle information
+- `DELETE /api/cars/:id` - Remove a vehicle
+
+### Permit Endpoints
+
+- `GET /api/permits` - Get user's active permits
+- `POST /api/permits` - Purchase a new permit
+- `PUT /api/permits/:id` - Update permit details
+- `GET /api/permits/:id` - Get specific permit details
+- `POST /api/permits/:id/cancel` - Request permit cancellation
 
 ### Permit Types Endpoints
 
-- `GET /api/permit-types` - Get all permit types (admin only)
+- `GET /api/permit-types` - Get all permit types
 - `POST /api/permit-types` - Create a new permit type (admin only)
 - `PUT /api/permit-types/:id` - Update a permit type (admin only)
 - `DELETE /api/permit-types/:id` - Delete a permit type (admin only)
 
-### Admin Endpoints
+### Citation/Ticket Endpoints
 
-- `GET /api/admin` - Admin dashboard data
+- `GET /api/tickets/user/tickets` - Get user's parking citations
+- `POST /api/tickets/user/tickets/:ticketId/pay` - Pay a citation
+- `POST /api/tickets/admin/tickets` - Create a new ticket (admin only)
+- `GET /api/tickets/admin/tickets` - Get all tickets (admin only)
+- `GET /api/tickets/admin/tickets/:ticketId` - Get ticket details (admin only)
+- `PUT /api/tickets/admin/tickets/:ticketId` - Update ticket (admin only)
+- `DELETE /api/tickets/admin/tickets/:ticketId` - Delete ticket (admin only)
+
+### Event Parking Endpoints
+
+- `GET /api/event-parking` - Get all event parking requests
+- `POST /api/event-parking` - Submit a new event parking request (faculty only)
+- `GET /api/event-parking/:id` - Get specific event parking request
+- `PUT /api/event-parking/:id` - Update event parking request (admin/faculty)
+- `DELETE /api/event-parking/:id` - Cancel event parking request
+
+### Statistics and Reporting Endpoints
+
+- `GET /api/statistics/revenue` - Get revenue statistics (admin only)
+- `GET /api/statistics/usage` - Get parking usage statistics (admin only)
+- `GET /api/statistics/violations` - Get parking violation statistics (admin only)
+- `GET /api/statistics/dashboard` - Get admin dashboard statistics
+
+### Admin Management Endpoints
+
+- `GET /api/admin/users` - Get all users (admin only)
+- `PUT /api/admin/users/:id/approve` - Approve a user (admin only)
+- `PUT /api/admin/users/:id/status` - Change user status (admin only)
+- `GET /api/admin/reports` - Generate system reports (admin only)
 
 ## Project Structure
 
@@ -303,16 +412,22 @@ p4sbu-sbu11/
 ├── client/                  # Frontend React application
 │   ├── public/              # Public assets
 │   ├── src/                 # Source files
-│   │   ├── components/      # React components
+│   │   ├── assets/          # Static assets like images and icons
+│   │   ├── components/      # Reusable React components
 │   │   ├── pages/           # Page components
 │   │   ├── utils/           # Utility functions
-│   │   └── App.jsx          # Main App component
+│   │   ├── App.jsx          # Main App component
+│   │   ├── AppContent.jsx   # App content wrapper
+│   │   ├── index.css        # Global CSS
+│   │   └── main.jsx         # Application entry point
 │   ├── cypress.config.js    # Client-specific Cypress config
 │   ├── index.html           # Main HTML entry
 │   ├── package.json         # Client dependencies
 │   ├── postcss.config.js    # PostCSS configuration
 │   ├── tailwind.config.js   # Tailwind CSS configuration
 │   ├── vite.config.js       # Vite build tool configuration
+│   ├── .npmrc               # NPM configuration
+│   ├── build-env.js         # Build environment setup
 │   └── eslint.config.js     # ESLint configuration
 │
 ├── server/                  # Backend Node.js application
@@ -321,21 +436,32 @@ p4sbu-sbu11/
 │   ├── models/              # Mongoose models
 │   ├── routes/              # API routes
 │   ├── services/            # Backend services
+│   ├── utils/               # Utility functions
+│   ├── scripts/             # Server scripts
 │   ├── tests/               # Jest test files
 │   ├── coverage/            # Jest coverage reports
 │   ├── reports/             # System reports
 │   ├── jest.config.js       # Jest configuration
 │   ├── server.js            # Server entry point
+│   ├── newrelic.js          # New Relic monitoring configuration
 │   ├── package.json         # Server dependencies
+│   └── .gitignore           # Server-specific gitignore
 │
 ├── cypress/                 # Main Cypress E2E tests (at root level)
 │   ├── e2e/                 # Test files
 │   ├── fixtures/            # Test data
+│   ├── plugins/             # Cypress plugins
 │   ├── support/             # Helper functions and commands
 │   ├── screenshots/         # Test screenshot captures
 │   └── downloads/           # Files downloaded during tests
 │
+├── .github/                 # GitHub configuration files
 ├── package.json             # Root-level dependencies
+├── LICENSE.md               # License file
+├── static.json              # Static file configuration
+├── Procfile                 # Heroku deployment configuration
+├── HEROKU_DEPLOYMENT.md     # Heroku deployment guide
+├── HEROKU_ENV_SETUP.md      # Heroku environment setup guide
 ├── .gitignore               # Git ignore configuration
 ├── cypress.config.js        # Main Cypress configuration
 └── README.md                # Project documentation

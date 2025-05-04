@@ -228,12 +228,75 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             });
         }
 
+        // Get lot information for determining if it's metered/permit-based
+        const lot = reservation.lotId ? await Lot.findById(reservation.lotId) : null;
+        const isPermitBasedLot = lot && lot.rateType === 'Permit-based';
+        const isMeteredLot = lot && lot.features && lot.features.isMetered;
+
+        // For metered lots, calculate the actual billable amount based on time constraints
+        let adjustedPrice = reservation.totalPrice;
+
+        if (isMeteredLot && lot) {
+            // Check if it's a weekend (0 = Sunday, 6 = Saturday)
+            const dayOfWeek = new Date(reservation.startTime).getDay();
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+            if (isWeekend) {
+                // Free on weekends
+                console.log("Weekend reservation - no charge for metered lot");
+                adjustedPrice = 0;
+            } else {
+                // Calculate billable hours (only between 7am and 7pm)
+                const startHour = new Date(reservation.startTime).getHours();
+                const startMinute = new Date(reservation.startTime).getMinutes();
+                const endHour = new Date(reservation.endTime).getHours();
+                const endMinute = new Date(reservation.endTime).getMinutes();
+
+                // Convert to decimal hours for more accurate calculation
+                const startTimeDecimal = startHour + (startMinute / 60);
+                const endTimeDecimal = endHour + (endMinute / 60);
+
+                // Define billable window (7AM to 7PM = 7.0 to 19.0)
+                const billableStartHour = 7.0;
+                const billableEndHour = 19.0;
+
+                // Calculate overlap with billable hours
+                const overlapStart = Math.max(startTimeDecimal, billableStartHour);
+                const overlapEnd = Math.min(endTimeDecimal, billableEndHour);
+                const billableHours = Math.max(0, overlapEnd - overlapStart);
+
+                // Use hourlyRate with a default of $2.50 if not defined
+                const hourlyRate = lot.hourlyRate || 2.50;
+                adjustedPrice = billableHours * hourlyRate;
+
+                // Ensure the price is a valid number
+                if (isNaN(adjustedPrice) || adjustedPrice < 0) {
+                    console.log("Warning: Invalid price calculation result. Using default pricing.");
+                    adjustedPrice = 0;
+                }
+
+                console.log(`Metered lot reservation: ${billableHours.toFixed(1)} billable hours (7am-7pm only) at $${hourlyRate}/hour = $${adjustedPrice.toFixed(2)}`);
+            }
+        }
+
+        // Log reservation details to help with debugging
+        console.log('Cancelling reservation:', {
+            id: reservation.reservationId,
+            originalPrice: reservation.totalPrice,
+            adjustedPrice: adjustedPrice,
+            status: reservation.status,
+            isFreeReservation: reservation.isFreeReservation,
+            freeReason: reservation.freeReason,
+            lotType: lot?.rateType,
+            isMeteredLot,
+            isPermitBasedLot,
+            hasPaymentId: !!reservation.stripePaymentIntentId
+        });
+
         // Process refund if applicable
         let refundResult = null;
         if (reservation.stripePaymentIntentId && reservation.totalPrice > 0) {
             // First check: is this a permit-based lot (meaning the payment was for a permit, not just a reservation)
-            const lot = await Lot.findById(reservation.lotId);
-            const isPermitBasedLot = lot && lot.rateType === 'Permit-based';
 
             // Second check: is there a permit linked to this payment
             const permitLinkedToPayment = await Permit.findOne({
@@ -244,18 +307,67 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             // Do not refund if this was a permit purchase (either permit-based lot or explicit permit link)
             if (!isPermitBasedLot && !permitLinkedToPayment) {
                 try {
-                    const refund = await stripe.refunds.create({
-                        payment_intent: reservation.stripePaymentIntentId,
-                        amount: Math.round(reservation.totalPrice * 100)
-                    });
+                    // Use the adjusted price based on billable hours for metered lots
+                    const refundAmount = isMeteredLot ? adjustedPrice : reservation.totalPrice;
 
-                    refundResult = {
-                        refundId: refund.id,
-                        amount: refund.amount / 100,
-                        status: refund.status
-                    };
+                    // Skip refund if the amount is zero
+                    if (refundAmount <= 0) {
+                        console.log("Skipping refund because adjusted amount is $0");
+                        refundResult = {
+                            refundId: null,
+                            amount: 0,
+                            status: 'skipped',
+                            reason: 'No billable hours based on time constraints'
+                        };
+                    } else {
+                        const refund = await stripe.refunds.create({
+                            payment_intent: reservation.stripePaymentIntentId,
+                            amount: Math.round(refundAmount * 100)
+                        });
 
-                    reservation.paymentStatus = 'refunded';
+                        refundResult = {
+                            refundId: refund.id,
+                            amount: refund.amount / 100,
+                            status: refund.status,
+                            originalAmount: reservation.totalPrice,
+                            adjustedAmount: adjustedPrice
+                        };
+
+                        reservation.paymentStatus = 'refunded';
+                        // Update the refundInfo field for proper billing history tracking
+                        reservation.refundInfo = {
+                            refundId: refund.id,
+                            amount: refund.amount / 100,
+                            status: refund.status,
+                            refundedAt: new Date(),
+                            originalAmount: reservation.totalPrice,
+                            adjustedAmount: adjustedPrice
+                        };
+                    }
+
+                    // Add specific notification for metered lot refunds
+                    if (isMeteredLot) {
+                        try {
+                            // Only send notification if there was an actual refund
+                            if (refundResult.status !== 'skipped' && refundResult.amount > 0) {
+                                await NotificationHelper.createSystemNotification(
+                                    req.user.userId,
+                                    'Refund Processed',
+                                    `A refund of $${refundResult.amount.toFixed(2)} has been processed for your cancelled reservation at ${lot.name}.`,
+                                    '/billing'
+                                );
+                            } else {
+                                await NotificationHelper.createSystemNotification(
+                                    req.user.userId,
+                                    'Reservation Cancelled',
+                                    `Your reservation at ${lot.name} has been cancelled. No refund was processed as there were no billable hours based on time-based pricing rules.`,
+                                    '/billing'
+                                );
+                            }
+                        } catch (error) {
+                            console.error('Error sending refund notification:', error);
+                        }
+                    }
                 } catch (error) {
                     console.error('Refund processing error:', error);
                 }
@@ -297,9 +409,18 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
         }
 
         // Return success response with info about permit retention
-        const responseMessage = reservation.usedExistingPermit || reservation.compatiblePermitId
-            ? 'Reservation cancelled successfully. Your permit remains active for other compatible lots.'
-            : (refundResult ? 'Reservation cancelled successfully with refund processed.' : 'Reservation cancelled successfully without refund since payment was for a permit.');
+        let responseMessage;
+        if (reservation.usedExistingPermit || reservation.compatiblePermitId) {
+            responseMessage = 'Reservation cancelled successfully. Your permit remains active for other compatible lots.';
+        } else if (refundResult) {
+            responseMessage = 'Reservation cancelled successfully with refund processed.';
+        } else if (reservation.totalPrice === 0 || reservation.isFreeReservation) {
+            responseMessage = 'Free reservation cancelled successfully.';
+        } else if (isMeteredLot) {
+            responseMessage = 'Metered parking reservation cancelled successfully.';
+        } else {
+            responseMessage = 'Reservation cancelled successfully.';
+        }
 
         res.status(200).json({
             success: true,
@@ -404,6 +525,17 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
                         allow_redirects: 'never'
                     }
                 };
+
+                // If customer has a Stripe customer ID, include it in the payment options
+                // This is required when using a saved payment method
+                if (user.stripeCustomerId) {
+                    paymentOptions.customer = user.stripeCustomerId;
+                    console.log(`Using customer ID from user: ${user.stripeCustomerId} for payment method: ${req.body.paymentMethodId}`);
+                } else if (req.body.customerId) {
+                    // If customerId is sent with the payment info, use that instead
+                    paymentOptions.customer = req.body.customerId;
+                    console.log(`Using customer ID from payment info: ${req.body.customerId} for payment method: ${req.body.paymentMethodId}`);
+                }
 
                 const paymentIntent = await stripe.paymentIntents.create(paymentOptions);
 
@@ -550,10 +682,77 @@ router.post('/', verifyToken, async (req, res) => {
         if (lot.rateType === 'Hourly') {
             const start = new Date(startTime);
             const end = new Date(endTime);
-            const hours = (end - start) / (1000 * 60 * 60);
-            totalPrice = hours * lot.hourlyRate;
+
+            // Check if the reservation starts on a weekend (0 = Sunday, 6 = Saturday)
+            const isWeekend = start.getDay() === 0 || start.getDay() === 6;
+
+            // Free parking on weekends
+            if (isWeekend) {
+                console.log(`Reservation starts on weekend (day ${start.getDay()}) - parking is free`);
+                totalPrice = 0;
+            } else {
+                // For metered lots, charges are only imposed from 7am to 7pm on weekdays
+                const isMeteredLot = lot.features && lot.features.isMetered;
+
+                if (isMeteredLot) {
+                    // Check if it's a weekend (0 = Sunday, 6 = Saturday)
+                    const dayOfWeek = start.getDay();
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+                    if (isWeekend) {
+                        // Free on weekends
+                        console.log("Weekend reservation - no charge for metered lot");
+                        totalPrice = 0;
+                    } else {
+                        // Calculate billable hours (only between 7am and 7pm)
+                        const startHour = start.getHours();
+                        const startMinute = start.getMinutes();
+                        const endHour = end.getHours();
+                        const endMinute = end.getMinutes();
+
+                        // Convert to decimal hours for more accurate calculation
+                        const startTimeDecimal = startHour + (startMinute / 60);
+                        const endTimeDecimal = endHour + (endMinute / 60);
+
+                        // Define billable window (7AM to 7PM = 7.0 to 19.0)
+                        const billableStartHour = 7.0;
+                        const billableEndHour = 19.0;
+
+                        // Calculate overlap with billable hours
+                        const overlapStart = Math.max(startTimeDecimal, billableStartHour);
+                        const overlapEnd = Math.min(endTimeDecimal, billableEndHour);
+                        const billableHours = Math.max(0, overlapEnd - overlapStart);
+
+                        // Use hourlyRate with a default of $2.50 if not defined
+                        const hourlyRate = lot.hourlyRate || 2.50;
+                        totalPrice = billableHours * hourlyRate;
+
+                        // Ensure the price is a valid number
+                        if (isNaN(totalPrice) || totalPrice < 0) {
+                            console.log("Warning: Invalid price calculation result. Using default pricing.");
+                            totalPrice = 0;
+                        }
+
+                        console.log(`Metered lot reservation: ${billableHours.toFixed(1)} billable hours (7am-7pm only) at $${hourlyRate}/hour = $${totalPrice.toFixed(2)}`);
+                    }
+                } else {
+                    // For non-metered hourly lots, charge for all hours
+                    const hours = (end - start) / (1000 * 60 * 60);
+                    totalPrice = hours * lot.hourlyRate;
+                }
+            }
         } else if (lot.rateType === 'Permit-based') {
-            totalPrice = lot.semesterRate || 0;
+            // Check if the reservation starts on a weekend (0 = Sunday, 6 = Saturday)
+            const start = new Date(startTime);
+            const isWeekend = start.getDay() === 0 || start.getDay() === 6;
+
+            // Free parking on weekends
+            if (isWeekend) {
+                console.log(`Permit-based reservation starts on weekend (day ${start.getDay()}) - parking is free`);
+                totalPrice = 0;
+            } else {
+                totalPrice = lot.semesterRate || 0;
+            }
         }
 
         // Handle permit switching if requested
@@ -651,37 +850,84 @@ router.post('/', verifyToken, async (req, res) => {
             }
         }
 
+        // Check if this is a reservation starting on a weekend
+        const startTimeDay = new Date(startTime).getDay();
+        const isWeekend = startTimeDay === 0 || startTimeDay === 6; // 0 = Sunday, 6 = Saturday
+
+        // If reservation is on a weekend, it's free
+        if (isWeekend) {
+            permitCompatible = true;
+            if (validUserPermits.length > 0) {
+                compatiblePermitId = validUserPermits[0]._id; // Use the first valid permit if available
+            }
+            console.log(`Weekend reservation (day ${startTimeDay}) - parking is free for all lot types`);
+        }
+        // Otherwise, check the time-based rules for weekdays
+        else {
+            // Check if this is a reservation starting before 7am or after 4pm with any valid permit
+            const startTimeHour = new Date(startTime).getHours();
+            const hasAnyPermit = validUserPermits.length > 0;
+            const isAfter4PM = startTimeHour >= 16; // 4pm is 16 in 24-hour format
+            const isBefore7AM = startTimeHour < 7;  // Before 7am
+            const isPermitBasedLot = lot.rateType === 'Permit-based';
+
+            // If reservation is for a permit-based lot, starts before 7am or after 4pm, and user has any permit, make it free
+            if (isPermitBasedLot && (isBefore7AM || isAfter4PM) && hasAnyPermit) {
+                permitCompatible = true;
+                compatiblePermitId = validUserPermits[0]._id; // Use the first valid permit
+                console.log(`Permit-based lot reservation during free hours (${startTimeHour}:00) with permit - reservation will be free`);
+            }
+        }
+
         // If permit is compatible, make reservation free
         if (permitCompatible) {
             totalPrice = 0;
-            console.log('Compatible permit found - reservation will be free');
+            console.log('Compatible permit found or weekend - reservation will be free');
         }
 
         // Process payment if needed
-        let paymentStatus = permitCompatible ? 'completed' : 'pending';
+        let paymentStatus = 'completed'; // Default to completed for free reservations
         let stripePaymentIntentId = null;
         let stripePaymentMethodId = null;
         let stripeReceiptUrl = null;
 
-        if (paymentInfo && paymentInfo.paymentMethodId && totalPrice > 0) {
+        // Only process payment if the price is greater than 0 and payment info is provided
+        if (totalPrice > 0 && paymentInfo) {
             try {
-                // Get user to check for customer ID
-                const currentUser = await User.findById(req.user.userId);
+                const amount = totalPrice * 100; // Stripe expects amount in cents
 
-                // Create payment intent with Stripe
+                // Define payment options
                 const paymentOptions = {
-                    amount: Math.round(totalPrice * 100), // Stripe uses cents
+                    amount: Math.round(amount),
                     currency: 'usd',
-                    customer: currentUser.stripeCustomerId,
                     payment_method: paymentInfo.paymentMethodId,
                     confirm: true,
-                    description: `Parking reservation at ${lot.name}`,
-                    // Fix for redirect-based payment methods error
+                    description: `Reservation for ${lot.name}`,
+                    metadata: {
+                        userId: req.user.userId,
+                        lotId: lotId,
+                        lotName: lot.name,
+                        startTime,
+                        endTime,
+                        permitType
+                    },
+                    receipt_email: user.email,
                     automatic_payment_methods: {
                         enabled: true,
                         allow_redirects: 'never'
                     }
                 };
+
+                // If customer has a Stripe customer ID, include it in the payment options
+                // This is required when using a saved payment method
+                if (user.stripeCustomerId) {
+                    paymentOptions.customer = user.stripeCustomerId;
+                    console.log(`Using customer ID from user: ${user.stripeCustomerId} for payment method: ${paymentInfo.paymentMethodId}`);
+                } else if (paymentInfo.customerId) {
+                    // If customerId is sent with the payment info, use that instead
+                    paymentOptions.customer = paymentInfo.customerId;
+                    console.log(`Using customer ID from payment info: ${paymentInfo.customerId} for payment method: ${paymentInfo.paymentMethodId}`);
+                }
 
                 const paymentIntent = await stripe.paymentIntents.create(paymentOptions);
                 paymentStatus = paymentIntent.status === 'succeeded' ? 'completed' : 'pending';
@@ -694,6 +940,12 @@ router.post('/', verifyToken, async (req, res) => {
                     message: 'Payment processing failed',
                     error: stripeError.message
                 });
+            }
+        } else {
+            // For free reservations, mark payment as completed
+            if (totalPrice === 0) {
+                console.log('Free reservation - setting payment status to completed');
+                paymentStatus = 'completed';
             }
         }
 
@@ -800,7 +1052,26 @@ router.post('/', verifyToken, async (req, res) => {
         const reservationId = generateReservationId();
 
         // Determine the reservation status
-        const reservationStatus = permitCompatible ? 'active' : (paymentStatus === 'completed' ? 'active' : 'pending');
+        // For free reservations or when a permit is compatible, always set to active
+        let reservationStatus = 'active';
+
+        // Only use pending status for non-free reservations that haven't been paid
+        if (totalPrice > 0 && !permitCompatible && paymentStatus !== 'completed') {
+            reservationStatus = 'pending';
+        }
+
+        // Track if this price was adjusted due to time-based rules
+        const isWeekendParking = new Date(startTime).getDay() === 0 || new Date(startTime).getDay() === 6;
+        const startHour = new Date(startTime).getHours();
+        const isMeteredLotWithTimeDiscount = (lot.features && lot.features.isMetered) &&
+            (startHour < 7 || startHour >= 19 || isWeekendParking);
+        const isPermitLotWithTimeDiscount = (lot.rateType === 'Permit-based') &&
+            ((startHour < 7 || startHour >= 16) || isWeekendParking);
+
+        const adjustedForTimeRules = isWeekendParking || isMeteredLotWithTimeDiscount || isPermitLotWithTimeDiscount;
+        const freeReason = isWeekendParking ? 'Weekend (free parking)' :
+            isMeteredLotWithTimeDiscount ? 'Outside metered hours (7am-7pm)' :
+                isPermitLotWithTimeDiscount ? 'Outside permit enforcement hours (7am-4pm)' : '';
 
         // Create the reservation
         const reservation = new Reservation({
@@ -818,7 +1089,19 @@ router.post('/', verifyToken, async (req, res) => {
             totalPrice,
             status: reservationStatus,
             usedExistingPermit: permitCompatible,
-            compatiblePermitId: compatiblePermitId
+            compatiblePermitId: compatiblePermitId,
+            // Add explicit free reservation flag if client sent it or if time-based rules apply
+            isFreeReservation: req.body.isFreeReservation === true || totalPrice === 0,
+            freeReason: req.body.freeReason || freeReason,
+            // Add field to track if time-based rules applied
+            adjustedForTimeRules: adjustedForTimeRules,
+            // Store time details for better tracking
+            timeDetails: {
+                isWeekend: isWeekendParking,
+                startHour,
+                isMeteredLot: lot.features && lot.features.isMetered,
+                isPermitBasedLot: lot.rateType === 'Permit-based'
+            }
         });
 
         // Save the reservation

@@ -401,8 +401,13 @@ async function createReservationInDatabase(user, lotId, carId) {
                 return { status: 'failed', message: 'Transaction failed' };
             }
         } catch (error) {
-            console.error(`Transaction failed: ${error.message}`);
-            return { status: 'failed', message: error.message };
+            if (error.message === 'No available parking spaces') {
+                console.error(`Transaction failed: All parking spaces were taken by other users`);
+                return { status: 'failed', message: 'All parking spaces were taken by other users' };
+            } else {
+                console.error(`Transaction failed: ${error.message}`);
+                return { status: 'failed', message: `Transaction failed: ${error.message}` };
+            }
         } finally {
             await session.endSession();
         }
@@ -546,8 +551,16 @@ async function runSingleUserTest(user) {
         try {
             const reservationResponse = await createReservationInDatabase(user, user.lotId, user.carId);
 
-            if (!reservationResponse || !reservationResponse._id) {
-                result.message = 'Reservation creation failed: No valid response';
+            if (!reservationResponse || reservationResponse.status === 'failed') {
+                // More descriptive error message that includes the actual reason
+                result.message = reservationResponse.message || 'Reservation failed: Parking availability issue';
+                result.timings.reservation = Date.now() - startTime;
+                console.error(`❌ [${user.email}] ${result.message}`);
+                return result;
+            }
+
+            if (!reservationResponse._id) {
+                result.message = 'Reservation created but no ID was returned';
                 result.timings.reservation = Date.now() - startTime;
                 console.error(`❌ [${user.email}] ${result.message}`);
                 return result;
@@ -720,23 +733,28 @@ function logResults(results) {
         console.log('No successful reservations to calculate timing statistics');
     }
 
-    // Common failure reasons with better error handling
+    // Show failure reasons with better descriptions
     const failureReasons = {};
     failed.forEach(f => {
-        if (f) {
-            const reason = f.message || 'Unknown';
-            failureReasons[reason] = (failureReasons[reason] || 0) + 1;
+        // More descriptive and categorized reasons
+        let reason = f.message || 'Unknown error';
+
+        // Categorize and improve common error messages
+        if (reason.includes('No available parking spaces')) {
+            reason = 'Parking lot full: No available spaces remaining';
+        } else if (reason.includes('No valid response')) {
+            reason = 'Failed to reserve: All spots were taken';
+        } else if (reason.includes('Transaction failed')) {
+            reason = 'Concurrency conflict: Another user reserved the last spot';
         }
+
+        failureReasons[reason] = (failureReasons[reason] || 0) + 1;
     });
 
-    console.log('\nFailure Reasons:');
-    if (Object.keys(failureReasons).length > 0) {
-        for (const [reason, count] of Object.entries(failureReasons)) {
-            console.log(`- ${reason}: ${count}`);
-        }
-    } else {
-        console.log('- None');
-    }
+    console.log('\n❌ Failure Reasons:');
+    Object.entries(failureReasons).forEach(([reason, count]) => {
+        console.log(`- ${reason}: ${count} users`);
+    });
 
     // Create a detailed report
     const report = {
@@ -1078,12 +1096,23 @@ async function concurrencyTest(numUsers = 5, capacity = 2) {
             });
         }
 
-        // Show failure reasons
+        // Show failure reasons with better descriptions
         const failureReasons = {};
         results.users
             .filter(r => r.status === 'failed')
             .forEach(r => {
-                const reason = r.message || 'Unknown error';
+                // More descriptive and categorized reasons
+                let reason = r.message || 'Unknown error';
+
+                // Categorize and improve common error messages
+                if (reason.includes('No available parking spaces')) {
+                    reason = 'Parking lot full: No available spaces remaining';
+                } else if (reason.includes('No valid response')) {
+                    reason = 'Failed to reserve: All spots were taken';
+                } else if (reason.includes('Transaction failed')) {
+                    reason = 'Concurrency conflict: Another user reserved the last spot';
+                }
+
                 failureReasons[reason] = (failureReasons[reason] || 0) + 1;
             });
 

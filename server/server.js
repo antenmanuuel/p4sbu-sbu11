@@ -43,6 +43,7 @@ try {
     const carRoutes = require('./routes/cars');              // User's registered vehicles
     const revenueStatisticsRoutes = require('./routes/statistics'); // Financial reporting
     const contactRoutes = require('./routes/contact');       // Contact form and support
+    const eventParkingRoutes = require('./routes/eventParking'); // Special event parking requests
 
     //  UTILITY IMPORTS 
     // Path: For file path operations, used for serving static files
@@ -235,6 +236,7 @@ try {
     app.use('/api/cars', carRoutes);                // Registered vehicles management
     app.use('/api/statistics', revenueStatisticsRoutes); // General statistics endpoints
     app.use('/api/contact', contactRoutes);         // Contact and support messaging
+    app.use('/api/event-parking', eventParkingRoutes); // Special event parking requests
 
     //  HEALTH CHECK ENDPOINT 
     // Simple endpoint to verify the server is running
@@ -247,7 +249,7 @@ try {
     // Serve static files from React app in production environment
     if (process.env.NODE_ENV === 'production') {
         console.log(`Serving static files from: ${path.join(__dirname, '../client/dist')}`);
-        
+
         // Serve static files (JS, CSS, images) from the React build folder
         app.use(express.static(path.join(__dirname, '../client/dist'), {
             setHeaders: (res, path) => {

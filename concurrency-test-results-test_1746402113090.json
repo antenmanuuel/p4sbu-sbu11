@@ -1,0 +1,253 @@
+{
+  "testId": "test_1746402113090",
+  "timestamp": "2025-05-04T23:41:53.093Z",
+  "numUsers": 10,
+  "capacity": 2,
+  "targetLot": "Test Concurrency Lot",
+  "users": [
+    {
+      "email": "user0_test_1746402113090@stonybrook.edu",
+      "status": "failed",
+      "steps": [
+        "search",
+        "lot_details",
+        "create_car",
+        "reservation"
+      ],
+      "timings": {
+        "search": 4,
+        "lot_details": 4,
+        "create_car": 348,
+        "reservation": 781
+      },
+      "testId": "test_1746402113090",
+      "timestamp": "2025-05-04T23:41:54.327Z",
+      "message": "Reservation creation failed: No valid response",
+      "requestId": "user0_test_1746402113090@stonybrook.edu_1746402114327"
+    },
+    {
+      "email": "user1_test_1746402113090@stonybrook.edu",
+      "status": "failed",
+      "steps": [
+        "search",
+        "lot_details",
+        "create_car",
+        "reservation"
+      ],
+      "timings": {
+        "search": 4,
+        "lot_details": 5,
+        "create_car": 338,
+        "reservation": 763
+      },
+      "testId": "test_1746402113090",
+      "timestamp": "2025-05-04T23:41:54.328Z",
+      "message": "Reservation creation failed: No valid response",
+      "requestId": "user1_test_1746402113090@stonybrook.edu_1746402114328"
+    },
+    {
+      "email": "user2_test_1746402113090@stonybrook.edu",
+      "status": "success",
+      "steps": [
+        "search",
+        "lot_details",
+        "create_car",
+        "reservation"
+      ],
+      "timings": {
+        "search": 4,
+        "lot_details": 7,
+        "create_car": 312,
+        "reservation": 741
+      },
+      "testId": "test_1746402113090",
+      "timestamp": "2025-05-04T23:41:54.329Z",
+      "reservationId": "RES-20250504-9725",
+      "totalTime": 1064,
+      "requestId": "user2_test_1746402113090@stonybrook.edu_1746402114329"
+    },
+    {
+      "email": "user3_test_1746402113090@stonybrook.edu",
+      "status": "failed",
+      "steps": [
+        "search",
+        "lot_details",
+        "create_car",
+        "reservation"
+      ],
+      "timings": {
+        "search": 3,
+        "lot_details": 9,
+        "create_car": 332,
+        "reservation": 800
+      },
+      "testId": "test_1746402113090",
+      "timestamp": "2025-05-04T23:41:54.329Z",
+      "message": "Reservation creation failed: No valid response",
+      "requestId": "user3_test_1746402113090@stonybrook.edu_1746402114329"
+    },
+    {
+      "email": "user4_test_1746402113090@stonybrook.edu",
+      "status": "failed",
+      "steps": [
+        "search",
+        "lot_details",
+        "create_car",
+        "reservation"
+      ],
+      "timings": {
+        "search": 3,
+        "lot_details": 10,
+        "create_car": 359,
+        "reservation": 739
+      },
+      "testId": "test_1746402113090",
+      "timestamp": "2025-05-04T23:41:54.330Z",
+      "message": "Reservation creation failed: No valid response",
+      "requestId": "user4_test_1746402113090@stonybrook.edu_1746402114330"
+    },
+    {
+      "email": "user5_test_1746402113090@stonybrook.edu",
+      "status": "failed",
+      "steps": [
+        "search",
+        "lot_details",
+        "create_car",
+        "reservation"
+      ],
+      "timings": {
+        "search": 4,
+        "lot_details": 12,
+        "create_car": 315,
+        "reservation": 807
+      },
+      "testId": "test_1746402113090",
+      "timestamp": "2025-05-04T23:41:54.330Z",
+      "message": "Reservation creation failed: No valid response",
+      "requestId": "user5_test_1746402113090@stonybrook.edu_1746402114330"
+    },
+    {
+      "email": "user6_test_1746402113090@stonybrook.edu",
+      "status": "failed",
+      "steps": [
+        "search",
+        "lot_details",
+        "create_car",
+        "reservation"
+      ],
+      "timings": {
+        "search": 3,
+        "lot_details": 13,
+        "create_car": 325,
+        "reservation": 775
+      },
+      "testId": "test_1746402113090",
+      "timestamp": "2025-05-04T23:41:54.331Z",
+      "message": "Reservation creation failed: No valid response",
+      "requestId": "user6_test_1746402113090@stonybrook.edu_1746402114331"
+    },
+    {
+      "email": "user7_test_1746402113090@stonybrook.edu",
+      "status": "failed",
+      "steps": [
+        "search",
+        "lot_details",
+        "create_car",
+        "reservation"
+      ],
+      "timings": {
+        "search": 4,
+        "lot_details": 15,
+        "create_car": 312,
+        "reservation": 794
+      },
+      "testId": "test_1746402113090",
+      "timestamp": "2025-05-04T23:41:54.331Z",
+      "message": "Reservation creation failed: No valid response",
+      "requestId": "user7_test_1746402113090@stonybrook.edu_1746402114331"
+    },
+    {
+      "email": "user8_test_1746402113090@stonybrook.edu",
+      "status": "failed",
+      "steps": [
+        "search",
+        "lot_details",
+        "create_car",
+        "reservation"
+      ],
+      "timings": {
+        "search": 4,
+        "lot_details": 17,
+        "create_car": 349,
+        "reservation": 776
+      },
+      "testId": "test_1746402113090",
+      "timestamp": "2025-05-04T23:41:54.331Z",
+      "message": "Reservation creation failed: No valid response",
+      "requestId": "user8_test_1746402113090@stonybrook.edu_1746402114331"
+    },
+    {
+      "email": "user9_test_1746402113090@stonybrook.edu",
+      "status": "success",
+      "steps": [
+        "search",
+        "lot_details",
+        "create_car",
+        "reservation"
+      ],
+      "timings": {
+        "search": 4,
+        "lot_details": 18,
+        "create_car": 293,
+        "reservation": 782
+      },
+      "testId": "test_1746402113090",
+      "timestamp": "2025-05-04T23:41:54.332Z",
+      "reservationId": "RES-20250504-3183",
+      "totalTime": 1097,
+      "requestId": "user9_test_1746402113090@stonybrook.edu_1746402114332"
+    }
+  ],
+  "status": "completed",
+  "summary": {
+    "totalUsers": 10,
+    "successCount": 2,
+    "failCount": 8,
+    "successRate": "20.00%",
+    "totalReservations": 2,
+    "lotCapacity": 2,
+    "capacityUtilization": "100.00%",
+    "expectedFailures": 8,
+    "expectedSuccessRate": "20.00%",
+    "actualSuccessRate": "20.00%",
+    "maxConcurrentRequests": 10,
+    "timingMetrics": {
+      "minRequestDuration": 1067,
+      "maxRequestDuration": 1147,
+      "avgRequestDuration": 1120.8,
+      "successfulRequestAvgDuration": 1083,
+      "reservationIntervals": [
+        35
+      ],
+      "avgReservationInterval": 35,
+      "totalTestSpan": 1151,
+      "reservationTimeline": [
+        {
+          "email": "user2_test_1746402113090@stonybrook.edu",
+          "timestamp": "2025-05-04T23:41:55.396Z",
+          "elapsedMs": 1069,
+          "duration": 1067
+        },
+        {
+          "email": "user9_test_1746402113090@stonybrook.edu",
+          "timestamp": "2025-05-04T23:41:55.431Z",
+          "elapsedMs": 1104,
+          "duration": 1099
+        }
+      ]
+    }
+  },
+  "startTime": 1746402113093,
+  "endTime": 1746402115478,
+  "duration": 2385
+}

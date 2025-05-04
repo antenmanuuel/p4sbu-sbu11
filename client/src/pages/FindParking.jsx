@@ -129,6 +129,19 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
             // Only check for permit switching if this is a permit-based lot
             if (!selectedLot.rateType || selectedLot.rateType !== 'Permit-based' || hasValidPermit) return;
 
+            // Check if reservation is free due to time-based rules (after 4pm or weekend)
+            const startDateTime = new Date(`${date}T${startTime}:00`);
+            const isWeekend = startDateTime.getDay() === 0 || startDateTime.getDay() === 6;
+            const isAfter4PM = startDateTime.getHours() >= 16; // 4pm = 16 in 24-hour time
+            const isBefore7AM = startDateTime.getHours() < 7;  // Before 7am
+
+            // If parking would be free due to time rules, don't initiate permit switching
+            if (isWeekend || isAfter4PM || isBefore7AM) {
+                console.log("Skipping permit switch check - parking is free due to time rules");
+                setIsSwitchingPermit(false);
+                return;
+            }
+
             setCheckingForPermits(true);
             try {
                 // Get all active user permits
@@ -158,7 +171,7 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
         };
 
         checkForPermitSwitching();
-    }, [isAuthenticated, selectedLot, currentView, selectedPermitType, hasValidPermit]);
+    }, [isAuthenticated, selectedLot, currentView, selectedPermitType, hasValidPermit, date, startTime]);
 
     // Effect to restore reservation data from sessionStorage if present
     useEffect(() => {
@@ -984,28 +997,45 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
 
             // Calculate total price based on lot rate type and features
             let totalPrice = 0;
+            let isFreeReservation = false;
+            let freeReason = '';
 
-            // If user has a valid permit, make the reservation free
-            if (hasValidPermit && validPermitDetails) {
-                console.log("User has valid permit - setting price to 0");
+            // Convert string times to Date objects for time-based pricing
+            const startDateTime = new Date(`${date}T${startTime}:00`);
+            const endDateTime = new Date(`${date}T${endTime}:00`);
+
+            // Check if it's a weekend (Saturday or Sunday)
+            const isWeekend = startDateTime.getDay() === 0 || startDateTime.getDay() === 6;
+
+            if (isWeekend) {
+                // Free parking on weekends for all lot types
+                isFreeReservation = true;
+                freeReason = 'Weekend parking is free';
                 totalPrice = 0;
-            } else {
-                // Convert string times to Date objects for time-based pricing
-                const startDateTime = new Date(`${date}T${startTime}:00`);
+                console.log("Weekend parking - parking is free");
+            } else if (hasValidPermit && validPermitDetails) {
+                // User has a valid permit
+                console.log("User has valid permit - setting price to 0");
+                isFreeReservation = true;
+                freeReason = 'Valid permit';
+                totalPrice = 0;
+            } else if (selectedLot.rateType === 'Hourly') {
+                // For metered lots, check if it's after 7PM or before 7AM
+                const isAfter7PM = startDateTime.getHours() >= 19; // 7pm = 19 in 24-hour time
+                const isBefore7AM = startDateTime.getHours() < 7;  // Before 7am
 
-                if (selectedLot.rateType === 'Hourly') {
-                    const endDateTime = new Date(`${date}T${endTime}:00`);
-
-                    // Check if the reservation extends past 7PM (19:00)
-                    const sevenPM = new Date(`${date}T19:00:00`);
-
+                if (isAfter7PM || isBefore7AM) {
+                    // Free parking before 7AM or after 7PM for metered lots
+                    isFreeReservation = true;
+                    freeReason = isAfter7PM ? 'After 7PM (Free)' : 'Before 7AM (Free)';
+                    totalPrice = 0;
+                    console.log(`Metered lot - ${isAfter7PM ? 'after 7PM' : 'before 7AM'} - parking is free`);
+                } else {
                     // Calculate billable duration respecting the 7PM cutoff
+                    const sevenPM = new Date(`${date}T19:00:00`);
                     let billableDurationHours;
 
-                    if (startDateTime >= sevenPM) {
-                        // If starting after 7PM, no charge for metered parking
-                        billableDurationHours = 0;
-                    } else if (endDateTime > sevenPM) {
+                    if (endDateTime > sevenPM) {
                         // If ending after 7PM, only charge until 7PM
                         billableDurationHours = (sevenPM - startDateTime) / (1000 * 60 * 60);
                     } else {
@@ -1017,21 +1047,25 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                     totalPrice = selectedLot.isEV
                         ? billableDurationHours * selectedLot.evChargingRate
                         : billableDurationHours * selectedLot.hourlyRate;
-                } else if (selectedLot.rateType === 'Permit-based') {
-                    // For permit-based lots, check if it's after 4PM (16:00)
-                    const fourPM = new Date(`${date}T16:00:00`);
+                }
+            } else if (selectedLot.rateType === 'Permit-based') {
+                // For permit-based lots, check if it's after 4PM (16:00) or before 7AM
+                const isAfter4PM = startDateTime.getHours() >= 16; // 4pm = 16 in 24-hour time
+                const isBefore7AM = startDateTime.getHours() < 7;  // Before 7am
 
-                    if (startDateTime >= fourPM) {
-                        // If starting after 4PM, permit-based lots are free
-                        totalPrice = 0;
-                    } else {
-                        // Otherwise, use the semester rate
-                        totalPrice = selectedLot.semesterRate || 0;
-                    }
+                if (isAfter4PM || isBefore7AM) {
+                    // If starting after 4PM or before 7AM, permit-based lots are free
+                    isFreeReservation = true;
+                    freeReason = isAfter4PM ? 'After 4PM (Free)' : 'Before 7AM (Free)';
+                    totalPrice = 0;
+                    console.log(`Permit-based lot - ${isAfter4PM ? 'after 4PM' : 'before 7AM'} - parking is free`);
                 } else {
-                    // For other rate types, use the semester rate
+                    // Otherwise, use the semester rate
                     totalPrice = selectedLot.semesterRate || 0;
                 }
+            } else {
+                // For other rate types, use the semester rate
+                totalPrice = selectedLot.semesterRate || 0;
             }
 
             // Log the final price calculation
@@ -1039,6 +1073,9 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 hasValidPermit,
                 permitDetails: validPermitDetails ?
                     { permitType: validPermitDetails.permitType, permitNumber: validPermitDetails.permitNumber } : null,
+                isWeekend,
+                isFreeReservation,
+                freeReason,
                 totalPrice
             });
 
@@ -1059,18 +1096,26 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 },
                 paymentInfo: totalPrice > 0 ? {
                     ...paymentData,
-                    amount: totalPrice
+                    amount: totalPrice,
+                    // Make sure to include the customer ID if provided with the payment data
+                    customerId: paymentData.customerId || null
                 } : null,
                 // Add flag to indicate if user has valid permit
                 useExistingPermit: hasValidPermit,
                 existingPermitId: validPermitDetails ? validPermitDetails._id : null,
                 // Add permit switching information
                 isSwitchingPermitType: isSwitchingPermitType,
-                permitToReplaceId: permitToReplaceId
+                permitToReplaceId: permitToReplaceId,
+                // Add information about free reservation
+                isFreeReservation: isFreeReservation,
+                freeReason: freeReason
             };
+
+            console.log("Sending reservation data to backend:", reservationData);
 
             // Send reservation to backend
             const result = await ReservationService.createReservation(reservationData);
+            console.log("Reservation creation response:", result);
 
             if (result.success) {
                 // Store the full reservation response for the confirmation screen
@@ -1804,36 +1849,70 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                 const startDateTime = new Date(`${date}T${startTime}:00`);
                 const endDateTime = new Date(`${date}T${endTime}:00`);
 
-                if (selectedLot?.rateType === 'Hourly') {
-                    // Check if the reservation extends past 7PM (19:00)
-                    const sevenPM = new Date(`${date}T19:00:00`);
+                // Check if it's a weekend (Saturday or Sunday)
+                const isWeekend = startDateTime.getDay() === 0 || startDateTime.getDay() === 6;
 
-                    // Calculate billable duration respecting the 7PM cutoff
-                    let billableDurationHours;
+                if (isWeekend) {
+                    // Free parking on weekends for all lot types
+                    displayPrice = '$0.00';
+                } else if (selectedLot?.rateType === 'Hourly') {
+                    // Special handling for metered lots
+                    const isMeteredLot = selectedLot.features?.isMetered ||
+                        selectedLot.features?.includes('Metered Parking') ||
+                        selectedLot.name?.toLowerCase().includes('metered');
 
-                    if (startDateTime >= sevenPM) {
-                        // If starting after 7PM, no charge for metered parking
-                        billableDurationHours = 0;
-                    } else if (endDateTime > sevenPM) {
-                        // If ending after 7PM, only charge until 7PM
-                        billableDurationHours = (sevenPM - startDateTime) / (1000 * 60 * 60);
+                    // Get hours for calculation
+                    const startHour = startDateTime.getHours();
+                    const startMinute = startDateTime.getMinutes();
+                    const endHour = endDateTime.getHours();
+                    const endMinute = endDateTime.getMinutes();
+
+                    // Convert to decimal time for easier calculation
+                    const startTimeInDecimal = startHour + (startMinute / 60);
+                    const endTimeInDecimal = endHour + (endMinute / 60);
+
+                    // Early exit conditions for metered lots
+                    if (isMeteredLot && ((startHour >= 19 || startHour < 7) && (endHour < 7 || endHour >= 19))) {
+                        // If entirely outside 7am-7pm, metered lots are free
+                        displayPrice = '$0.00';
+                        console.log('Metered lot time is entirely during free hours (before 7AM or after 7PM)');
+                    } else if (isMeteredLot) {
+                        // Calculate billable hours (only between 7am and 7pm)
+                        // Clamp the billable period to 7AM-7PM (7.0 to 19.0 in decimal hours)
+                        const billableStart = Math.max(startTimeInDecimal, 7.0);
+                        const billableEnd = Math.min(endTimeInDecimal, 19.0);
+
+                        let billableDurationHours = 0;
+                        if (billableEnd > billableStart) {
+                            billableDurationHours = billableEnd - billableStart;
+                        }
+
+                        console.log(`Metered lot: ${billableDurationHours.toFixed(2)} billable hours (7am-7pm only) at $${selectedLot.hourlyRate}/hour`);
+
+                        // Calculate price based on rate type and EV status
+                        const calculatedPrice = selectedLot.isEV
+                            ? billableDurationHours * selectedLot.evChargingRate
+                            : billableDurationHours * selectedLot.hourlyRate;
+
+                        displayPrice = `$${calculatedPrice.toFixed(2)}`;
+
+                        // If price is 0, it's free - make that clear
+                        if (calculatedPrice === 0) {
+                            displayPrice = '$0.00';
+                        }
                     } else {
-                        // If entirely before 7PM, charge the full duration
-                        billableDurationHours = (endDateTime - startDateTime) / (1000 * 60 * 60);
+                        // Non-metered hourly lot, charge for full duration
+                        const durationHours = (endDateTime - startDateTime) / (1000 * 60 * 60);
+                        displayPrice = `$${(durationHours * selectedLot.hourlyRate).toFixed(2)}`;
                     }
-
-                    // Calculate price based on rate type and EV status
-                    const calculatedPrice = selectedLot.isEV
-                        ? billableDurationHours * selectedLot.evChargingRate
-                        : billableDurationHours * selectedLot.hourlyRate;
-
-                    displayPrice = `$${calculatedPrice.toFixed(2)}`;
                 } else if (selectedLot?.rateType === 'Permit-based') {
                     // For permit-based lots, check if it's after 4PM (16:00)
-                    const fourPM = new Date(`${date}T16:00:00`);
+                    const startHour = startDateTime.getHours();
+                    const isAfter4PM = startHour >= 16;  // After 4PM = 16 in 24-hour time
+                    const isBefore7AM = startHour < 7;  // Before 7AM
 
-                    if (startDateTime >= fourPM) {
-                        // If starting after 4PM, permit-based lots are free
+                    if (isAfter4PM || isBefore7AM) {
+                        // If starting after 4PM or before 7AM, permit-based lots are free
                         displayPrice = '$0.00';
                     } else {
                         // Otherwise, use the semester rate
@@ -1862,6 +1941,12 @@ const FindParking = ({ darkMode, isAuthenticated }) => {
                             checkingForExistingPermits={checkingForPermits}
                             isSwitchingPermitType={isSwitchingPermit}
                             permitToReplace={permitToReplace}
+                            startDateTime={startDateTime}
+                            endDateTime={endDateTime}
+                            lotType={selectedLot?.rateType}
+                            isMeteredLot={selectedLot?.features?.isMetered ||
+                                selectedLot?.features?.includes('Metered Parking') ||
+                                selectedLot?.name?.toLowerCase().includes('metered')}
                         />
                     </div>
                 );

@@ -21,6 +21,10 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const Notification = require('../models/notification');
 const NotificationPreferences = require('../models/notification_preferences');
 const Permit = require('../models/permits');
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
+const fsExtra = require('fs-extra');
 
 /**
  * GET /api/users/profile
@@ -324,241 +328,179 @@ router.get('/activity', verifyToken, async (req, res) => {
 /**
  * GET /api/users/billing-history
  * 
- * Retrieves the authenticated user's complete billing history
- * Includes permits, reservations, and any associated refunds
- * Combines all transaction types into a chronological history
+ * Retrieves the authenticated user's billing history with minimal server-side processing.
+ * Returns raw transaction data for client-side calculation and presentation.
  * 
  * @access Authenticated users
  * @middleware verifyToken - Ensures request has valid authentication
- * @returns {Object} Comprehensive billing history with transaction details
+ * @returns {Object} Basic billing history with transaction details
  */
 router.get('/billing-history', verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
 
-        // Find permits for this user - include both active and refunded permits
-        const permits = await User.aggregate([
-            { $match: { _id: new mongoose.Types.ObjectId(userId) } },
-            {
-                $lookup: {
-                    from: 'permits',
-                    localField: '_id',
-                    foreignField: 'userId',
-                    as: 'permits'
-                }
-            },
-            { $unwind: '$permits' },
-            // Include both paid permits and those that were paid but later refunded
-            {
-                $match: {
-                    $or: [
-                        { 'permits.paymentStatus': 'paid' },
-                        // Include permits that were paid but later refunded for permit switches
-                        {
-                            'permits.paymentStatus': 'refunded',
-                            'permits.replacesPermitId': { $exists: true, $ne: null }
-                        }
-                    ]
-                }
-            },
-            {
-                $project: {
-                    _id: '$permits._id',
-                    date: '$permits.createdAt',
-                    description: {
-                        $cond: {
-                            if: { $regexMatch: { input: '$permits.permitName', regex: /Permit$/ } },
-                            then: '$permits.permitName',
-                            else: { $concat: ['$permits.permitName', ' Permit'] }
-                        }
-                    },
-                    amount: '$permits.price',
-                    status: {
-                        $cond: {
-                            if: { $eq: ['$permits.paymentStatus', 'refunded'] },
-                            then: {
-                                $cond: {
-                                    if: { $ne: [{ $ifNull: ['$permits.replacesPermitId', null] }, null] },
-                                    then: 'Paid', // For permits that were switched, show as paid
-                                    else: 'Refunded'  // For permits that were refunded, show as refunded
-                                }
-                            },
-                            else: '$permits.paymentStatus'
-                        }
-                    },
-                    type: { $literal: 'permit' }
-                }
-            },
-            { $sort: { date: -1 } }
-        ]);
+        // SIMPLIFIED APPROACH: Get raw data from each collection and let the client handle calculations
 
-        // Find completed metered parking reservations (hourly) for this user
-        const Reservation = mongoose.model('Reservation');
-        const Lot = mongoose.model('Lot');
+        // 1. Get permit purchases
+        const permits = await mongoose.model('Permit').find({
+            userId: new mongoose.Types.ObjectId(userId),
+            $or: [
+                { paymentStatus: 'paid' },
+                { paymentStatus: 'refunded' }
+            ]
+        }).populate('lots.lotId', 'name rateType features hourlyRate').lean();
 
-        const meteredReservations = await Reservation.aggregate([
-            {
-                $match: {
-                    user: new mongoose.Types.ObjectId(userId),
-                    // Include all reservations, including refunded ones
-                }
-            },
-            {
-                $lookup: {
-                    from: 'lots',
-                    localField: 'lotId',
-                    foreignField: '_id',
-                    as: 'lot'
-                }
-            },
-            { $unwind: { path: '$lot', preserveNullAndEmptyArrays: true } },
-            {
-                $match: {
-                    $or: [
-                        { 'lot.rateType': 'Hourly' },
-                        { 'lot.features.isMetered': true }
-                    ]
-                }
-            },
-            {
-                $project: {
-                    _id: '$_id',
-                    date: '$createdAt',
-                    description: {
-                        $concat: [
-                            'Metered Parking at ',
-                            { $ifNull: ['$lot.name', 'Unknown Lot'] },
-                            ' (Reservation #',
-                            { $substr: ['$reservationId', 0, 8] },
-                            ')'
-                        ]
-                    },
-                    amount: '$totalPrice',
-                    status: 'Paid', // Always show as "Paid" for original transactions
-                    type: { $literal: 'metered' },
-                    // Track refund state separately
-                    originalPaymentStatus: '$paymentStatus',
-                    wasRefunded: { $eq: ['$paymentStatus', 'refunded'] }
-                }
-            },
-            { $sort: { date: -1 } }
-        ]);
+        // 2. Get metered reservations
+        const reservations = await mongoose.model('Reservation').find({
+            user: new mongoose.Types.ObjectId(userId)
+        }).populate('lotId', 'name rateType features hourlyRate').lean();
 
-        // Find refunds for cancelled or refunded reservations
-        const refunds = await Reservation.aggregate([
-            {
-                $match: {
-                    user: new mongoose.Types.ObjectId(userId),
-                    paymentStatus: 'refunded',
-                    'refundInfo.amount': { $gt: 0 }
+        // 3. Format the data with minimal processing
+        const billingItems = [];
+
+        // Keep track of reservation IDs that are covered by permit purchases
+        // These will be filtered out to avoid duplicate entries
+        const coveredReservationIds = new Set();
+
+        // Store permit payment IDs to identify covered reservations
+        const permitPaymentIds = new Set();
+
+        // Capture permit purchases and their payment IDs first
+        permits.forEach(permit => {
+            if (permit.paymentId) {
+                permitPaymentIds.add(permit.paymentId);
+            }
+        });
+
+        // Add permit purchases
+        permits.forEach(permit => {
+            // Add the permit purchase - ALWAYS show original purchase as "Paid" regardless of refund status
+            billingItems.push({
+                _id: permit._id.toString(),
+                date: permit.createdAt,
+                description: `${permit.permitName || 'Permit'} Purchase`,
+                amount: permit.price || 0,
+                originalAmount: permit.price || 0,
+                status: 'Paid', // Always mark original purchases as "Paid" even if later refunded
+                type: 'permit',
+                // Include raw data for client-side processing
+                rawData: {
+                    permitType: permit.permitName,
+                    lots: permit.lots,
+                    startDate: permit.startDate,
+                    endDate: permit.endDate,
+                    paymentStatus: permit.paymentStatus,
+                    replacesPermitId: permit.replacesPermitId
                 }
-            },
-            {
-                $lookup: {
-                    from: 'lots',
-                    localField: 'lotId',
-                    foreignField: '_id',
-                    as: 'lot'
-                }
-            },
-            { $unwind: { path: '$lot', preserveNullAndEmptyArrays: true } },
-            {
-                $project: {
-                    _id: { $concat: [{ $toString: '$_id' }, '_refund'] },
-                    date: '$refundInfo.refundedAt',
-                    description: {
-                        $concat: [
-                            'Refund: Cancelled Reservation at ',
-                            { $ifNull: ['$lot.name', 'Unknown Lot'] },
-                            ' (Reservation #',
-                            { $substr: ['$reservationId', 0, 8] },
-                            ')'
-                        ]
-                    },
-                    amount: { $multiply: ['$refundInfo.amount', -1] }, // Negative amount for refunds
+            });
+
+            // If refunded, add a refund entry
+            if (permit.paymentStatus === 'refunded' && !permit.replacesPermitId) {
+                billingItems.push({
+                    _id: `${permit._id.toString()}_refund`,
+                    date: permit.refundedAt || permit.updatedAt,
+                    description: `Refund: ${permit.permitName || 'Permit'} Cancellation`,
+                    amount: -1 * (permit.price || 0),
+                    originalAmount: -1 * (permit.price || 0),
                     status: 'Refunded',
-                    type: { $literal: 'refund' }
-                }
-            },
-            { $sort: { date: -1 } }
-        ]);
+                    type: 'refund',
+                    // Include raw data for client-side processing
+                    rawData: {
+                        permitType: permit.permitName,
+                        lots: permit.lots,
+                        startDate: permit.startDate,
+                        endDate: permit.endDate,
+                        paymentStatus: permit.paymentStatus,
+                        isRefund: true
+                    }
+                });
+            }
+        });
 
-        // Find refunds for cancelled or refunded permits (without replacesPermitId)
-        const permitRefunds = await Permit.aggregate([
-            {
-                $match: {
-                    userId: new mongoose.Types.ObjectId(userId),
-                    $or: [
-                        // Match permits explicitly marked as refunded
-                        { paymentStatus: 'refunded', replacesPermitId: { $exists: false } },
-                        // Also match inactive permits with refund data that don't have a replacesPermitId
-                        {
-                            status: 'inactive',
-                            refundedAt: { $exists: true, $ne: null },
-                            replacesPermitId: { $exists: false }
-                        }
-                    ]
+        // Add reservations (excluding those covered by permit purchases)
+        reservations.forEach(reservation => {
+            // Skip reservations for permit-based lots that have the same payment ID as a permit
+            // This avoids showing duplicate transactions for permit-based lots
+            const isPaidByPermit = reservation.stripePaymentIntentId &&
+                permitPaymentIds.has(reservation.stripePaymentIntentId);
+            const isPermitBasedLot = reservation.lotId?.rateType === 'Permit-based';
+
+            // Skip showing reservations for permit-based lots that are paid with the same transaction as a permit
+            if (isPermitBasedLot && isPaidByPermit) {
+                coveredReservationIds.add(reservation._id.toString());
+                return; // Skip this reservation
+            }
+
+            // Add base reservation info with raw data for client-side calculation
+            const lotName = reservation.lotId?.name || 'Unknown Lot';
+            const isMetered = reservation.lotId?.features?.isMetered || false;
+            const hourlyRate = reservation.lotId?.hourlyRate || 2.5;
+
+            billingItems.push({
+                _id: reservation._id.toString(),
+                date: reservation.createdAt,
+                description: `Parking at ${lotName} (Reservation #${reservation.reservationId?.substring(0, 8) || 'Unknown'})`,
+                amount: reservation.totalPrice || 0,
+                originalAmount: reservation.totalPrice || 0,
+                status: 'Paid',
+                type: 'reservation',
+                // Include raw data for client-side time-based pricing calculation
+                rawData: {
+                    lotName,
+                    isMetered,
+                    hourlyRate,
+                    rateType: reservation.lotId?.rateType || 'Hourly',
+                    startTime: reservation.startTime,
+                    endTime: reservation.endTime,
+                    reservationId: reservation.reservationId
                 }
-            },
-            {
-                $project: {
-                    _id: { $concat: [{ $toString: '$_id' }, '_refund'] },
-                    date: { $ifNull: ['$refundedAt', '$updatedAt'] },
-                    description: {
-                        $concat: [
-                            'Refund: Cancelled Permit - ',
-                            { $ifNull: ['$permitName', 'Permit'] }
-                        ]
-                    },
-                    amount: { $multiply: [{ $ifNull: ['$price', 0] }, -1] }, // Negative amount for refunds
+            });
+
+            // If refunded, add a refund entry (even for permit-based lots)
+            if (reservation.paymentStatus === 'refunded' && reservation.refundInfo?.amount > 0) {
+                billingItems.push({
+                    _id: `${reservation._id.toString()}_refund`,
+                    date: reservation.refundInfo?.refundedAt || reservation.updatedAt,
+                    description: `Refund: Cancelled Reservation at ${lotName}`,
+                    amount: -1 * (reservation.refundInfo?.amount || 0),
+                    originalAmount: -1 * (reservation.refundInfo?.amount || 0),
                     status: 'Refunded',
-                    type: { $literal: 'refund' }
-                }
-            },
-            { $sort: { date: -1 } }
-        ]);
+                    type: 'refund',
+                    // Include raw data for client-side time-based pricing calculation
+                    rawData: {
+                        lotName,
+                        isMetered,
+                        hourlyRate,
+                        rateType: reservation.lotId?.rateType || 'Hourly',
+                        startTime: reservation.startTime,
+                        endTime: reservation.endTime,
+                        reservationId: reservation.reservationId,
+                        isRefund: true
+                    }
+                });
+            }
+        });
 
-        // Find refunds for permits that were switched (those with replacesPermitId)
-        const permitSwitchRefunds = await Permit.aggregate([
-            {
-                $match: {
-                    userId: new mongoose.Types.ObjectId(userId),
-                    paymentStatus: 'refunded',
-                    replacesPermitId: { $exists: true, $ne: null }
-                }
-            },
-            {
-                $project: {
-                    _id: { $concat: [{ $toString: '$_id' }, '_switch_refund'] },
-                    date: { $ifNull: ['$refundedAt', '$updatedAt'] },
-                    description: {
-                        $concat: [
-                            'Refund: Permit Switch - ',
-                            { $ifNull: ['$permitName', 'Permit'] }
-                        ]
-                    },
-                    amount: { $multiply: [{ $ifNull: ['$price', 0] }, -1] }, // Negative amount for refunds
-                    status: 'Refunded',
-                    type: { $literal: 'refund' }
-                }
-            },
-            { $sort: { date: -1 } }
-        ]);
+        // Sort by date, most recent first
+        billingItems.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-        // Combine all types of transactions and sort by date
-        const combinedHistory = [...permits, ...meteredReservations, ...refunds, ...permitRefunds, ...permitSwitchRefunds]
-            .sort((a, b) => new Date(b.date) - new Date(a.date));
+        // For debugging
+        console.log(`Billing history: ${billingItems.length} total items (filtered out ${coveredReservationIds.size} covered reservations)`);
 
         res.status(200).json({
             success: true,
-            billingHistory: combinedHistory.map(item => ({
-                _id: item._id.toString(),
-                date: item.date,
-                description: item.description,
-                amount: parseFloat(item.amount.toFixed(2)),
-                status: item.status === 'paid' ? 'Paid' : item.status,
-                type: item.type
-            }))
+            billingHistory: billingItems.map(item => {
+                // Ensure the amount is a valid number
+                const amount = typeof item.amount === 'number' && !isNaN(item.amount)
+                    ? parseFloat(item.amount.toFixed(2))
+                    : 0;
+
+                return {
+                    ...item,
+                    amount
+                };
+            }),
+            timestamp: new Date()
         });
     } catch (error) {
         console.error('Error fetching billing history:', error);
@@ -606,7 +548,8 @@ router.get('/payment-methods', verifyToken, async (req, res) => {
             last4: pm.card.last4,
             exp_month: pm.card.exp_month,
             exp_year: pm.card.exp_year,
-            isDefault: pm.id === user.defaultPaymentMethodId
+            isDefault: pm.id === user.defaultPaymentMethodId,
+            customerId: user.stripeCustomerId // Include the customer ID
         }));
 
         res.json({ paymentMethods: formattedPaymentMethods });
@@ -1041,6 +984,240 @@ router.put('/notification-preferences', verifyToken, async (req, res) => {
     } catch (error) {
         console.error('Error updating notification preferences:', error);
         res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Ensure reports directory exists
+const reportsDir = path.join(__dirname, '../reports');
+fsExtra.ensureDirSync(reportsDir);
+
+/**
+ * GET /api/users/receipt/:id/pdf
+ * 
+ * Generates a downloadable PDF receipt for a specific billing item
+ * Creates formatted document with transaction details and receipt number
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @param {string} id - ID of the billing item to generate receipt for
+ * @returns {File} PDF receipt document for download
+ */
+router.get('/receipt/:id/pdf', verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const receiptId = req.params.id;
+
+        // Get user info
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Get billing data to find the specific item
+        // 1. Get permit purchases
+        const permits = await mongoose.model('Permit').find({
+            userId: new mongoose.Types.ObjectId(userId),
+            $or: [
+                { paymentStatus: 'paid' },
+                { paymentStatus: 'refunded' }
+            ]
+        }).populate('lots.lotId', 'name rateType features hourlyRate').lean();
+
+        // 2. Get metered reservations
+        const reservations = await mongoose.model('Reservation').find({
+            user: new mongoose.Types.ObjectId(userId)
+        }).populate('lotId', 'name rateType features hourlyRate').lean();
+
+        // 3. Format the data to find our receipt
+        const billingItems = [];
+
+        // Add permit purchases
+        permits.forEach(permit => {
+            // Add the permit purchase - ALWAYS show original purchase as "Paid" regardless of refund status
+            billingItems.push({
+                _id: permit._id.toString(),
+                date: permit.createdAt,
+                description: `${permit.permitName || 'Permit'} Purchase`,
+                amount: permit.price || 0,
+                originalAmount: permit.price || 0,
+                status: 'Paid', // Always mark original purchases as "Paid" even if later refunded
+                type: 'permit',
+                // Include raw data for client-side processing
+                rawData: {
+                    permitType: permit.permitName,
+                    lots: permit.lots,
+                    startDate: permit.startDate,
+                    endDate: permit.endDate,
+                    paymentStatus: permit.paymentStatus,
+                    replacesPermitId: permit.replacesPermitId
+                }
+            });
+
+            // If refunded, add a refund entry
+            if (permit.paymentStatus === 'refunded' && !permit.replacesPermitId) {
+                billingItems.push({
+                    _id: `${permit._id.toString()}_refund`,
+                    date: permit.refundedAt || permit.updatedAt,
+                    description: `Refund: ${permit.permitName || 'Permit'} Cancellation`,
+                    amount: -1 * (permit.price || 0),
+                    originalAmount: -1 * (permit.price || 0),
+                    status: 'Refunded',
+                    type: 'refund',
+                    // Include raw data for client-side processing
+                    rawData: {
+                        permitType: permit.permitName,
+                        lots: permit.lots,
+                        startDate: permit.startDate,
+                        endDate: permit.endDate,
+                        paymentStatus: permit.paymentStatus,
+                        isRefund: true
+                    }
+                });
+            }
+        });
+
+        // Add reservations
+        reservations.forEach(reservation => {
+            // Add reservation
+            billingItems.push({
+                _id: reservation._id.toString(),
+                date: reservation.createdAt,
+                description: `Parking at ${reservation.lotId?.name || 'Unknown Lot'} (Reservation #${reservation.reservationId?.substring(0, 8) || 'Unknown'})`,
+                amount: reservation.totalPrice || 0,
+                status: 'Paid',
+                type: 'reservation'
+            });
+
+            // If refunded, add a refund entry
+            if (reservation.paymentStatus === 'refunded' && reservation.refundInfo?.amount > 0) {
+                billingItems.push({
+                    _id: `${reservation._id.toString()}_refund`,
+                    date: reservation.refundInfo?.refundedAt || reservation.updatedAt,
+                    description: `Refund: Cancelled Reservation at ${reservation.lotId?.name || 'Unknown Lot'}`,
+                    amount: -1 * (reservation.refundInfo?.amount || 0),
+                    status: 'Refunded',
+                    type: 'refund'
+                });
+            }
+        });
+
+        // Find the specific receipt
+        const receiptItem = billingItems.find(item => item._id === receiptId);
+        if (!receiptItem) {
+            return res.status(404).json({ message: 'Receipt not found' });
+        }
+
+        // Generate receipt number if not provided
+        const receiptNumber = `REC-${new Date(receiptItem.date).getFullYear()}-${receiptId.substr(-4)}`;
+
+        // Format date
+        const formattedDate = new Date(receiptItem.date).toISOString().split('T')[0];
+
+        // Create a PDF document
+        const doc = new PDFDocument({
+            margin: 50,
+            size: 'A4',
+            info: {
+                Title: 'P4SBU Payment Receipt',
+                Author: 'P4SBU Parking System'
+            }
+        });
+
+        // Set the filename for the PDF
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `receipt_${receiptId}_${timestamp}.pdf`;
+        const filePath = path.join(reportsDir, filename);
+
+        // Pipe the PDF to a file and to the response
+        const stream = fs.createWriteStream(filePath);
+        doc.pipe(stream);
+
+        // Set some basic styles
+        const titleFont = 'Helvetica-Bold';
+        const bodyFont = 'Helvetica';
+        const primaryColor = '#3B82F6'; // blue
+        const secondaryColor = '#1E3A8A'; // dark blue
+        const green = '#10B981'; // green for refunds
+        const darkGray = '#374151';
+
+        // Add header with background
+        doc.rect(0, 0, doc.page.width, 80).fill('#F8FAFC');
+
+        // Add logo or icon placeholder
+        doc.circle(50, 30, 15).lineWidth(1).fillAndStroke('#10B981', '#10B981');
+        doc.fill('#FFFFFF').text('$', 45, 23, { size: 20 });
+
+        // Add content to the PDF - Header
+        doc.font(titleFont).fontSize(24).fillColor(secondaryColor).text('Payment Receipt', 80, 25);
+        doc.moveDown(2);
+
+        // Add receipt details
+        const isRefund = receiptItem.type === 'refund' || receiptItem.amount < 0;
+        doc.font(titleFont).fontSize(14).fillColor(darkGray).text('Receipt Number:', 50, 100);
+        doc.font(bodyFont).fontSize(14).text(receiptNumber, 200, 100);
+
+        doc.font(titleFont).fontSize(14).fillColor(darkGray).text('Date:', 50, 130);
+        doc.font(bodyFont).fontSize(14).text(formattedDate, 200, 130);
+
+        doc.font(titleFont).fontSize(14).fillColor(darkGray).text(isRefund ? 'Refund For:' : 'Description:', 50, 160);
+        doc.font(bodyFont).fontSize(14).text(receiptItem.description, 200, 160, { width: 300 });
+
+        doc.font(titleFont).fontSize(14).fillColor(darkGray).text('Payment Method:', 50, 190);
+        doc.font(bodyFont).fontSize(14).text('Credit Card', 200, 190);
+
+        // Add amount with appropriate styling
+        doc.font(titleFont).fontSize(14).fillColor(darkGray).text('Amount', 50, 220);
+        doc.font(bodyFont).fontSize(18)
+            .fillColor(isRefund ? green : primaryColor)
+            .text(formatCurrency(receiptItem.amount), 200, 220);
+
+        // Add a separator line
+        doc.strokeColor(darkGray).lineWidth(0.5).moveTo(50, 250).lineTo(550, 250).stroke();
+
+        // Add transaction note
+        if (isRefund) {
+            doc.font(bodyFont).fontSize(12).fillColor(green).text('This transaction is a refund', 50, 270, { align: 'center' });
+        }
+
+        // Add footer
+        doc.font(bodyFont).fontSize(10).fillColor(darkGray).text(
+            'P4SBU Parking System - Official Receipt',
+            50, doc.page.height - 50,
+            { align: 'center', width: doc.page.width - 100 }
+        );
+
+        // Finalize the PDF
+        doc.end();
+
+        // Helper function to format currency
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(Math.abs(amount));
+        }
+
+        // Wait for the stream to finish
+        stream.on('finish', () => {
+            // Set headers for downloading the file
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+            // Send the file
+            fs.createReadStream(filePath).pipe(res);
+
+            // Clean up: delete the file after sending
+            setTimeout(() => {
+                fs.unlink(filePath, (err) => {
+                    if (err) console.error('Error deleting temporary PDF file:', err);
+                });
+            }, 60000); // Delete after 1 minute
+        });
+    } catch (error) {
+        console.error('Error generating receipt PDF:', error);
+        res.status(500).json({ message: 'Error generating receipt' });
     }
 });
 

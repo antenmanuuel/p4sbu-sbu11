@@ -233,8 +233,8 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                             onClick={fetchReservations}
                             className={`px-4 py-2 rounded-lg flex items-center text-sm font-medium
                                 ${darkMode
-                                    ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                                    : 'bg-gray-100 hover:bg-gray-200 text-gray-800'}`}
+                                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                                    : 'bg-red-100 hover:bg-red-200 text-red-800'}`}
                         >
                             <FaHistory className="mr-2" /> Refresh
                         </button>
@@ -242,8 +242,8 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                             onClick={() => window.print()}
                             className={`px-4 py-2 rounded-lg flex items-center text-sm font-medium
                             ${darkMode
-                                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                                    : 'bg-blue-100 hover:bg-blue-200 text-blue-800'}`}
+                                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                                    : 'bg-red-100 hover:bg-red-200 text-red-800'}`}
                         >
                             <FaFileDownload className="mr-2" /> Export List
                         </button>
@@ -265,7 +265,7 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                     className={`w-full px-4 py-2 pl-10 rounded-lg border ${darkMode
                                         ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                                         : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                                        } focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-600'
+                                        } focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-500' : 'focus:ring-red-600'
                                         }`}
                                 />
                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -283,7 +283,7 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                     className={`px-4 py-2 rounded-lg border text-sm ${darkMode
                                         ? 'bg-gray-700 border-gray-600 text-white'
                                         : 'bg-white border-gray-300 text-gray-900'
-                                        } focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-600'
+                                        } focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-500' : 'focus:ring-red-600'
                                         }`}
                                 >
                                     <option value="all">All Statuses</option>
@@ -297,7 +297,7 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                     className={`px-4 py-2 rounded-lg border text-sm ${darkMode
                                         ? 'bg-gray-700 border-gray-600 text-white'
                                         : 'bg-white border-gray-300 text-gray-900'
-                                        } focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-600'
+                                        } focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-500' : 'focus:ring-red-600'
                                         }`}
                                 >
                                     <option value="date-desc">Newest First</option>
@@ -309,8 +309,8 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                 <button
                                     onClick={() => setShowFilters(!showFilters)}
                                     className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium ${darkMode
-                                        ? showFilters ? 'bg-blue-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-600'
-                                        : showFilters ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                                        ? showFilters ? 'bg-red-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-600'
+                                        : showFilters ? 'bg-red-100 text-red-800' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
                                         }`}
                                 >
                                     <FaFilter className="mr-2" />
@@ -344,7 +344,7 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                             ${darkMode
                                                 ? 'bg-gray-700 text-white border-gray-600'
                                                 : 'bg-white text-gray-900 border-gray-300'} 
-                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-600'
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-500' : 'focus:ring-red-600'
                                             }`}
                                     >
                                         <option value="all">All Time</option>
@@ -376,7 +376,7 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                             ${darkMode
                                                 ? 'bg-gray-700 text-white border-gray-600'
                                                 : 'bg-white text-gray-900 border-gray-300'} 
-                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-600'
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-500' : 'focus:ring-red-600'
                                             }`}
                                     />
                                 </div>
@@ -403,7 +403,7 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                             ${darkMode
                                                 ? 'bg-gray-700 text-white border-gray-600'
                                                 : 'bg-white text-gray-900 border-gray-300'} 
-                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-600'
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-500' : 'focus:ring-red-600'
                                             }`}
                                     />
                                 </div>
@@ -497,8 +497,8 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                                 <button
                                                     onClick={() => handleViewDetails(reservation)}
                                                     className={`px-3 py-1 rounded text-xs font-medium ${darkMode
-                                                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                                                        : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
+                                                        ? 'bg-red-600 hover:bg-red-700 text-white'
+                                                        : 'bg-red-100 hover:bg-red-200 text-red-800'
                                                         }`}
                                                 >
                                                     View Details
@@ -621,8 +621,8 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                             <button
                                 onClick={() => setShowDetailsModal(false)}
                                 className={`px-4 py-2 rounded-lg font-medium text-sm ${darkMode
-                                    ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                                    : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+                                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                                    : 'bg-red-100 hover:bg-red-200 text-red-800'
                                     }`}
                             >
                                 Close

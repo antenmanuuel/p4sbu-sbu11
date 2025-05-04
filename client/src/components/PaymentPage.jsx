@@ -36,7 +36,12 @@ const PaymentPage = ({
     hasReservationError = false,
     checkingForExistingPermits = false,
     isSwitchingPermitType = false,
-    permitToReplace = null
+    permitToReplace = null,
+    // New props for time-based free parking
+    startDateTime,
+    endDateTime,
+    lotType,
+    isMeteredLot
 }) => {
     return (
         <Elements stripe={stripePromise}>
@@ -53,6 +58,10 @@ const PaymentPage = ({
                 checkingForExistingPermits={checkingForExistingPermits}
                 isSwitchingPermitType={isSwitchingPermitType}
                 permitToReplace={permitToReplace}
+                startDateTime={startDateTime}
+                endDateTime={endDateTime}
+                lotType={lotType}
+                isMeteredLot={isMeteredLot}
             />
         </Elements>
     );
@@ -75,7 +84,12 @@ const PaymentForm = ({
     hasReservationError = false,
     checkingForExistingPermits = false,
     isSwitchingPermitType = false,
-    permitToReplace = null
+    permitToReplace = null,
+    // New props for time-based free parking
+    startDateTime,
+    endDateTime,
+    lotType,
+    isMeteredLot
 }) => {
     const stripe = useStripe();
     const elements = useElements();
@@ -90,9 +104,53 @@ const PaymentForm = ({
        - loadingSavedCards: spinner while we fetch saved cards
        - selectedSavedCard: which stores the card the user clicked
        - showNewCardForm: toggles between saved-card list vs. new-card input
+       - isParkingFree: whether parking is free due to time-based rules
+       - freeReason: explanation of why parking is free
   ---------------------------------------------------------------------------- */
-    
-    const [paymentMethod, setPaymentMethod] = useState(hasValidPermit ? 'existingPermit' : 'card');
+
+    // Determine if parking is free due to time-based rules
+    const [isParkingFree, setIsParkingFree] = useState(price === '$0.00');
+    const [freeReason, setFreeReason] = useState('');
+
+    useEffect(() => {
+        let isFree = price === '$0.00';
+        let reason = '';
+
+        if (isFree && startDateTime) {
+            const date = new Date(startDateTime);
+            const day = date.getDay();
+            const hour = date.getHours();
+            const isWeekend = day === 0 || day === 6; // 0 = Sunday, 6 = Saturday
+            const isAfter4PM = hour >= 16; // 4 PM = 16 in 24-hour format
+            const isAfter7PM = hour >= 19; // 7 PM = 19 in 24-hour format
+            const isBefore7AM = hour < 7;  // Before 7 AM
+
+            if (isWeekend) {
+                reason = 'Free parking on weekends';
+            } else if (lotType === 'Permit-based') {
+                if (isAfter4PM) {
+                    reason = 'Free parking after 4 PM with permit';
+                } else if (isBefore7AM) {
+                    reason = 'Free parking before 7 AM with permit';
+                } else if (hasValidPermit) {
+                    reason = 'Free with valid permit';
+                }
+            } else if (lotType === 'Hourly' && isMeteredLot) {
+                if (isAfter7PM) {
+                    reason = 'Free parking after 7 PM (metered)';
+                } else if (isBefore7AM) {
+                    reason = 'Free parking before 7 AM (metered)';
+                }
+            }
+        } else if (hasValidPermit) {
+            reason = 'Free with valid permit';
+        }
+
+        setIsParkingFree(isFree);
+        setFreeReason(reason);
+    }, [price, startDateTime, lotType, lotName, hasValidPermit, isMeteredLot]);
+
+    const [paymentMethod, setPaymentMethod] = useState(isParkingFree ? 'existingPermit' : (hasValidPermit ? 'existingPermit' : 'card'));
     const [isProcessing, setIsProcessing] = useState(false);
     const [paymentStatus, setPaymentStatus] = useState(null);
     const [cardError, setCardError] = useState('');
@@ -101,17 +159,18 @@ const PaymentForm = ({
     const [selectedSavedCard, setSelectedSavedCard] = useState(null);
     const [showNewCardForm, setShowNewCardForm] = useState(true);
 
-     /* ----------------------------------------------------------------------------
-       Sync with incoming props:
-       - If the parent tells us there's a valid permit, auto-select that method.
-   ---------------------------------------------------------------------------- */
-    
-    // Update payment method when the hasValidPermit prop changes
+    /* ----------------------------------------------------------------------------
+      Sync with incoming props:
+      - If the parent tells us there's a valid permit, auto-select that method.
+      - If parking is free due to time-based rules, auto-select existingPermit
+  ---------------------------------------------------------------------------- */
+
+    // Update payment method when the hasValidPermit prop or isParkingFree changes
     useEffect(() => {
-        if (hasValidPermit && validPermitDetails) {
+        if (isParkingFree || hasValidPermit) {
             setPaymentMethod('existingPermit');
         }
-    }, [hasValidPermit, validPermitDetails]);
+    }, [hasValidPermit, validPermitDetails, isParkingFree]);
 
 
     /* ----------------------------------------------------------------------------
@@ -134,6 +193,9 @@ const PaymentForm = ({
     // Fetch saved payment methods
     useEffect(() => {
         const fetchSavedPaymentMethods = async () => {
+            // Skip fetching payment methods if parking is free
+            if (isParkingFree) return;
+
             setLoadingSavedCards(true);
             try {
                 console.log('Attempting to fetch saved payment methods...');
@@ -179,7 +241,7 @@ const PaymentForm = ({
             }
         };
 
-        if (paymentMethod === 'card') {
+        if (paymentMethod === 'card' && !isParkingFree) {
             fetchSavedPaymentMethods();
 
             // Try again after a short delay in case there was a timing issue
@@ -190,7 +252,7 @@ const PaymentForm = ({
 
             return () => clearTimeout(retryTimer);
         }
-    }, [paymentMethod]);
+    }, [paymentMethod, isParkingFree]);
 
     // Handle live validation errors from Stripe CardElement
     const handleCardChange = (event) => {
@@ -212,8 +274,8 @@ const PaymentForm = ({
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        // If using existing permit, process free reservation
-        if (paymentMethod === 'existingPermit') {
+        // If using existing permit or parking is free, process free reservation
+        if (paymentMethod === 'existingPermit' || isParkingFree) {
             setIsProcessing(true);
             try {
                 // Call onCompletePayment immediately without setting success state first
@@ -261,6 +323,7 @@ const PaymentForm = ({
                 onCompletePayment({
                     paymentMethod: 'card',
                     paymentMethodId: selectedSavedCard.id,
+                    customerId: selectedSavedCard.customerId,
                     transactionId: 'TRX-' + Math.floor(Math.random() * 1000000000),
                     timestamp: new Date().toISOString()
                 });
@@ -358,6 +421,19 @@ const PaymentForm = ({
                 </div>
             )}
 
+            {/* Free parking notification based on time rules */}
+            {isParkingFree && !hasValidPermit && (
+                <div className={`p-4 rounded-lg mb-6 ${darkMode ? 'bg-green-700' : 'bg-green-100'} ${darkMode ? 'text-white' : 'text-green-800'}`}>
+                    <div className="flex items-start">
+                        <FaCheckCircle className="mr-2 text-xl mt-1" />
+                        <div>
+                            <p className="font-semibold">Free Parking!</p>
+                            <p className="text-sm">{freeReason || 'No payment required for this reservation.'}</p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Permit switching notification */}
             {isSwitchingPermitType && permitToReplace && (
                 <div className={`p-4 rounded-lg mb-6 ${darkMode ? 'bg-blue-700' : 'bg-blue-100'} ${darkMode ? 'text-white' : 'text-blue-800'}`}>
@@ -402,9 +478,9 @@ const PaymentForm = ({
                 <div className="pt-3 border-t border-gray-600">
                     <div className="flex justify-between">
                         <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>Total:</p>
-                        {price === '$0.00' ? (
+                        {isParkingFree ? (
                             <p className={`font-bold text-lg text-green-500`}>
-                                FREE {lotName?.toLowerCase().includes('metered') && '(after 7:00 PM)'}
+                                FREE {freeReason ? `(${freeReason})` : ''}
                             </p>
                         ) : (
                             <p className={`font-bold text-lg ${hasValidPermit ? 'line-through' : ''} ${darkMode ? 'text-white' : 'text-gray-900'}`}>
@@ -412,7 +488,7 @@ const PaymentForm = ({
                             </p>
                         )}
                     </div>
-                    {hasValidPermit && (
+                    {hasValidPermit && !isParkingFree && (
                         <div className="flex justify-between mt-1">
                             <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>With permit discount:</p>
                             <p className={`font-bold text-lg text-green-500`}>FREE</p>
@@ -453,198 +529,187 @@ const PaymentForm = ({
             {/* Payment form */}
             {!paymentStatus && (
                 <div className={`p-6 rounded-lg shadow-md ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                    <h2 className={`font-semibold text-lg mb-5 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                        Select Payment Method
-                    </h2>
-
-                    {/* Payment method selection */}
-                    <div className="flex space-x-4 mb-6">
-                        {hasValidPermit && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setPaymentMethod('existingPermit');
-                                    setCardError('');
-                                }}
-                                className={`flex-1 p-4 rounded-lg border-2 transition-colors flex flex-col items-center ${paymentMethod === 'existingPermit'
-                                    ? 'border-green-500 bg-green-50 dark:bg-gray-700'
-                                    : 'border-gray-200 dark:border-gray-700'
-                                    }`}
-                            >
-                                <FaIdCard className={`text-2xl mb-2 ${paymentMethod === 'existingPermit' ? 'text-green-500' : 'text-gray-500 dark:text-gray-400'}`} />
-                                <span className={`font-medium ${paymentMethod === 'existingPermit' ? 'text-green-500' : darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                    Use Existing Permit
-                                </span>
-                            </button>
-                        )}
-
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setPaymentMethod('card');
-                                setCardError('');
-                            }}
-                            className={`flex-1 p-4 rounded-lg border-2 transition-colors flex flex-col items-center ${paymentMethod === 'card'
-                                ? 'border-red-500 bg-red-50 dark:bg-gray-700'
-                                : 'border-gray-200 dark:border-gray-700'
-                                }`}
-                        >
-                            <FaCreditCard className={`text-2xl mb-2 ${paymentMethod === 'card' ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`} />
-                            <span className={`font-medium ${paymentMethod === 'card' ? 'text-red-500' : darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                Credit Card
-                            </span>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setPaymentMethod('solar');
-                                setCardError('');
-                            }}
-                            className={`flex-1 p-4 rounded-lg border-2 transition-colors flex flex-col items-center ${paymentMethod === 'solar'
-                                ? 'border-red-500 bg-red-50 dark:bg-gray-700'
-                                : 'border-gray-200 dark:border-gray-700'
-                                }`}
-                        >
-                            <FaUniversity className={`text-2xl mb-2 ${paymentMethod === 'solar' ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`} />
-                            <span className={`font-medium ${paymentMethod === 'solar' ? 'text-red-500' : darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                SOLAR Account
-                            </span>
-                        </button>
-                    </div>
-
                     <form onSubmit={handleSubmit}>
-                        {paymentMethod === 'existingPermit' && validPermitDetails ? (
-                            <div className="space-y-5">
-                                <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                                    <p className={`text-sm mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                                        Using permit:
-                                    </p>
-                                    <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                        {validPermitDetails.permitName || validPermitDetails.permitType}
-                                    </p>
-                                    <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                                        Permit #{validPermitDetails.permitNumber} - Valid until {formatDate(validPermitDetails.endDate)}
-                                    </p>
-                                    <p className={`text-sm mt-2 ${darkMode ? 'text-green-300' : 'text-green-600'}`}>
-                                        This permit is valid for this parking lot.
-                                    </p>
-                                </div>
-                            </div>
-                        ) : paymentMethod === 'card' ? (
-                            <div className="space-y-5">
-                                {/* Saved Payment Methods */}
-                                {savedPaymentMethods.length > 0 && (
-                                    <div className="mb-4">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <label className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                                Saved Cards
-                                            </label>
-                                            <button
-                                                type="button"
-                                                onClick={handleShowNewCardForm}
-                                                className={`text-sm ${darkMode ? 'text-blue-400' : 'text-blue-600'} hover:underline`}
-                                            >
-                                                {showNewCardForm ? 'Use saved card' : 'Use new card'}
-                                            </button>
-                                        </div>
+                        {/* Only show payment method selection if parking is not free */}
+                        {!isParkingFree && (
+                            <>
+                                <h2 className={`font-semibold text-lg mb-5 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                    Select Payment Method
+                                </h2>
 
-                                        {loadingSavedCards ? (
-                                            <div className="flex items-center justify-center p-4">
-                                                <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${darkMode ? 'border-white' : 'border-gray-900'}`}></div>
-                                                <span className="ml-2 text-sm">Loading saved cards...</span>
-                                            </div>
-                                        ) : (
-                                            <div className={showNewCardForm ? 'hidden' : 'space-y-2'}>
-                                                {savedPaymentMethods.map(card => (
-                                                    <div
-                                                        key={card.id}
-                                                        onClick={() => handleSelectSavedCard(card)}
-                                                        className={`flex items-center justify-between p-3 rounded-md cursor-pointer ${selectedSavedCard && selectedSavedCard.id === card.id
-                                                            ? darkMode ? 'bg-blue-800' : 'bg-blue-100'
-                                                            : darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-50 hover:bg-gray-100'
-                                                            }`}
+                                {/* Payment method selection */}
+                                <div className="flex space-x-4 mb-6">
+                                    {hasValidPermit && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setPaymentMethod('existingPermit');
+                                                setCardError('');
+                                            }}
+                                            className={`flex-1 p-4 rounded-lg border-2 transition-colors flex flex-col items-center ${paymentMethod === 'existingPermit'
+                                                ? 'border-green-500 bg-green-50 dark:bg-gray-700'
+                                                : 'border-gray-200 dark:border-gray-700'
+                                                }`}
+                                        >
+                                            <FaIdCard className={`text-2xl mb-2 ${paymentMethod === 'existingPermit' ? 'text-green-500' : 'text-gray-500 dark:text-gray-400'}`} />
+                                            <span className={`font-medium ${paymentMethod === 'existingPermit' ? 'text-green-500' : darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                                Use Existing Permit
+                                            </span>
+                                        </button>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setPaymentMethod('card');
+                                            setCardError('');
+                                        }}
+                                        className={`flex-1 p-4 rounded-lg border-2 transition-colors flex flex-col items-center ${paymentMethod === 'card'
+                                            ? 'border-red-500 bg-red-50 dark:bg-gray-700'
+                                            : 'border-gray-200 dark:border-gray-700'
+                                            }`}
+                                    >
+                                        <FaCreditCard className={`text-2xl mb-2 ${paymentMethod === 'card' ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`} />
+                                        <span className={`font-medium ${paymentMethod === 'card' ? 'text-red-500' : darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                            Credit Card
+                                        </span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setPaymentMethod('solar');
+                                            setCardError('');
+                                        }}
+                                        className={`flex-1 p-4 rounded-lg border-2 transition-colors flex flex-col items-center ${paymentMethod === 'solar'
+                                            ? 'border-blue-500 bg-blue-50 dark:bg-gray-700'
+                                            : 'border-gray-200 dark:border-gray-700'
+                                            }`}
+                                    >
+                                        <FaUniversity className={`text-2xl mb-2 ${paymentMethod === 'solar' ? 'text-blue-500' : 'text-gray-500 dark:text-gray-400'}`} />
+                                        <span className={`font-medium ${paymentMethod === 'solar' ? 'text-blue-500' : darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                            SOLAR Account
+                                        </span>
+                                    </button>
+                                </div>
+
+                                {/* Show the appropriate payment form based on paymentMethod */}
+                                {paymentMethod === 'card' && (
+                                    <div className="space-y-5">
+                                        {/* Saved Payment Methods */}
+                                        {savedPaymentMethods.length > 0 && (
+                                            <div className="mb-4">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <label className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                                        Saved Cards
+                                                    </label>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleShowNewCardForm}
+                                                        className={`text-sm ${darkMode ? 'text-blue-400' : 'text-blue-600'} hover:underline`}
                                                     >
-                                                        <div className="flex items-center">
-                                                            <FaCreditCard className={`text-xl mr-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} />
-                                                            <div>
-                                                                <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                                                    {card.brand.charAt(0).toUpperCase() + card.brand.slice(1)} •••• {card.last4}
-                                                                </p>
-                                                                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                                                    Expires {card.exp_month}/{card.exp_year}
-                                                                    {card.isDefault && <span className="ml-2 text-green-500">Default</span>}
-                                                                </p>
-                                                            </div>
-                                                        </div>
+                                                        {showNewCardForm ? 'Use saved card' : 'Use new card'}
+                                                    </button>
+                                                </div>
+
+                                                {loadingSavedCards ? (
+                                                    <div className="flex items-center justify-center p-4">
+                                                        <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${darkMode ? 'border-white' : 'border-gray-900'}`}></div>
+                                                        <span className="ml-2 text-sm">Loading saved cards...</span>
                                                     </div>
-                                                ))}
+                                                ) : (
+                                                    <div className={showNewCardForm ? 'hidden' : 'space-y-2'}>
+                                                        {savedPaymentMethods.map(card => (
+                                                            <div
+                                                                key={card.id}
+                                                                onClick={() => handleSelectSavedCard(card)}
+                                                                className={`flex items-center justify-between p-3 rounded-md cursor-pointer ${selectedSavedCard && selectedSavedCard.id === card.id
+                                                                    ? darkMode ? 'bg-blue-800' : 'bg-blue-100'
+                                                                    : darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-50 hover:bg-gray-100'
+                                                                    }`}
+                                                            >
+                                                                <div className="flex items-center">
+                                                                    <FaCreditCard className={`text-xl mr-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} />
+                                                                    <div>
+                                                                        <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                                                            {card.brand.charAt(0).toUpperCase() + card.brand.slice(1)} •••• {card.last4}
+                                                                        </p>
+                                                                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                                            Expires {card.exp_month}/{card.exp_year}
+                                                                            {card.isDefault && <span className="ml-2 text-green-500">Default</span>}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Card Details Input */}
+                                        {showNewCardForm && (
+                                            <div>
+                                                <label
+                                                    htmlFor="card-element"
+                                                    className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}
+                                                >
+                                                    Card Details
+                                                </label>
+                                                <div className={`p-3 rounded-md border ${darkMode
+                                                    ? 'bg-gray-700 text-white border-gray-600'
+                                                    : 'bg-gray-50 text-gray-900 border-gray-300'
+                                                    } ${cardError ? 'border-red-500' : ''}`}>
+                                                    <CardElement
+                                                        id="card-element"
+                                                        options={{
+                                                            style: {
+                                                                base: {
+                                                                    color: darkMode ? '#ffffff' : '#32325d',
+                                                                    fontFamily: '"Helvetica Neue", Helvetica, sans-serif',
+                                                                    fontSmoothing: 'antialiased',
+                                                                    fontSize: '16px',
+                                                                    '::placeholder': {
+                                                                        color: darkMode ? '#aaaaaa' : '#aab7c4'
+                                                                    }
+                                                                },
+                                                                invalid: {
+                                                                    color: '#fa755a',
+                                                                    iconColor: '#fa755a'
+                                                                }
+                                                            }
+                                                        }}
+                                                        onChange={handleCardChange}
+                                                    />
+                                                </div>
+                                                {cardError && (
+                                                    <p className="mt-2 text-sm text-red-500">{cardError}</p>
+                                                )}
                                             </div>
                                         )}
                                     </div>
                                 )}
 
-                                {/* Card Details Input */}
-                                {showNewCardForm && (
+                                {paymentMethod === 'solar' && (
                                     <div>
                                         <label
-                                            htmlFor="card-element"
+                                            htmlFor="solar-id"
                                             className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}
                                         >
-                                            Card Details
+                                            SOLAR ID
                                         </label>
-                                        <div className={`p-3 rounded-md border ${darkMode
-                                            ? 'bg-gray-700 text-white border-gray-600'
-                                            : 'bg-gray-50 text-gray-900 border-gray-300'
-                                            } ${cardError ? 'border-red-500' : ''}`}>
-                                            <CardElement
-                                                id="card-element"
-                                                options={{
-                                                    style: {
-                                                        base: {
-                                                            color: darkMode ? '#ffffff' : '#32325d',
-                                                            fontFamily: '"Helvetica Neue", Helvetica, sans-serif',
-                                                            fontSmoothing: 'antialiased',
-                                                            fontSize: '16px',
-                                                            '::placeholder': {
-                                                                color: darkMode ? '#aaaaaa' : '#aab7c4'
-                                                            }
-                                                        },
-                                                        invalid: {
-                                                            color: '#fa755a',
-                                                            iconColor: '#fa755a'
-                                                        }
-                                                    }
-                                                }}
-                                                onChange={handleCardChange}
-                                            />
-                                        </div>
-                                        {cardError && (
-                                            <p className="mt-2 text-sm text-red-500">{cardError}</p>
-                                        )}
+                                        <input
+                                            type="text"
+                                            id="solar-id"
+                                            placeholder="Your SOLAR ID (e.g. 123456789)"
+                                            className={`w-full p-3 rounded-md border ${darkMode
+                                                ? 'bg-gray-700 text-white border-gray-600'
+                                                : 'bg-gray-50 text-gray-900 border-gray-300'
+                                                }`}
+                                        />
                                     </div>
                                 )}
-                            </div>
-                        ) : (
-                            <div className="space-y-5">
-                                <div>
-                                    <label
-                                        htmlFor="solar-id"
-                                        className={`block mb-2 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}
-                                    >
-                                        SOLAR ID
-                                    </label>
-                                    <input
-                                        type="text"
-                                        id="solar-id"
-                                        placeholder="Your SOLAR ID (e.g. 123456789)"
-                                        className={`w-full p-3 rounded-md border ${darkMode
-                                            ? 'bg-gray-700 text-white border-gray-600'
-                                            : 'bg-gray-50 text-gray-900 border-gray-300'
-                                            }`}
-                                    />
-                                </div>
-                            </div>
+                            </>
                         )}
 
                         <div className="mt-6">
@@ -653,7 +718,7 @@ const PaymentForm = ({
                                 disabled={isProcessing}
                                 className={`w-full py-3 px-4 rounded-md font-medium shadow-md transition-colors ${isProcessing
                                     ? 'bg-gray-500 cursor-not-allowed'
-                                    : paymentMethod === 'existingPermit'
+                                    : paymentMethod === 'existingPermit' || isParkingFree
                                         ? 'bg-green-600 hover:bg-green-700 text-white'
                                         : 'bg-red-600 hover:bg-red-700 text-white'
                                     }`}
@@ -663,7 +728,7 @@ const PaymentForm = ({
                                         <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
                                         Processing...
                                     </div>
-                                ) : paymentMethod === 'existingPermit' ? (
+                                ) : isParkingFree || paymentMethod === 'existingPermit' ? (
                                     'Confirm Free Reservation'
                                 ) : (
                                     `Pay ${price}`

@@ -7,8 +7,8 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
 } from 'recharts';
-import { FaUsers, FaUserCog, FaParking, FaMapMarkerAlt, FaCheckCircle, FaTimesCircle, FaInfoCircle, FaExclamationCircle, FaTicketAlt, FaCar, FaFileAlt, FaSync, FaFileDownload, FaEnvelope } from 'react-icons/fa';
-import { AdminService, PermitService } from '../../utils/api';
+import { FaUsers, FaUserCog, FaParking, FaMapMarkerAlt, FaCheckCircle, FaTimesCircle, FaInfoCircle, FaExclamationCircle, FaTicketAlt, FaCar, FaFileAlt, FaSync, FaFileDownload, FaEnvelope, FaCalendarAlt } from 'react-icons/fa';
+import { AdminService, PermitService, ReservationService, EventParkingService } from '../../utils/api';
 
 const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     const navigate = useNavigate();
@@ -72,7 +72,12 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     const [isContactSubmissionsCountLoading, setIsContactSubmissionsCountLoading] = useState(true);
     const [contactSubmissionsCountError, setContactSubmissionsCountError] = useState('');
 
-    // Update the loadDashboardData function to mark initial load as complete after first fetch
+    // Add state for event parking requests count
+    const [eventRequestsCount, setEventRequestsCount] = useState(0);
+    const [isEventRequestsLoading, setIsEventRequestsLoading] = useState(true);
+    const [eventRequestsError, setEventRequestsError] = useState('');
+
+    // Update the loadDashboardData function to include event requests
     const loadDashboardData = useCallback(() => {
         // Load all dashboard data without setting up any automatic refresh
         fetchPendingUsers();
@@ -82,6 +87,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
         fetchActivePermitsCount();
         fetchActiveReservationsCount();
         fetchContactSubmissionsCount();
+        fetchEventRequestsCount();
 
         // Mark initial load as complete after a short delay
         setTimeout(() => {
@@ -110,6 +116,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                     await fetchActivePermitsCount();
                     await fetchActiveReservationsCount();
                     await fetchContactSubmissionsCount();
+                    await fetchEventRequestsCount();
 
                     // Show success notification after loading
                     setNotificationMessage('Data refreshed successfully');
@@ -377,6 +384,35 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
         }
     };
 
+    // Update the fetchEventRequestsCount function
+    const fetchEventRequestsCount = async () => {
+        setIsEventRequestsLoading(true);
+        setEventRequestsError('');
+
+        try {
+            console.log('Fetching event requests count');
+
+            // Use EventParkingService instead of direct fetch
+            const result = await EventParkingService.getEventRequests({
+                status: 'pending',
+                limit: 1
+            });
+
+            if (result.success) {
+                console.log('Event requests count data:', result.data);
+                setEventRequestsCount(result.data.pagination.total || 0);
+            } else {
+                console.error('API returned error:', result.error);
+                setEventRequestsError(result.error || 'Failed to fetch event requests count');
+            }
+        } catch (err) {
+            console.error('Error fetching event requests count:', err);
+            setEventRequestsError('An unexpected error occurred while fetching event requests count');
+        } finally {
+            setIsEventRequestsLoading(false);
+        }
+    };
+
     if (!isAuthenticated) {
         navigate('/');
     }
@@ -524,6 +560,11 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
         navigate('/contact-submissions');
     };
 
+    // Add function to navigate to Manage Event Requests page
+    const goToManageEventRequests = () => {
+        navigate('/admin/event-requests');
+    };
+
     // Add function to handle manual refresh
     const handleManualRefresh = async () => {
         setNotificationMessage('Refreshing data...');
@@ -535,6 +576,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
             await fetchRevenueStats();
             await fetchActivePermitsCount();
             await fetchActiveReservationsCount();
+            await fetchEventRequestsCount();
 
             setNotificationMessage('Data refreshed successfully');
             setNotificationType('success');
@@ -726,7 +768,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                             )}
                             <p className="text-xs text-blue-600 mt-1">Click to manage lots</p>
                         </div>
-                        <div className={`rounded-full p-2 ${darkMode ? 'bg-red-900' : 'bg-red-50'}`}>
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-red-900' : 'bg-red-100'}`}>
                             <FaMapMarkerAlt className="h-5 w-5 text-red-500" />
                         </div>
                     </div>
@@ -750,7 +792,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                             )}
                             <p className="text-xs text-blue-600 mt-1">Click to manage reservations</p>
                         </div>
-                        <div className={`rounded-full p-2 ${darkMode ? 'bg-yellow-900' : 'bg-yellow-50'}`}>
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-yellow-900' : 'bg-yellow-100'}`}>
                             <FaCar className="h-5 w-5 text-yellow-500" />
                         </div>
                     </div>
@@ -766,8 +808,8 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                             <p className="text-2xl font-bold mt-1">Fines</p>
                             <p className="text-xs text-blue-600 mt-1">Click to manage fines</p>
                         </div>
-                        <div className={`rounded-full p-2 ${darkMode ? 'bg-yellow-900' : 'bg-yellow-50'}`}>
-                            <FaTicketAlt className="h-5 w-5 text-yellow-500" />
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-yellow-900' : 'bg-yellow-100'}`}>
+                            <FaFileAlt className="h-5 w-5 text-yellow-500" />
                         </div>
                     </div>
                 </div>
@@ -795,6 +837,30 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                         <p className={`text-sm ${darkMode ? 'text-indigo-300' : 'text-indigo-600'}`}>
                             Click to manage form submissions
                         </p>
+                    </div>
+                </div>
+                <div
+                    onClick={goToManageEventRequests}
+                    className={`p-6 shadow-sm rounded-lg border hover:shadow-md transition-shadow cursor-pointer
+                              ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}
+                >
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Event Parking Requests</p>
+                            {isEventRequestsLoading ? (
+                                <p className="text-2xl font-bold mt-1">
+                                    <span className="inline-block animate-pulse">...</span>
+                                </p>
+                            ) : eventRequestsError ? (
+                                <p className="text-sm text-red-500 mt-1">Error loading count</p>
+                            ) : (
+                                <p className="text-2xl font-bold mt-1">{eventRequestsCount}</p>
+                            )}
+                            <p className="text-xs text-blue-600 mt-1">Click to manage event requests</p>
+                        </div>
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-purple-900' : 'bg-purple-100'}`}>
+                            <FaCalendarAlt className="h-5 w-5 text-purple-500" />
+                        </div>
                     </div>
                 </div>
             </div>

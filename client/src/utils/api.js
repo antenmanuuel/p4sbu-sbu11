@@ -287,6 +287,34 @@ export const UserService = {
                 error: error.response?.data?.message || 'Failed to fetch billing history'
             };
         }
+    },
+
+    // Download receipt as PDF
+    downloadReceiptPDF: async (receiptId) => {
+        try {
+            // Use axios directly to get the response as a blob
+            const response = await API.get(`/user/receipt/${receiptId}/pdf`, {
+                responseType: 'blob'
+            });
+
+            // Create a download link and trigger download
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().split('T')[0];
+            link.href = url;
+            link.setAttribute('download', `receipt_${receiptId}_${timestamp}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+            return { success: true };
+        } catch (error) {
+            console.error('Failed to download receipt:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to download receipt'
+            };
+        }
     }
 };
 
@@ -1143,9 +1171,21 @@ export const ReservationService = {
     // Create a new reservation
     createReservation: async (reservationData) => {
         try {
+            // Add explicit log for payment info with customer ID to help debugging
+            if (reservationData.paymentInfo && reservationData.paymentInfo.customerId) {
+                console.log('Creating reservation with customer ID:', reservationData.paymentInfo.customerId);
+                console.log('Payment method ID:', reservationData.paymentInfo.paymentMethodId);
+            }
+
             const response = await API.post('/reservations', reservationData);
             return { success: true, data: response.data };
         } catch (error) {
+            console.error('Reservation creation error:', error);
+            // Log more details about the error for troubleshooting
+            if (error.response) {
+                console.error('Error response data:', error.response.data);
+                console.error('Error response status:', error.response.status);
+            }
             return {
                 success: false,
                 error: error.response?.data?.message || 'Failed to create reservation'
@@ -1707,6 +1747,109 @@ export const ContactService = {
             return {
                 success: false,
                 error: error.response?.data?.message || 'Failed to submit contact form'
+            };
+        }
+    }
+};
+
+// Event Parking Service for faculty event parking requests
+export const EventParkingService = {
+    // Get all event parking requests (admin) or faculty's own requests
+    getEventRequests: async (params = {}) => {
+        try {
+            // Build query string from params
+            const queryParams = new URLSearchParams();
+            if (params.status && params.status !== 'all') {
+                queryParams.append('status', params.status);
+            }
+            if (params.page) {
+                queryParams.append('page', params.page);
+            }
+            if (params.limit) {
+                queryParams.append('limit', params.limit);
+            }
+
+            const queryString = queryParams.toString();
+            const url = `/event-parking${queryString ? `?${queryString}` : ''}`;
+
+            console.log('Fetching event requests:', url);
+            const response = await API.get(url);
+            return { success: true, data: response.data.data };
+        } catch (error) {
+            console.error('Error fetching event requests:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch event requests'
+            };
+        }
+    },
+
+    // Get faculty's own event requests
+    getFacultyEventRequests: async () => {
+        try {
+            console.log('Fetching faculty event requests');
+            const response = await API.get('/event-parking/my-requests');
+            return { success: true, data: response.data.data };
+        } catch (error) {
+            console.error('Error fetching faculty event requests:', error);
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch your event requests'
+            };
+        }
+    },
+
+    // Get a specific event request by ID
+    getEventRequest: async (requestId) => {
+        try {
+            const response = await API.get(`/event-parking/${requestId}`);
+            return { success: true, data: response.data.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch event request details'
+            };
+        }
+    },
+
+    // Submit a new event parking request (faculty)
+    submitEventRequest: async (requestData) => {
+        try {
+            const response = await API.post('/event-parking', requestData);
+            return { success: true, data: response.data.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to submit event request'
+            };
+        }
+    },
+
+    // Update event request status (admin)
+    updateEventRequestStatus: async (requestId, status, adminNotes) => {
+        try {
+            const response = await API.put(`/event-parking/${requestId}/status`, {
+                status,
+                adminNotes
+            });
+            return { success: true, data: response.data.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || `Failed to ${status} event request`
+            };
+        }
+    },
+
+    // Get available parking lots for event parking
+    getAvailableLots: async () => {
+        try {
+            const response = await API.get('/event-parking/available-lots');
+            return { success: true, data: response.data.data };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Failed to fetch available lots'
             };
         }
     }

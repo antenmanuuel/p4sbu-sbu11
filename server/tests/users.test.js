@@ -157,6 +157,31 @@ mongoose.Types = {
 // Create a shared mock for Reservation aggregate
 const mockReservationAggregate = jest.fn();
 
+// Add the missing mock for PermitSchema.statics.isValidPermit
+jest.mock('../models/permits', () => {
+    // Create a mock permit model
+    const mockPermitModel = function (data) {
+        return data;
+    };
+
+    // Add the required static method that's causing the error
+    mockPermitModel.isValidPermit = jest.fn().mockReturnValue(true);
+
+    // Add aggregate method that's needed for billing history
+    mockPermitModel.aggregate = jest.fn().mockResolvedValue([
+        {
+            _id: 'permit1',
+            date: new Date(),
+            description: 'Student Permit',
+            amount: 100,
+            status: 'paid',
+            type: 'permit'
+        }
+    ]);
+
+    return mockPermitModel;
+});
+
 // Mock mongoose models
 mongoose.model = jest.fn().mockImplementation((modelName) => {
     if (modelName === 'Reservation') {

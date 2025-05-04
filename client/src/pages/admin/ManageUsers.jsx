@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaSearch, FaFilter, FaUserEdit, FaTrash, FaLock, FaLockOpen, FaUserPlus, FaArrowLeft, FaCheck, FaExclamationCircle, FaUserShield, FaUser } from 'react-icons/fa';
+import { FaSearch, FaFilter, FaUserEdit, FaTrash, FaLock, FaLockOpen, FaUserPlus, FaArrowLeft, FaCheck, FaExclamationCircle, FaUserShield, FaUser, FaTimes } from 'react-icons/fa';
 import { AdminService, AuthService } from '../../utils/api';
 import RoleChangeSelfConfirmModal from '../../components/RoleChangeSelfConfirmModal';
 
@@ -830,12 +830,75 @@ const ManageUsers = ({ darkMode }) => {
                                             <span className="capitalize">{user.userType}</span>
                                         </td>
                                         <td className="px-4 py-4 whitespace-nowrap text-right text-sm">
-                                            <button
-                                                onClick={() => handleToggleStatus(user._id, 'pending')}
-                                                className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none"
-                                            >
-                                                <FaCheck className="mr-1" /> Approve
-                                            </button>
+                                            <div className="flex justify-end space-x-2">
+                                                <button
+                                                    onClick={() => {
+                                                        // Optimistically remove from pending list
+                                                        const userId = user._id;
+                                                        // Create copy of current pending users excluding this user
+                                                        const updatedPendingUsers = pendingUsers.filter(u => u._id !== userId);
+                                                        // Update UI immediately
+                                                        setPendingUsers(updatedPendingUsers);
+
+                                                        // Then make the API call
+                                                        AdminService.approveUser(userId).then(() => {
+                                                            // Refresh the users list to include the newly approved user
+                                                            AdminService.getUsers(
+                                                                {
+                                                                    status: filters.status,
+                                                                    userType: filters.userType,
+                                                                    search: searchTerm
+                                                                },
+                                                                currentPage,
+                                                                10
+                                                            ).then(result => {
+                                                                if (result.success) {
+                                                                    setUserData(result.data);
+                                                                }
+                                                            });
+                                                        }).catch(error => {
+                                                            // If error occurs, revert the optimistic update
+                                                            console.error('Error approving user:', error);
+                                                            // Refresh pending users to restore correct state
+                                                            AdminService.getPendingUsers().then(result => {
+                                                                if (result.success) {
+                                                                    setPendingUsers(result.data);
+                                                                }
+                                                            });
+                                                        });
+                                                    }}
+                                                    className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none"
+                                                >
+                                                    <FaCheck className="mr-1" /> Approve
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        if (window.confirm(`Are you sure you want to disapprove ${user.firstName} ${user.lastName}?`)) {
+                                                            // Optimistically remove from pending list
+                                                            const userId = user._id;
+                                                            // Create copy of current pending users excluding this user
+                                                            const updatedPendingUsers = pendingUsers.filter(u => u._id !== userId);
+                                                            // Update UI immediately
+                                                            setPendingUsers(updatedPendingUsers);
+
+                                                            // Then make the API call
+                                                            AdminService.deleteUser(userId).catch(error => {
+                                                                // If error occurs, revert the optimistic update
+                                                                console.error('Error disapproving user:', error);
+                                                                // Refresh pending users to restore correct state
+                                                                AdminService.getPendingUsers().then(result => {
+                                                                    if (result.success) {
+                                                                        setPendingUsers(result.data);
+                                                                    }
+                                                                });
+                                                            });
+                                                        }
+                                                    }}
+                                                    className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none"
+                                                >
+                                                    <FaTimes className="mr-1" /> Disapprove
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}

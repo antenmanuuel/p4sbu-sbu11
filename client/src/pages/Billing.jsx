@@ -23,6 +23,9 @@ const Billing = ({ darkMode, isAuthenticated }) => {
     const [error, setError] = useState(null);
     const [billingHistory, setBillingHistory] = useState([]);
     const [expandedId, setExpandedId] = useState(null);
+    // Pagination states
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
 
     // Define fetchBillingHistory outside useEffect so it can be called elsewhere
     const fetchBillingHistory = async () => {
@@ -33,19 +36,115 @@ const Billing = ({ darkMode, isAuthenticated }) => {
             console.log('Billing history response:', response);
 
             if (response.success && response.data.billingHistory) {
-                // Format the billing data with additional details
-                const formattedBillingHistory = response.data.billingHistory.map(item => ({
-                    id: item._id,
-                    date: new Date(item.date).toISOString().split('T')[0], // Format as YYYY-MM-DD
-                    description: item.description,
-                    amount: item.amount,
-                    status: item.status,
-                    paymentMethod: 'Credit Card', // Default payment method
-                    details: `${item.description} - Purchased on ${new Date(item.date).toLocaleDateString()}`,
-                    receiptNumber: `REC-${new Date(item.date).getFullYear()}-${item._id.substr(-4)}`
-                }));
+                // Apply client-side calculations for pricing adjustments
+                const processedBillingHistory = response.data.billingHistory.map(item => {
+                    let processedItem = { ...item };
 
-                setBillingHistory(formattedBillingHistory);
+                    // Determine the display status
+                    if (item.description && item.description.includes('Refund')) {
+                        // Items that are refunds should always show "Refunded"
+                        processedItem.displayStatus = 'Refunded';
+                    } else if (item._id && item._id.toString().includes('_refund')) {
+                        // Items with ID containing "_refund" are refund transactions
+                        processedItem.displayStatus = 'Refunded';
+                    } else {
+                        // Original purchases should show as "Paid"
+                        processedItem.displayStatus = 'Paid';
+                    }
+
+                    // For reservation items, apply time-based pricing rules
+                    if (item.type === 'reservation' && item.rawData) {
+                        const { isMetered, startTime, endTime, hourlyRate, lotName } = item.rawData;
+
+                        if (isMetered) {
+                            // Calculate adjusted price based on time constraints (7am-7pm on weekdays)
+                            const start = new Date(startTime);
+                            const end = new Date(endTime);
+
+                            // Check if it's a weekend (0 = Sunday, 6 = Saturday)
+                            const isWeekend = start.getDay() === 0 || start.getDay() === 6;
+
+                            if (isWeekend) {
+                                // Free on weekends
+                                processedItem.adjustedAmount = 0;
+                                processedItem.priceInfo = "Free (weekend parking)";
+                            } else {
+                                // Calculate billable hours (only between 7am and 7pm)
+                                const startHour = start.getHours() + (start.getMinutes() / 60);
+                                const endHour = end.getHours() + (end.getMinutes() / 60);
+
+                                // Billable window is 7am to 7pm (7.0 to 19.0 in decimal hours)
+                                const billableStart = Math.max(startHour, 7.0);
+                                const billableEnd = Math.min(endHour, 19.0);
+                                const billableHours = Math.max(0, billableEnd - billableStart);
+
+                                // Calculate adjusted price
+                                const adjustedAmount = billableHours * (hourlyRate || 2.50);
+                                processedItem.adjustedAmount = adjustedAmount;
+
+                                if (adjustedAmount < item.amount) {
+                                    processedItem.priceInfo = `Adjusted for time-based pricing (${billableHours.toFixed(1)} billable hours)`;
+                                }
+                            }
+                        }
+                    }
+
+                    // For refund entries with rawData, apply time-based pricing adjustments
+                    if (item.type === 'refund' && item.rawData) {
+                        const { isMetered, startTime, endTime, hourlyRate } = item.rawData;
+
+                        if (isMetered) {
+                            // Calculate adjusted refund amount based on time constraints (7am-7pm on weekdays)
+                            const start = new Date(startTime);
+                            const end = new Date(endTime);
+
+                            // Check if it's a weekend (0 = Sunday, 6 = Saturday)
+                            const isWeekend = start.getDay() === 0 || start.getDay() === 6;
+
+                            if (isWeekend) {
+                                // Free on weekends, so refund should be $0
+                                processedItem.adjustedAmount = 0;
+                                processedItem.priceInfo = "No refund needed (weekend parking is free)";
+                            } else {
+                                // Calculate billable hours (only between 7am and 7pm)
+                                const startHour = start.getHours() + (start.getMinutes() / 60);
+                                const endHour = end.getHours() + (end.getMinutes() / 60);
+
+                                // Billable window is 7am to 7pm (7.0 to 19.0 in decimal hours)
+                                const billableStart = Math.max(startHour, 7.0);
+                                const billableEnd = Math.min(endHour, 19.0);
+                                const billableHours = Math.max(0, billableEnd - billableStart);
+
+                                // Calculate adjusted refund amount (negative value for refunds)
+                                const adjustedAmount = -1 * billableHours * (hourlyRate || 2.50);
+                                processedItem.adjustedAmount = adjustedAmount;
+
+                                if (Math.abs(adjustedAmount) < Math.abs(item.amount)) {
+                                    processedItem.priceInfo = `Adjusted refund for time-based pricing (${billableHours.toFixed(1)} billable hours)`;
+                                }
+                            }
+                        }
+                    }
+
+                    // Format for display
+                    return {
+                        id: item._id,
+                        date: new Date(item.date).toISOString().split('T')[0], // Format as YYYY-MM-DD
+                        description: item.description,
+                        amount: item.amount,
+                        adjustedAmount: processedItem.adjustedAmount,
+                        formattedAmount: formatCurrency(processedItem.adjustedAmount !== undefined ?
+                            processedItem.adjustedAmount : item.amount),
+                        status: item.status,
+                        priceInfo: processedItem.priceInfo,
+                        paymentMethod: 'Credit Card', // Default payment method
+                        details: `${item.description} - Purchased on ${new Date(item.date).toLocaleDateString()}`,
+                        receiptNumber: `REC-${new Date(item.date).getFullYear()}-${item._id?.substr(-4)}`,
+                        rawData: item.rawData
+                    };
+                });
+
+                setBillingHistory(processedBillingHistory);
             } else {
                 throw new Error(response.error || 'Failed to fetch billing history');
             }
@@ -84,24 +183,37 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                         matchesType = (bill.type === 'permit' ||
                             (bill.description.includes('Permit') && !bill.description.includes('Refund')));
                     } else if (filterType === 'refund') {
-                        // Match refund type or description starts with "Refund"
-                        matchesType = (bill.type === 'refund' || bill.description.includes('Refund'));
+                        // Match refund type or description contains "Refund" or status is "refunded"
+                        matchesType = (bill.type === 'refund' || bill.description.includes('Refund') || bill.status?.toLowerCase() === 'refunded');
                     } else if (filterType === 'metered') {
                         // Match metered type or description contains "Metered" or "Parking"
+                        // Also include refunds of metered lots by checking for "Refund" and "Parking" together
                         matchesType = bill.type === 'metered' ||
                             bill.description.toLowerCase().includes('metered') ||
-                            (bill.description.toLowerCase().includes('parking') &&
-                                !bill.description.includes('Permit'));
-                    } else if (filterType === 'permit-switch') {
-                        // Match permit switch transactions
-                        matchesType = bill.description.includes('Permit Switch') ||
-                            (bill.description.includes('Permit') &&
-                                billingHistory.some(b => b.description.includes('Refund') &&
-                                    b.description.includes('Permit Switch')));
+                            (bill.description.toLowerCase().includes('parking') && !bill.description.includes('Permit')) ||
+                            (bill.description.includes('Refund') && bill.description.includes('Reservation') && !bill.description.includes('Permit'));
                     }
                 }
 
-                return matchesSearch && matchesType;
+                // Apply date range filter
+                let matchesDateRange = true;
+                if (dateRange.start || dateRange.end) {
+                    const billDate = new Date(bill.date);
+
+                    if (dateRange.start) {
+                        const startDate = new Date(dateRange.start);
+                        matchesDateRange = billDate >= startDate;
+                    }
+
+                    if (dateRange.end && matchesDateRange) {
+                        const endDate = new Date(dateRange.end);
+                        // Set to end of day for inclusive date range
+                        endDate.setHours(23, 59, 59, 999);
+                        matchesDateRange = billDate <= endDate;
+                    }
+                }
+
+                return matchesSearch && matchesType && matchesDateRange;
             })
             .sort((a, b) => {
                 // Sort by date
@@ -109,7 +221,22 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                 const dateB = new Date(b.date);
                 return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
             });
-    }, [billingHistory, searchTerm, filterType, sortDirection]);
+    }, [billingHistory, searchTerm, filterType, sortDirection, dateRange]);
+
+    // Calculate pagination
+    const totalPages = Math.ceil(filteredBillingHistory.length / itemsPerPage);
+    const paginatedBillingHistory = useMemo(() => {
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        return filteredBillingHistory.slice(startIndex, startIndex + itemsPerPage);
+    }, [filteredBillingHistory, currentPage, itemsPerPage]);
+
+    // Handle page changes
+    const handlePageChange = (newPage) => {
+        // Ensure the page is within valid range
+        if (newPage < 1) newPage = 1;
+        if (newPage > totalPages) newPage = totalPages;
+        setCurrentPage(newPage);
+    };
 
     // Add function to find related permit switch transactions for grouping
     const findRelatedPermitSwitchTransactions = (bill) => {
@@ -159,6 +286,19 @@ const Billing = ({ darkMode, isAuthenticated }) => {
         setShowReceiptModal(true);
     };
 
+    // Handle receipt download
+    const handleDownloadReceipt = async (bill) => {
+        try {
+            const result = await UserService.downloadReceiptPDF(bill.id);
+            if (!result.success) {
+                console.error('Error downloading receipt:', result.error);
+                // Here you could add error notification UI if needed
+            }
+        } catch (error) {
+            console.error('Error downloading receipt:', error);
+        }
+    };
+
     return (
         <div className={`min-h-screen p-6 ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
             {/* Header with back button */}
@@ -193,7 +333,6 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                             <option value="permit">Permits Only</option>
                             <option value="metered">Metered Only</option>
                             <option value="refund">Refunds Only</option>
-                            <option value="permit-switch">Permit Switches</option>
                         </select>
                         <select
                             className={`border rounded-lg py-2 px-3 ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
@@ -203,11 +342,20 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                             <option value="desc">Newest First</option>
                             <option value="asc">Oldest First</option>
                         </select>
+                        <button
+                            onClick={() => setShowFilters(!showFilters)}
+                            className={`flex items-center px-3 py-2 rounded-lg border ${darkMode
+                                ? 'bg-gray-700 border-gray-600 text-white hover:bg-gray-600'
+                                : 'bg-white border-gray-300 text-gray-900 hover:bg-gray-100'}`}
+                        >
+                            <FaFilter className="mr-2" />
+                            {showFilters ? 'Hide Filters' : 'More Filters'}
+                        </button>
                     </div>
                     <div>
                         <button
                             onClick={() => fetchBillingHistory()}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200"
+                            className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200"
                         >
                             Refresh
                         </button>
@@ -236,7 +384,6 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                                 <option value="permit">Permits Only</option>
                                 <option value="metered">Metered Only</option>
                                 <option value="refund">Refunds Only</option>
-                                <option value="permit-switch">Permit Switches</option>
                             </select>
                         </div>
 
@@ -338,42 +485,49 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                                 </tr>
                             </thead>
                             <tbody className={`divide-y ${darkMode ? 'divide-gray-700' : 'divide-gray-200'}`}>
-                                {filteredBillingHistory.map((bill) => (
+                                {paginatedBillingHistory.map((bill) => (
                                     <React.Fragment key={bill.id}>
                                         <tr className={darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'}>
                                             <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                                                 {bill.date}
                                             </td>
                                             <td className={`px-6 py-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                                {bill.description}
-                                                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                                    {bill.details}
-                                                </p>
+                                                <div className="text-sm font-medium">{bill.description}</div>
+                                                {bill.priceInfo && (
+                                                    <div className="text-xs text-green-500 mt-1">{bill.priceInfo}</div>
+                                                )}
                                             </td>
                                             <td className={`px-6 py-4 whitespace-nowrap ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                                                 {bill.id}
                                             </td>
-                                            <td className={`px-6 py-4 whitespace-nowrap font-medium ${bill.amount < 0 || bill.description.includes('Refund')
-                                                ? 'text-green-600'
-                                                : darkMode ? 'text-white' : 'text-gray-900'
-                                                }`}>
-                                                {formatCurrency(bill.amount)}
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`text-sm font-medium ${bill.amount < 0 || bill.description.includes('Refund')
+                                                    ? 'text-green-500'
+                                                    : darkMode ? 'text-white' : 'text-gray-900'
+                                                    }`}>
+                                                    {bill.formattedAmount}
+                                                    {bill.adjustedAmount !== undefined && bill.adjustedAmount !== bill.amount && (
+                                                        <span className="ml-2 text-xs line-through text-gray-500">
+                                                            {formatCurrency(bill.amount)}
+                                                        </span>
+                                                    )}
+                                                </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium 
-                                          ${bill.status === 'Paid'
+                                          ${bill.displayStatus === 'Paid' || bill.status === 'Paid'
                                                         ? 'bg-green-100 text-green-800'
-                                                        : bill.status === 'Refunded'
+                                                        : bill.displayStatus === 'Refunded' || bill.status === 'Refunded'
                                                             ? 'bg-blue-100 text-blue-800'
                                                             : 'bg-red-100 text-red-800'}`}
                                                 >
-                                                    {bill.status}
+                                                    {bill.displayStatus || bill.status}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                 <button
                                                     onClick={() => handleViewReceipt(bill)}
-                                                    className="text-blue-500 hover:text-blue-700 mr-3"
+                                                    className="text-red-500 hover:text-red-700 mr-3"
                                                 >
                                                     View Receipt
                                                 </button>
@@ -411,11 +565,11 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                                                                             <span className={`mr-3 font-medium ${relatedBill.amount < 0 || relatedBill.description.includes('Refund')
                                                                                 ? 'text-green-500'
                                                                                 : darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                                                                {formatCurrency(relatedBill.amount)}
+                                                                                {relatedBill.formattedAmount}
                                                                             </span>
                                                                             <button
                                                                                 onClick={() => handleViewReceipt(relatedBill)}
-                                                                                className="text-blue-500 hover:text-blue-700 text-sm"
+                                                                                className="text-red-500 hover:text-red-700 text-sm"
                                                                             >
                                                                                 View
                                                                             </button>
@@ -474,14 +628,28 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                                     <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Payment Method:</span>
                                     <span className="font-medium">{selectedBill.paymentMethod}</span>
                                 </div>
-                                <div className="flex justify-between mb-2">
-                                    <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>
-                                        {selectedBill.amount < 0 ? 'Refund Amount:' : 'Amount:'}
+                                <div className="flex justify-between py-2 border-b border-dashed">
+                                    <span className={`${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                        Amount
                                     </span>
                                     <span className={`font-bold ${selectedBill.amount < 0 || selectedBill.description.includes('Refund') ? 'text-green-500' : ''}`}>
-                                        {formatCurrency(selectedBill.amount)}
+                                        {selectedBill.formattedAmount}
+                                        {selectedBill.adjustedAmount !== undefined && selectedBill.adjustedAmount !== selectedBill.amount && (
+                                            <span className="ml-2 text-xs line-through text-gray-500">
+                                                {formatCurrency(selectedBill.amount)}
+                                            </span>
+                                        )}
                                     </span>
                                 </div>
+
+                                {/* Price Adjustment Info */}
+                                {selectedBill.priceInfo && (
+                                    <div className="mt-2 py-2 px-3 bg-green-100 text-green-800 rounded-md text-sm">
+                                        <FaInfoCircle className="inline-block mr-1" />
+                                        {selectedBill.priceInfo}
+                                    </div>
+                                )}
+
                                 {selectedBill.status === 'Refunded' && (
                                     <div className="mt-4 pt-4 border-t border-gray-500">
                                         <div className="text-center text-sm">
@@ -519,7 +687,8 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                                     Close
                                 </button>
                                 <button
-                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center"
+                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium flex items-center"
+                                    onClick={() => handleDownloadReceipt(selectedBill)}
                                 >
                                     <FaFileDownload className="mr-2" />
                                     Download PDF
@@ -529,6 +698,96 @@ const Billing = ({ darkMode, isAuthenticated }) => {
                     </div>
                 )
             }
+
+            {/* Add pagination controls at the bottom of the table */}
+            {filteredBillingHistory.length > 0 && (
+                <div className={`px-6 py-4 flex items-center justify-between border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <div>
+                        <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>
+                            Showing <span className="font-medium">{Math.min((currentPage - 1) * itemsPerPage + 1, filteredBillingHistory.length)}</span> to{' '}
+                            <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredBillingHistory.length)}</span> of{' '}
+                            <span className="font-medium">{filteredBillingHistory.length}</span> results
+                        </p>
+                    </div>
+                    <div className="flex space-x-2">
+                        <button
+                            onClick={() => handlePageChange(currentPage - 1)}
+                            disabled={currentPage === 1}
+                            className={`px-3 py-1 rounded-md ${currentPage === 1
+                                ? 'opacity-50 cursor-not-allowed'
+                                : darkMode
+                                    ? 'bg-gray-700 hover:bg-gray-600'
+                                    : 'bg-gray-100 hover:bg-gray-200'
+                                } ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
+                        >
+                            Previous
+                        </button>
+
+                        {/* Always show first 5 pages */}
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            const pageNumber = i + 1;
+                            return (
+                                <button
+                                    key={pageNumber}
+                                    onClick={() => handlePageChange(pageNumber)}
+                                    className={`px-3 py-1 rounded-md ${currentPage === pageNumber
+                                        ? darkMode
+                                            ? 'bg-red-600 text-white'
+                                            : 'bg-red-500 text-white'
+                                        : darkMode
+                                            ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                                        }`}
+                                >
+                                    {pageNumber}
+                                </button>
+                            );
+                        })}
+
+                        {/* If current page is > 5, show current page */}
+                        {currentPage > 5 && (
+                            <>
+                                <span className={`px-2 py-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>...</span>
+                                <button
+                                    onClick={() => handlePageChange(currentPage)}
+                                    className={`px-3 py-1 rounded-md ${darkMode
+                                        ? 'bg-red-600 text-white'
+                                        : 'bg-red-500 text-white'
+                                        }`}
+                                >
+                                    {currentPage}
+                                </button>
+                            </>
+                        )}
+
+                        {/* If there are more than 5 pages, show a button to go to page 6 */}
+                        {totalPages > 5 && currentPage < 6 && (
+                            <button
+                                onClick={() => handlePageChange(6)}
+                                className={`px-3 py-1 rounded-md ${darkMode
+                                    ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                                    }`}
+                            >
+                                ...
+                            </button>
+                        )}
+
+                        <button
+                            onClick={() => handlePageChange(currentPage + 1)}
+                            disabled={currentPage === totalPages || totalPages === 0}
+                            className={`px-3 py-1 rounded-md ${currentPage === totalPages || totalPages === 0
+                                ? 'opacity-50 cursor-not-allowed'
+                                : darkMode
+                                    ? 'bg-gray-700 hover:bg-gray-600'
+                                    : 'bg-gray-100 hover:bg-gray-200'
+                                } ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            )}
         </div >
     );
 };

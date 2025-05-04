@@ -25,12 +25,6 @@ const Home = ({ darkMode, isAuthenticated, user }) => {
       icon: "M"
     },
     {
-      title: "Appeal a citation",
-      description: "File an appeal for a citation",
-      route: "/appeal",
-      icon: "A"
-    },
-    {
       title: "View notifications",
       description: "Check all your system notifications",
       route: "/notifications",
@@ -53,6 +47,12 @@ const Home = ({ darkMode, isAuthenticated, user }) => {
       description: "Update your personal information",
       route: "/profile",
       icon: "U"
+    },
+    {
+      title: "Event Parking",
+      description: "Faculty-only special event parking requests",
+      route: "/faculty/event-parking-request",
+      icon: "E"
     }
   ];
 
@@ -91,9 +91,8 @@ const Home = ({ darkMode, isAuthenticated, user }) => {
   ];
 
   // Handle quick link click
-  const handleQuickLinkClick = () => {
-    // All quick links should go to under-construction page for now
-    navigate('/under-construction');
+  const handleQuickLinkClick = (route) => {
+    navigate(route);
   };
 
   return (
@@ -222,31 +221,36 @@ const Home = ({ darkMode, isAuthenticated, user }) => {
           </h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {quickLinks.map((link, index) => (
-            <div
-              key={index}
-              className={`flex flex-col h-full rounded-xl p-6 shadow-sm ${darkMode
-                ? 'bg-gray-800 border border-gray-700'
-                : 'bg-white border border-gray-100'
-                }`}
-            >
-              <div className="flex items-center mb-4">
-                <div className={`size-12 rounded-lg flex items-center justify-center mr-4 ${index % 4 === 0 ? 'bg-red-600' :
-                  index % 4 === 1 ? 'bg-blue-600' :
-                    index % 4 === 2 ? 'bg-green-600' :
-                      'bg-purple-600'
-                  } text-white font-bold text-lg`}>
-                  {link.icon}
+          {quickLinks
+            .filter(link =>
+              // Filter out Event Parking for non-faculty users
+              !(link.title === "Event Parking" && (!isAuthenticated || user?.userType !== "faculty"))
+            )
+            .map((link, index) => (
+              <div
+                key={index}
+                className={`flex flex-col h-full rounded-xl p-6 shadow-sm ${darkMode
+                  ? 'bg-gray-800 border border-gray-700'
+                  : 'bg-white border border-gray-100'
+                  }`}
+              >
+                <div className="flex items-center mb-4">
+                  <div className={`size-12 rounded-lg flex items-center justify-center mr-4 ${index % 4 === 0 ? 'bg-red-600' :
+                    index % 4 === 1 ? 'bg-blue-600' :
+                      index % 4 === 2 ? 'bg-green-600' :
+                        'bg-purple-600'
+                    } text-white font-bold text-lg`}>
+                    {link.icon}
+                  </div>
+                  <h3 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    {link.title}
+                  </h3>
                 </div>
-                <h3 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  {link.title}
-                </h3>
+                <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  {link.description}
+                </p>
               </div>
-              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                {link.description}
-              </p>
-            </div>
-          ))}
+            ))}
         </div>
       </div>
 
