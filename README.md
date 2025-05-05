@@ -45,6 +45,11 @@ The project follows a client-server architecture:
 - Mapbox for maps and location services
 - React Icons
 - Vite as build tool
+- Axios for API requests
+- React Datepicker
+- React Toastify for notifications
+- Recharts for data visualization
+- Stripe.js for payment processing
 
 ### Backend
 
@@ -53,13 +58,19 @@ The project follows a client-server architecture:
 - MongoDB with Mongoose ODM
 - JWT for authentication
 - Bcrypt for password hashing
-- Mailgun for password reset functionality
+- Nodemailer for email functionality
+- Express Validator for request validation
+- Stripe API for payment processing
+- PDF Kit for generating PDF documents
+- New Relic for application monitoring
 
 ### Testing
 
 - Cypress for end-to-end testing
 - Jest for unit testing
 - React Testing Library for component testing
+- Supertest for API testing
+- MongoDB Memory Server for test database
 
 ## Installation and Setup
 
