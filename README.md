@@ -13,20 +13,28 @@ Team Members -
 
 ## Project Overview
 
-A comprehensive parking management system for Stony Brook University that helps students, faculty, and visitors find and reserve parking spots across campus.
+The P4SBU Parking Management System is a comprehensive solution designed to modernize and streamline parking operations at Stony Brook University. This full-stack application serves the diverse needs of students, faculty, staff, and visitors by providing an intuitive platform for managing all aspects of campus parking.
 
-The SBU Parking Management System is designed to streamline the process of finding, viewing, and reserving parking spaces at Stony Brook University. The application provides real-time information about parking lot availability, permits required, pricing, and features to help users make informed decisions.
+The system offers real-time parking availability information, an advanced reservation system, digital permit management, and secure payment processing. With role-based access control, the platform delivers tailored experiences for regular users, faculty members with specialized parking needs, and administrators who oversee the entire parking infrastructure.
+
+Built with modern web technologies and following responsive design principles, P4SBU ensures accessibility across all devices while maintaining a consistent, user-friendly interface. The application integrates with mapping services for intuitive location finding and implements secure payment processing for reservations, permits, and citation payments.
 
 ## Features
 
 - **Real-time Parking Availability**: View available spaces in each parking lot in real-time.
-- **Advanced Search**: Find parking based on location, time, and date.
-- **Path-based Distance Calculation**: Uses Dijkstra's algorithm to calculate realistic distances between locations.
-- **Filtering Options**: Filter parking lots by price, permit types, and features.
-- **Interactive Map**: View parking lot locations on an interactive map.
-- **User Authentication**: Register and login to manage your profile and reservations.
-- **Admin Dashboard**: Manage parking lots, update availability, and view analytics.
+- **Advanced Search & Filtering**: Find parking based on location, time, date, price, and permit types.
+- **Interactive Map Interface**: View parking lot locations and navigate campus with Mapbox integration.
+- **Comprehensive User Management**: Register, login, profile management, and vehicle registration.
+- **Reservation System**: Create, view, modify, and cancel parking reservations.
+- **Permit Management**: Purchase, view, and manage parking permits.
+- **Billing & Payment Processing**: Secure payments with Stripe integration and transaction history.
+- **Citation Management**: View and pay parking citations/tickets.
+- **Admin Dashboard**: Manage parking lots, users, permits, and view analytics.
+- **Faculty Features**: Request and manage event parking.
+- **Reporting & Analytics**: Generate reports and view usage statistics.
+- **Contact & Support System**: Submit inquiries and get support.
 - **Responsive Design**: Works seamlessly on desktop and mobile devices.
+- **Email Notifications**: Get alerts for reservation confirmations, permit approvals, and more.
 
 ## System Architecture
 
