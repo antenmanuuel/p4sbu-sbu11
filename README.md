@@ -95,16 +95,65 @@ npm install
 Create a `.env` file in the server directory with the following variables:
 
 ```
-PORT=5000
-MONGODB_URI=your_mongodb_connection_string
+# MongoDB Atlas connection
+MONGODB_URI=your_mongodb_atlas_connection_string
+
+# Local MongoDB connection (use this if Atlas is having issues)
+# MONGODB_URI=mongodb://localhost:27017/p4sbu-db
+
+# JWT Secret
 JWT_SECRET=your_jwt_secret
+
+# Server port
+PORT=8080
+
+# Email configuration
+EMAIL_USER=your_email@gmail.com
+EMAIL_PASSWORD=your_app_password
+# Note: Replace with a 16-character App Password from Google Account
+# To generate an App Password:
+# 1. Go to your Google Account > Security
+# 2. Enable 2-Step Verification if not already enabled
+# 3. Go to App passwords
+# 4. Select "Mail" and "Other" (Custom name: "SBU Parking System")
+# 5. Copy the 16-character password generated
+EMAIL_FROM=noreply@sbuparkingsystem.com
+CLIENT_URL=http://localhost:5173
+CLIENT_BASE_URL=http://localhost:5173
+
+# Production URLs for deployment
+PROD_CLIENT_URL=https://p4sbu-parking-app.herokuapp.com
+PROD_CLIENT_BASE_URL=https://p4sbu-parking-app.herokuapp.com
+
+# Stripe API keys
+# Get your keys from: https://dashboard.stripe.com/apikeys
+STRIPE_SECRET_KEY=your_stripe_secret_key
+STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
+
+# Relic configuration
+NEW_RELIC_APP_NAME=P4SBU
+NEW_RELIC_LICENSE_KEY=your_new_relic_license_key
 ```
 
 Create a `.env` file in the client directory with the following variables:
 
 ```
-REACT_APP_API_URL=http://localhost:5000/api
-REACT_APP_MAPBOX_TOKEN=your_mapbox_token
+# Mapbox token for maps and geocoding
+# To get a token:
+# 1. Sign up at https://account.mapbox.com/auth/signup/
+# 2. Go to https://account.mapbox.com/ and create a token
+# 3. Copy the token here
+VITE_REACT_APP_MAPBOX_TOKEN=your_mapbox_token
+
+# API URL (default is http://localhost:8080/api)
+VITE_REACT_APP_API_URL=http://localhost:8080/api
+
+# Stripe publishable key for payment processing
+# Get your key from: https://dashboard.stripe.com/apikeys
+VITE_STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key
+
+# API URL
+VITE_API_URL=http://localhost:8080/api
 ```
 
 ## Running the Application
@@ -164,12 +213,6 @@ npx cypress run
 #### Adding New Tests
 
 To add new Cypress tests:
-
-1. Create a new test file in the `cypress/e2e` directory with a `.cy.js` extension
-2. Use the Cypress API to interact with your application
-3. Write assertions to verify expected behavior
-
-Example:
 ```javascript
 describe('Feature Test', () => {
   it('should perform some action', () => {
