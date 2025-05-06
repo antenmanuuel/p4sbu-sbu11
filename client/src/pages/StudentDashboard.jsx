@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaMapMarkerAlt, FaClock, FaPlug, FaMoneyBillWave, FaTimes, FaInfoCircle, FaExclamationTriangle, FaArrowLeft, FaCreditCard, FaPlus, FaCheck, FaCar, FaTicketAlt, FaTrash, FaChargingStation } from "react-icons/fa";
+import { FaMapMarkerAlt, FaClock, FaPlug, FaMoneyBillWave, FaTimes, FaInfoCircle, FaExclamationTriangle, FaArrowLeft, FaCreditCard, FaPlus, FaCheck, FaCar, FaTicketAlt, FaTrash, FaChargingStation, FaFileInvoiceDollar, FaFileDownload } from "react-icons/fa";
 import { AuthService, TicketService, ReservationService, PermitService, UserService, CarService, PaymentMethodService } from "../utils/api";
 import CarForm from "../components/CarForm";
 import StripeProvider from "../components/StripeProvider";
@@ -125,7 +125,7 @@ const StudentDashboard = ({ darkMode }) => {
       setReservationsError(null); // Reset error on each fetch
       try {
         const response = await ReservationService.getUserReservations();
-        console.log('Reservations response:', response);
+        console.log('Raw reservations response:', response);
 
         if (response.success) {
           // Check different possible data structures
@@ -136,18 +136,61 @@ const StudentDashboard = ({ darkMode }) => {
             // Transform API data to match our component's expected format
             const formattedReservations = reservationsData.map(reservation => {
               console.log('Processing reservation:', reservation);
+
+              // Debug the reservation's properties
+              const lotInfo = reservation.lotId || {};
+              console.log('Lot info:', lotInfo);
+              console.log('Reservation status:', reservation.status);
+              console.log('Is free reservation:', reservation.isFreeReservation);
+              console.log('Free reason:', reservation.freeReason);
+
+              // Calculate the adjusted price for time-based rules if this is a metered lot
+              let adjustedPrice = reservation.totalPrice;
+              const isMeteredLot = lotInfo.features?.isMetered ||
+                (lotInfo.name && lotInfo.name.toLowerCase().includes('metered'));
+
+              if (isMeteredLot && reservation.totalPrice > 0) {
+                // Extract hourly rate - default to 2.50 if not set
+                const hourlyRate = lotInfo.hourlyRate || 2.50;
+                console.log(`Detected metered lot with hourly rate: $${hourlyRate}`);
+
+                // Create a deep copy with all required properties for price calculation
+                const calculationData = {
+                  ...reservation,
+                  lotId: {
+                    ...lotInfo,
+                    hourlyRate: hourlyRate,
+                    rateType: lotInfo.rateType || 'Hourly',
+                    features: {
+                      ...(lotInfo.features || {}),
+                      isMetered: true
+                    },
+                    name: lotInfo.name
+                  },
+                  totalPrice: reservation.totalPrice
+                };
+
+                adjustedPrice = calculateAdjustedPrice(calculationData);
+                console.log(`Adjusted price for ${lotInfo.name}: $${adjustedPrice.toFixed(2)} (original: $${reservation.totalPrice.toFixed(2)})`);
+              }
+
+              // Create the formatted reservation object
               return {
                 id: reservation.reservationId || reservation._id,
-                lotName: reservation.lotId?.name || 'Unknown Lot',
+                lotName: lotInfo.name || 'Unknown Lot',
                 spotNumber: reservation.permitType || 'Standard', // Using permitType as spotNumber
                 isReserved: true,
                 reservationStart: reservation.startTime,
                 reservationEnd: reservation.endTime,
-                isMetered: false, // Default since not provided in the API
-                isEV: false, // Default since not provided in the API
+                isMetered: lotInfo.features?.isMetered || false,
+                isEV: lotInfo.features?.isEV || false,
                 status: reservation.status || 'Pending',
-                price: reservation.totalPrice || 0,
-                location: reservation.lotId?.location || { x: 0, y: 0 }
+                originalPrice: reservation.totalPrice || 0,
+                price: adjustedPrice, // Use the adjusted price
+                location: lotInfo.location || { x: 0, y: 0 },
+                isFreeReservation: reservation.isFreeReservation || false,
+                freeReason: reservation.freeReason || '',
+                lotId: lotInfo // Keep the lot data for future calculations
               };
             });
 
@@ -279,14 +322,95 @@ const StudentDashboard = ({ darkMode }) => {
         console.log('Billing history response:', response);
 
         if (response.success && response.data.billingHistory) {
-          const formattedBillingHistory = response.data.billingHistory.map(item => ({
-            id: item._id,
-            date: new Date(item.date).toISOString().split('T')[0], // Format as YYYY-MM-DD
-            description: item.description,
-            amount: `$${item.amount}`,
-            status: item.status
-          }));
-          setBillingHistory(formattedBillingHistory);
+          // Process billing history items to apply client-side pricing adjustments
+          const processedBillingHistory = response.data.billingHistory.map(item => {
+            let processedItem = { ...item };
+
+            // For reservation items, apply time-based pricing rules
+            if (item.type === 'reservation' && item.rawData) {
+              const { isMetered, startTime, endTime, hourlyRate } = item.rawData;
+
+              if (isMetered) {
+                // Calculate adjusted price based on time constraints (7am-7pm on weekdays)
+                const start = new Date(startTime);
+                const end = new Date(endTime);
+
+                // Check if it's a weekend (0 = Sunday, 6 = Saturday)
+                const isWeekend = start.getDay() === 0 || start.getDay() === 6;
+
+                if (isWeekend) {
+                  // Free on weekends
+                  processedItem.adjustedAmount = 0;
+                  processedItem.priceInfo = "Free (weekend parking)";
+                } else {
+                  // Calculate billable hours (only between 7am and 7pm)
+                  const startHour = start.getHours() + (start.getMinutes() / 60);
+                  const endHour = end.getHours() + (end.getMinutes() / 60);
+
+                  // Billable window is 7am to 7pm (7.0 to 19.0 in decimal hours)
+                  const billableStart = Math.max(startHour, 7.0);
+                  const billableEnd = Math.min(endHour, 19.0);
+                  const billableHours = Math.max(0, billableEnd - billableStart);
+
+                  // Calculate adjusted price
+                  const adjustedAmount = billableHours * (hourlyRate || 2.50);
+                  processedItem.adjustedAmount = adjustedAmount;
+
+                  if (adjustedAmount < item.amount) {
+                    processedItem.priceInfo = `Adjusted for time-based pricing (${billableHours.toFixed(1)} billable hours)`;
+                  }
+                }
+              }
+            }
+
+            // For refund entries with rawData, apply time-based pricing adjustments
+            if (item.type === 'refund' && item.rawData) {
+              const { isMetered, startTime, endTime, hourlyRate } = item.rawData;
+
+              if (isMetered) {
+                // Calculate adjusted refund amount based on time constraints (7am-7pm on weekdays)
+                const start = new Date(startTime);
+                const end = new Date(endTime);
+
+                // Check if it's a weekend (0 = Sunday, 6 = Saturday)
+                const isWeekend = start.getDay() === 0 || start.getDay() === 6;
+
+                if (isWeekend) {
+                  // Free on weekends, so refund should be $0
+                  processedItem.adjustedAmount = 0;
+                  processedItem.priceInfo = "No refund needed (weekend parking is free)";
+                } else {
+                  // Calculate billable hours (only between 7am and 7pm)
+                  const startHour = start.getHours() + (start.getMinutes() / 60);
+                  const endHour = end.getHours() + (end.getMinutes() / 60);
+
+                  // Billable window is 7am to 7pm (7.0 to 19.0 in decimal hours)
+                  const billableStart = Math.max(startHour, 7.0);
+                  const billableEnd = Math.min(endHour, 19.0);
+                  const billableHours = Math.max(0, billableEnd - billableStart);
+
+                  // Calculate adjusted refund amount (negative value for refunds)
+                  const adjustedAmount = -1 * billableHours * (hourlyRate || 2.50);
+                  processedItem.adjustedAmount = adjustedAmount;
+
+                  if (Math.abs(adjustedAmount) < Math.abs(item.amount)) {
+                    processedItem.priceInfo = `Adjusted refund for time-based pricing (${billableHours.toFixed(1)} billable hours)`;
+                  }
+                }
+              }
+            }
+
+            // Format the date as YYYY-MM-DD
+            processedItem.date = new Date(item.date).toISOString().split('T')[0];
+
+            // Format amount as a currency string
+            processedItem.amountDisplay = formatCurrency(processedItem.adjustedAmount !== undefined ?
+              processedItem.adjustedAmount : item.amount);
+
+            return processedItem;
+          });
+
+          setBillingHistory(processedBillingHistory);
         } else {
           setBillingError(response.error || 'Failed to fetch billing history');
           // Fallback to empty array if there's an error
@@ -338,6 +462,93 @@ const StudentDashboard = ({ darkMode }) => {
     }
   }, []);
 
+  // Calculate adjusted price for metered lots based on start and end times
+  const calculateAdjustedPrice = (reservation) => {
+    // If the reservation already has a set price, use that
+    if (reservation.totalPrice !== undefined) {
+      console.log("Calculating for reservation with totalPrice:", reservation.totalPrice);
+
+      // Basic validation - we need start and end times
+      if (!reservation.startTime || !reservation.endTime) {
+        console.log("Missing start or end time, returning original price");
+        return reservation.totalPrice;
+      }
+
+      // Check if we have time details available
+      if (reservation.lotId) {
+        // Get the date objects
+        const startTime = new Date(reservation.startTime);
+        const endTime = new Date(reservation.endTime);
+        console.log(`Reservation time: ${startTime.toLocaleString()} to ${endTime.toLocaleString()}`);
+
+        // Check if it's a weekend (0 = Sunday, 6 = Saturday)
+        const isWeekend = startTime.getDay() === 0 || startTime.getDay() === 6;
+        if (isWeekend) {
+          console.log("Weekend reservation - free");
+          return 0; // Free on weekends
+        }
+
+        // Check if it's a metered lot
+        const isMeteredLot = (reservation.lotId.features && reservation.lotId.features.isMetered) ||
+          (reservation.lotId.name && reservation.lotId.name.toLowerCase().includes('metered')) ||
+          reservation.isMetered;
+
+        console.log("Is metered lot:", isMeteredLot);
+        console.log("Hourly rate:", reservation.lotId.hourlyRate || 2.50);
+
+        if (isMeteredLot) {
+          // Define the billable time window (7am to 7pm = 7.0 to 19.0 hours)
+          const billableStartHour = 7.0;  // 7:00 AM
+          const billableEndHour = 19.0;   // 7:00 PM
+
+          // Convert reservation times to decimal hours
+          const startHour = startTime.getHours();
+          const startMinute = startTime.getMinutes();
+          const endHour = endTime.getHours();
+          const endMinute = endTime.getMinutes();
+          const startTimeDecimal = startHour + (startMinute / 60);
+          const endTimeDecimal = endHour + (endMinute / 60);
+
+          console.log(`Start time decimal: ${startTimeDecimal}, End time decimal: ${endTimeDecimal}`);
+          console.log(`Billable window: ${billableStartHour} to ${billableEndHour}`);
+
+          // Check if the reservation is entirely outside of billable hours
+          if (endTimeDecimal <= billableStartHour || startTimeDecimal >= billableEndHour) {
+            console.log("Reservation is entirely outside billable hours (before 7AM or after 7PM)");
+            return 0;
+          }
+
+          // Calculate the billable hours by finding the overlap between
+          // the reservation and the billable window
+          const overlapStart = Math.max(startTimeDecimal, billableStartHour);
+          const overlapEnd = Math.min(endTimeDecimal, billableEndHour);
+          const billableHours = Math.max(0, overlapEnd - overlapStart);
+
+          console.log(`Billable hours calculation: max(0, min(${endTimeDecimal}, ${billableEndHour}) - max(${startTimeDecimal}, ${billableStartHour}))`);
+          console.log(`Billable hours: ${billableHours.toFixed(2)}`);
+
+          // Use hourlyRate with default to 2.50 if not defined
+          const hourlyRate = reservation.lotId.hourlyRate || 2.50;
+
+          console.log(`Metered lot reservation: ${billableHours.toFixed(1)} billable hours (7am-7pm only) at $${hourlyRate}/hour`);
+
+          // Calculate the adjusted price
+          const adjustedPrice = billableHours * hourlyRate;
+          console.log(`Adjusted price: ${adjustedPrice.toFixed(2)}`);
+          return adjustedPrice;
+        }
+      }
+
+      // For non-metered lots or if we can't determine, return the original price
+      console.log("Not a metered lot or couldn't determine - returning original price");
+      return reservation.totalPrice;
+    }
+
+    // If no price is set, return 0
+    console.log("No price set, returning 0");
+    return 0;
+  };
+
   // Handle View Details button click
   const handleViewDetails = async (reservation) => {
     try {
@@ -351,8 +562,22 @@ const StudentDashboard = ({ darkMode }) => {
 
         // Extract lot rate type and pricing information from the detailed data
         const rateType = detailedReservation.lotId?.rateType || null;
-        const hourlyRate = detailedReservation.lotId?.hourlyRate || 0;
+        const hourlyRate = detailedReservation.lotId?.hourlyRate || 2.50; // Default to $2.50 if not specified
         const semesterRate = detailedReservation.lotId?.semesterRate || 0;
+
+        // Ensure the lotId data is complete for accurate price calculation
+        const completeReservation = {
+          ...detailedReservation,
+          lotId: {
+            ...detailedReservation.lotId,
+            hourlyRate: hourlyRate,
+            rateType: rateType
+          }
+        };
+
+        // Calculate adjusted price for time-based rules
+        const adjustedPrice = calculateAdjustedPrice(completeReservation);
+        console.log(`Original price: ${detailedReservation.totalPrice}, Adjusted price: ${adjustedPrice}`);
 
         // Merge current data with backend data to ensure we have all fields
         setSelectedReservation({
@@ -360,7 +585,11 @@ const StudentDashboard = ({ darkMode }) => {
           ...detailedReservation,
           rateType,
           hourlyRate,
-          semesterRate
+          semesterRate,
+          // Override the price with the adjusted price
+          price: adjustedPrice,
+          // Store original price for reference
+          originalPrice: detailedReservation.totalPrice
         });
         setShowDetailsModal(true);
       } else {
@@ -487,7 +716,6 @@ const StudentDashboard = ({ darkMode }) => {
 
     // Use NY timezone to display the exact time stored in the database
     return date.toLocaleString('en-US', {
-      timeZone: 'UTC',
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -516,7 +744,27 @@ const StudentDashboard = ({ darkMode }) => {
   };
 
   const handleViewBillingDetails = (bill) => {
-    setSelectedBill(bill);
+    console.log('Viewing billing details:', bill);
+
+    // If the bill already has adjusted price info from our client calculation, use that
+    if (bill.adjustedAmount !== undefined) {
+      setSelectedBill({
+        ...bill,
+        amount: bill.adjustedAmount
+      });
+      setShowBillingDetailsModal(true);
+      return;
+    }
+
+    // For items that don't have client-calculated adjustments, ensure we have a valid amount
+    const numericAmount = typeof bill.amount === 'number' ?
+      bill.amount :
+      parseFloat(String(bill.amount).replace(/[^0-9.-]+/g, ''));
+
+    setSelectedBill({
+      ...bill,
+      amount: isNaN(numericAmount) ? 0 : numericAmount
+    });
     setShowBillingDetailsModal(true);
   };
 
@@ -937,6 +1185,19 @@ const StudentDashboard = ({ darkMode }) => {
 
   // Set a payment method as default
 
+  // Handle billing details receipt download
+  const handleDownloadReceipt = async (bill) => {
+    try {
+      const result = await UserService.downloadReceiptPDF(bill.id || bill._id);
+      if (!result.success) {
+        console.error('Error downloading receipt:', result.error);
+        // Here you could add error notification UI if needed
+      }
+    } catch (error) {
+      console.error('Error downloading receipt:', error);
+    }
+  };
+
   return (
     <div className={`min-h-screen p-6 ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
       <h1 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Dashboard</h1>
@@ -1069,82 +1330,110 @@ const StudentDashboard = ({ darkMode }) => {
           <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any active parking reservations.</p>
         ) : (
           <div className="space-y-4">
-            {/* Show only the most recent active, upcoming, or pending reservation */}
+            {/* Show all active, upcoming, or pending reservations */}
             {reservations
               .filter(reservation => ['active', 'upcoming', 'pending'].includes(reservation.status.toLowerCase()))
-              .slice(0, 1)
-              .map((reservation) => (
-                <div
-                  key={reservation.id}
-                  className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}
-                >
-                  <div className="flex flex-col md:flex-row justify-between">
-                    <div className="mb-4 md:mb-0">
-                      <div className="flex items-center mb-2">
-                        <FaMapMarkerAlt className={`mr-2 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
-                        <h3 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-800'}`}>
-                          {reservation.lotName} - Spot {reservation.spotNumber}
-                        </h3>
-                      </div>
+              .map((reservation) => {
+                // Calculate the adjusted price for each reservation
+                let calculatedPrice = reservation.price;
 
-                      <div className="flex items-center mb-2">
-                        <FaClock className={`mr-2 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
-                        <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                          {formatDateTime(reservation.reservationStart)} - {formatDateTime(reservation.reservationEnd)}
-                        </p>
-                      </div>
+                // Ensure we're using hourly rate correctly for metered lots
+                if (reservation.isMetered && reservation.lotId) {
+                  // Create complete reservation data for calculation
+                  const calculationData = {
+                    ...reservation,
+                    startTime: reservation.reservationStart,
+                    endTime: reservation.reservationEnd,
+                    lotId: {
+                      ...reservation.lotId,
+                      hourlyRate: reservation.lotId.hourlyRate || 2.50,
+                      rateType: reservation.lotId.rateType || 'Hourly',
+                      features: {
+                        ...(reservation.lotId.features || {}),
+                        isMetered: true
+                      }
+                    },
+                    totalPrice: reservation.originalPrice
+                  };
 
-                      <div className="flex flex-wrap gap-3 mt-3">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(reservation.status)}`}>
-                          {reservation.status}
-                        </span>
+                  // Recalculate the adjusted price
+                  calculatedPrice = calculateAdjustedPrice(calculationData);
+                  console.log(`Display price for ${reservation.lotName}: ${calculatedPrice} (original: ${reservation.originalPrice})`);
+                }
 
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${darkMode ? 'bg-gray-600 text-gray-100' : 'bg-gray-100 text-gray-800'}`}>
-                          <FaClock className="mr-1" /> {calculateDuration(reservation.reservationStart, reservation.reservationEnd)} hours
-                        </span>
+                return (
+                  <div
+                    key={reservation.id}
+                    className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}
+                  >
+                    <div className="flex flex-col md:flex-row justify-between">
+                      <div className="mb-4 md:mb-0">
+                        <div className="flex items-center mb-2">
+                          <FaMapMarkerAlt className={`mr-2 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
+                          <h3 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                            {reservation.lotName} - Spot {reservation.spotNumber}
+                          </h3>
+                        </div>
 
-                        {reservation.isEV && (
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800`}>
-                            <FaPlug className="mr-1" /> EV Charging
+                        <div className="flex items-center mb-2">
+                          <FaClock className={`mr-2 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+                          <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                            {formatDateTime(reservation.reservationStart)} - {formatDateTime(reservation.reservationEnd)}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-3 mt-3">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(reservation.status)}`}>
+                            {reservation.status}
                           </span>
-                        )}
 
-                        {reservation.isMetered && (
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800`}>
-                            <FaMoneyBillWave className="mr-1" /> Metered
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${darkMode ? 'bg-gray-600 text-gray-100' : 'bg-gray-100 text-gray-800'}`}>
+                            <FaClock className="mr-1" /> {calculateDuration(reservation.reservationStart, reservation.reservationEnd)} hours
                           </span>
+
+                          {reservation.isEV && (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800`}>
+                              <FaPlug className="mr-1" /> EV Charging
+                            </span>
+                          )}
+
+                          {reservation.isMetered && (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800`}>
+                              <FaMoneyBillWave className="mr-1" /> Metered
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col space-y-2">
+                        <button
+                          className={`px-4 py-2 rounded text-sm font-medium ${darkMode ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-gray-300 hover:bg-gray-400 text-gray-800'}`}
+                          onClick={() => handleViewDetails(reservation)}
+                        >
+                          View Details
+                        </button>
+
+                        {(reservation.status.toLowerCase() === 'upcoming' || reservation.status.toLowerCase() === 'active' || reservation.status.toLowerCase() === 'pending') && (
+                          <>
+                            <button
+                              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium"
+                              onClick={() => handleExtendClick(reservation)}
+                            >
+                              Extend Time
+                            </button>
+                            <button
+                              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-medium"
+                              onClick={() => handleCancelClick(reservation)}
+                            >
+                              Cancel
+                            </button>
+                          </>
                         )}
                       </div>
-                    </div>
-
-                    <div className="flex flex-col space-y-2">
-                      <button
-                        className={`px-4 py-2 rounded text-sm font-medium ${darkMode ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-gray-300 hover:bg-gray-400 text-gray-800'}`}
-                        onClick={() => handleViewDetails(reservation)}
-                      >
-                        View Details
-                      </button>
-
-                      {(reservation.status.toLowerCase() === 'upcoming' || reservation.status.toLowerCase() === 'active' || reservation.status.toLowerCase() === 'pending') && (
-                        <>
-                          <button
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium"
-                            onClick={() => handleExtendClick(reservation)}
-                          >
-                            Extend Time
-                          </button>
-                          <button
-                            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-medium"
-                            onClick={() => handleCancelClick(reservation)}
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      )}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
           </div>
         )}
       </div>
@@ -1202,7 +1491,75 @@ const StudentDashboard = ({ darkMode }) => {
 
               <div>
                 <p className="text-sm font-medium mb-1">Price</p>
-                <p className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(selectedReservation.price)}</p>
+                <div>
+                  <p className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    {formatCurrency(selectedReservation.price)}
+                  </p>
+                  {selectedReservation.originalPrice !== undefined &&
+                    selectedReservation.originalPrice !== selectedReservation.price && (
+                      <p className="text-sm text-gray-500">
+                        Original price: <span className="line-through">{formatCurrency(selectedReservation.originalPrice)}</span>
+                        <span className="ml-2 text-green-500">
+                          (Saved {formatCurrency(selectedReservation.originalPrice - selectedReservation.price)})
+                        </span>
+                      </p>
+                    )}
+                </div>
+
+                {/* Add time-based pricing explanation if applicable */}
+                {selectedReservation.lotId && selectedReservation.lotId.rateType === 'Hourly' &&
+                  (selectedReservation.lotId.features?.isMetered || selectedReservation.lotName?.toLowerCase().includes('metered')) && (
+                    <div className={`mt-2 p-3 rounded-lg text-sm ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                      <h4 className="font-medium mb-1">Time-Based Pricing Applied</h4>
+                      <p>Metered lots only charge between 7am-7pm on weekdays.</p>
+
+                      {/* Calculate and show billable hours */}
+                      {(() => {
+                        const startTime = new Date(selectedReservation.startTime);
+                        const endTime = new Date(selectedReservation.endTime);
+                        const isWeekend = startTime.getDay() === 0 || startTime.getDay() === 6;
+
+                        if (isWeekend) {
+                          return <p className="text-green-500 mt-1">Free on weekends.</p>;
+                        }
+
+                        const startHour = startTime.getHours();
+                        const endHour = endTime.getHours();
+
+                        // Early morning or evening
+                        if ((startHour < 7 && endHour < 7) || (startHour >= 19 && endHour >= 19)) {
+                          return <p className="text-green-500 mt-1">Free: Outside billable hours (7am-7pm).</p>;
+                        }
+
+                        // Calculate billable hours
+                        const startTimeDecimal = startHour + (startTime.getMinutes() / 60);
+                        const endTimeDecimal = endHour + (endTime.getMinutes() / 60);
+                        const billableStart = Math.max(startTimeDecimal, 7.0);
+                        const billableEnd = Math.min(endTimeDecimal, 19.0);
+                        let billableHours = 0;
+
+                        if (billableEnd > billableStart) {
+                          billableHours = billableEnd - billableStart;
+                        }
+
+                        // Calculate adjusted price
+                        const adjustedPrice = billableHours * selectedReservation.lotId.hourlyRate;
+
+                        return (
+                          <div className="mt-1">
+                            <p>Billable hours: <span className="font-medium">{billableHours.toFixed(1)} hours</span> (7am-7pm only)</p>
+                            {startHour < 7 && <p className="text-green-500">• Free before 7:00 AM</p>}
+                            {endHour >= 19 && <p className="text-green-500">• Free after 7:00 PM</p>}
+                            <p>Rate: ${selectedReservation.hourlyRate}/hour</p>
+                            <p className="mt-2 font-medium">Total Adjusted Price: {formatCurrency(adjustedPrice)}</p>
+                            {selectedReservation.originalPrice && adjustedPrice < selectedReservation.originalPrice && (
+                              <p className="text-green-500">You saved {formatCurrency(selectedReservation.originalPrice - adjustedPrice)} due to time-based pricing.</p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
               </div>
 
               <div>
@@ -1671,84 +2028,142 @@ const StudentDashboard = ({ darkMode }) => {
           <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>You don't have any billing history.</p>
         ) : (
           <div className="space-y-4">
-            {/* Show only the most recent billing transaction */}
-            {billingHistory.slice(0, 1).map((bill, index) => (
-              <div key={index} className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}>
-                <div className="flex flex-col md:flex-row justify-between">
-                  <div>
-                    <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>
-                      {bill.date}
-                    </span>
-                    <h3 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {bill.description}
-                    </h3>
+            {/* Display all permit switch related transactions and show the most recent transaction for other types */}
+            {billingHistory
+              .filter((bill, index, self) => {
+                // Check if this is part of a permit switch transaction
+                const isPermitSwitch = bill.description.includes('Permit Switch') ||
+                  (bill.description.includes('Permit') &&
+                    self.some(b => b.description.includes('Refund') &&
+                      b.description.includes('Permit Switch')));
+
+                // If it's part of a permit switch, include it
+                // Otherwise, only include it if it's the most recent transaction
+                return isPermitSwitch || index === 0;
+              })
+              .slice(0, 5) // Limit to the 5 most recent/relevant transactions
+              .map((bill, index) => (
+                <div key={index} className={`p-4 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-100'}`}>
+                  <div className="flex flex-col md:flex-row justify-between">
+                    <div>
+                      <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>
+                        {bill.date}
+                      </span>
+                      <h3 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                        {bill.description}
+                      </h3>
+                      {bill.priceInfo && (
+                        <p className="text-xs text-green-500">{bill.priceInfo}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center mt-2 md:mt-0">
+                      <span className={`font-bold text-lg mr-4 ${bill.description.includes('Refund')
+                        ? 'text-green-600'
+                        : darkMode ? 'text-white' : 'text-gray-900'
+                        }`}>
+                        {bill.amountDisplay}
+                        {bill.adjustedAmount !== undefined && bill.adjustedAmount !== bill.amount && (
+                          <span className="ml-2 text-sm line-through text-gray-500">
+                            {formatCurrency(bill.amount)}
+                          </span>
+                        )}
+                      </span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(bill.status)}`}>
+                        {bill.status}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center mt-2 md:mt-0">
-                    <span className={`font-bold text-lg mr-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {bill.amount}
-                    </span>
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(bill.status)}`}>
-                      {bill.status}
-                    </span>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      onClick={() => handleViewBillingDetails(bill)}
+                      className={`text-sm ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
+                    >
+                      View Details
+                    </button>
                   </div>
                 </div>
-                <div className="mt-3 flex justify-end">
-                  <button
-                    onClick={() => handleViewBillingDetails(bill)}
-                    className={`text-sm ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
-                  >
-                    View Details
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))}
           </div>
         )}
       </div>
 
-      {/* Add the billing details modal and handler function */}
+      {/* Billing Details Modal */}
       {showBillingDetailsModal && selectedBill && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className={`relative w-full max-w-2xl ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'} rounded-lg shadow-xl p-6`}>
+        <div className={`fixed inset-0 z-50 flex items-center justify-center ${darkMode ? 'bg-gray-900 bg-opacity-50' : 'bg-black bg-opacity-25'}`}>
+          <div className={`relative p-6 rounded-lg shadow-xl w-full max-w-md mx-auto ${darkMode ? 'bg-gray-800 text-white' : 'bg-white'}`}>
             <button
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-              onClick={closeAllModals}
+              onClick={() => {
+                setShowBillingDetailsModal(false);
+                setSelectedBill(null);
+              }}
+              className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+              aria-label="Close"
             >
-              <FaTimes size={20} />
+              <FaTimes className="h-5 w-5" />
             </button>
 
-            <h3 className="text-xl font-semibold mb-4">Billing Details</h3>
+            <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Billing Details</h2>
 
-            <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+            <div className="space-y-3">
               <div>
                 <p className="text-sm font-medium mb-1">Date</p>
-                <p className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{selectedBill.date}</p>
+                <p className={darkMode ? 'text-white' : 'text-gray-900'}>
+                  {new Date(selectedBill.date).toLocaleDateString()}
+                </p>
               </div>
 
               <div>
                 <p className="text-sm font-medium mb-1">Description</p>
-                <p className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{selectedBill.description}</p>
+                <p className={darkMode ? 'text-white' : 'text-gray-900'}>{selectedBill.description}</p>
               </div>
 
               <div>
                 <p className="text-sm font-medium mb-1">Amount</p>
-                <p className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{selectedBill.amount}</p>
+                <p className={`${darkMode ? 'text-white' : 'text-gray-900'} font-bold`}>
+                  {typeof selectedBill.amount === 'number' && !isNaN(selectedBill.amount)
+                    ? formatCurrency(selectedBill.amount)
+                    : '$0.00'}
+                </p>
+
+                {/* Show adjusted vs original amount if they differ */}
+                {selectedBill.adjustedAmount !== undefined &&
+                  selectedBill.originalAmount !== undefined &&
+                  selectedBill.adjustedAmount !== selectedBill.originalAmount && (
+                    <p className="text-sm text-gray-500 mt-1">
+                      <span className="line-through">{formatCurrency(selectedBill.originalAmount)}</span>
+                      <span className="ml-2 text-green-500">
+                        {selectedBill.adjustedAmount < selectedBill.originalAmount
+                          ? '(Discounted for metered lot time restrictions)'
+                          : ''}
+                      </span>
+                    </p>
+                  )}
               </div>
 
               <div>
                 <p className="text-sm font-medium mb-1">Status</p>
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(selectedBill.status)}`}>
+                <p className={`${selectedBill.status.toLowerCase() === 'paid' ? 'text-green-500' : 'text-yellow-500'}`}>
                   {selectedBill.status}
-                </span>
+                </p>
               </div>
             </div>
 
-            <div className="flex justify-end space-x-3">
+            <div className="mt-6 flex justify-end space-x-3">
               <button
-                className={`px-4 py-2 rounded-lg font-medium text-sm ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
-                onClick={closeAllModals}
+                className={`px-4 py-2 rounded-lg border ${darkMode ? 'border-gray-600 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}
+                onClick={() => {
+                  setShowBillingDetailsModal(false);
+                  setSelectedBill(null);
+                }}
               >
                 Close
+              </button>
+              <button
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center"
+                onClick={() => handleDownloadReceipt(selectedBill)}
+              >
+                <FaFileDownload className="mr-2" />
+                Download PDF
               </button>
             </div>
           </div>

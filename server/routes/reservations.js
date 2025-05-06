@@ -1,3 +1,15 @@
+/**
+ * Reservation Routes - Handles all reservation-related API endpoints
+ * 
+ * This file contains all API endpoints for managing parking reservations, including:
+ * - Creating new reservations
+ * - Retrieving user reservations
+ * - Canceling reservations
+ * - Extending reservations
+ * - Processing payments and refunds
+ * - Managing permit-related functionality for reservations
+ */
+
 const express = require('express');
 const router = express.Router();
 const Reservation = require('../models/reservation');
@@ -13,7 +25,15 @@ const { updateExpiredReservations } = require('../utils/reservationUtils');
 const NotificationHelper = require('../utils/notificationHelper');
 const emailService = require('../services/emailService');
 
-// Helper function to generate a unique reservation ID
+/**
+ * Helper function to generate a unique reservation ID
+ * 
+ * Format: RES-YYYYMMDD-XXXX where:
+ * - YYYYMMDD is the current date
+ * - XXXX is a random 4-digit number
+ * 
+ * @returns {string} A unique reservation ID
+ */
 const generateReservationId = () => {
     // Generate a reservation ID in format: RES-YYYYMMDD-XXXX
     const date = new Date();
@@ -28,785 +48,18 @@ const generateReservationId = () => {
     return `RES-${dateStr}-${randomSuffix}`;
 };
 
-// POST /api/reservations - Create a new reservation
-router.post('/', verifyToken, async (req, res) => {
-    try {
-        const { lotId, startTime, endTime, permitType, vehicleInfo, paymentInfo } = req.body;
-
-        console.log('Creating reservation with data:', { lotId, startTime, endTime, permitType, vehicleInfo });
-
-        // Get user information
-        const user = await User.findById(req.user.userId);
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-
-        // Validate lot exists
-        const lot = await Lot.findById(lotId);
-        if (!lot) {
-            return res.status(404).json({ message: 'Parking lot not found' });
-        }
-
-        // Check if lot has available spaces
-        if (lot.availableSpaces <= 0) {
-            return res.status(400).json({ message: 'No available spaces in this lot' });
-        }
-
-        // Check if permit type is valid for this lot
-        if (permitType && lot.permitTypes && lot.permitTypes.length > 0) {
-            if (!lot.permitTypes.includes(permitType)) {
-                return res.status(400).json({ message: 'Selected permit type is not valid for this lot' });
-            }
-        }
-
-        // Check if user already has an active reservation
-        const existingActiveReservations = await Reservation.find({
-            user: req.user.userId,
-            status: { $in: ['active', 'pending'] },
-            endTime: { $gt: new Date() }
-        });
-
-        if (existingActiveReservations.length > 0) {
-            console.log(`User ${req.user.userId} attempted to create a new reservation while having ${existingActiveReservations.length} active reservations.`);
-            console.log('Active reservation details:', existingActiveReservations.map(r => ({
-                id: r.reservationId,
-                lot: r.lotId,
-                status: r.status,
-                startTime: r.startTime,
-                endTime: r.endTime
-            })));
-            return res.status(400).json({
-                message: 'You already have an active reservation. Please complete or cancel your existing reservation before creating a new one.'
-            });
-        }
-
-        // Calculate total price based on duration for hourly lots
-        let totalPrice = 0;
-        if (lot.rateType === 'Hourly') {
-            const start = new Date(startTime);
-            const end = new Date(endTime);
-
-            // Check if the reservation extends past 7PM (19:00)
-            const sevenPM = new Date(startTime);
-            sevenPM.setHours(19, 0, 0, 0); // Set to 7:00 PM of the same day
-
-            let billableDurationHours;
-
-            if (start.getHours() >= 19) {
-                // If starting after 7PM, no charge for metered parking
-                billableDurationHours = 0;
-                console.log('Reservation starts after 7PM - free metered parking');
-            } else if (end > sevenPM) {
-                // If ending after 7PM, only charge until 7PM
-                billableDurationHours = (sevenPM - start) / (1000 * 60 * 60);
-                console.log(`Reservation extends past 7PM - charging only until 7PM: ${billableDurationHours} hours`);
-            } else {
-                // If entirely before 7PM, charge the full duration
-                billableDurationHours = (end - start) / (1000 * 60 * 60);
-                console.log(`Reservation entirely before 7PM - charging full duration: ${billableDurationHours} hours`);
-            }
-
-            totalPrice = billableDurationHours * lot.hourlyRate;
-        } else if (lot.rateType === 'Permit-based') {
-            // For permit-based lots, check if it's after 4PM (free after 4PM)
-            const start = new Date(startTime);
-
-            if (start.getHours() >= 16) {
-                // If starting after 4PM, permit-based lots are free
-                totalPrice = 0;
-                console.log('Reservation starts after 4PM - free permit-based parking');
-            } else {
-                // Otherwise, use the semester rate
-                totalPrice = lot.semesterRate || 0;
-                console.log(`Reservation before 4PM - charging semester rate: $${totalPrice}`);
-            }
-        }
-
-        // Check if the reservation starts after 4PM for free access with permit
-        const isFreeAfter4PM = () => {
-            const start = new Date(startTime);
-            return start.getHours() >= 16; // 4PM = 16:00
-        };
-
-        // Check if user already has an active permit for this permit type
-        let existingPermit = null;
-        let permitToCancel = null;
-        let freeReservation = false;
-        let freeAfter4PM = false;
-        let refundIssued = false;
-        let refundAmount = 0;
-
-        // Find existing permits for this user that are active and paid
-        const userPermits = await Permit.find({
-            userId: user._id,
-            status: 'active',
-            paymentStatus: { $in: ['paid', 'completed'] }
-        });
-
-        // Filter valid permits using our static method
-        const validUserPermits = userPermits.filter(permit => Permit.isValidPermit(permit));
-
-        // If user has any valid permits and the reservation is after 4PM,
-        // it's free for lots with permit types
-        if (validUserPermits.length > 0 && isFreeAfter4PM() &&
-            lot.permitTypes && lot.permitTypes.length > 0) {
-            console.log('Reservation after 4PM with valid permit - free access granted');
-            freeReservation = true;
-            freeAfter4PM = true;
-            totalPrice = 0;
-        }
-        // Otherwise, check for existing permit as normal
-        else if (lot.rateType === 'Permit-based') {
-            if (validUserPermits.length > 0) {
-                console.log(`User has ${validUserPermits.length} valid permits. Checking compatibility...`);
-
-                // First, check if user has a permit for this exact lot
-                existingPermit = validUserPermits.find(p =>
-                    p.lots.some(l => l.lotId.toString() === lotId.toString())
-                );
-
-                if (existingPermit) {
-                    // User already has a permit for this exact lot - no need to charge
-                    console.log('User has an existing permit for this lot - no charge needed');
-                    freeReservation = true;
-                    totalPrice = 0;
-                } else {
-                    // Check if user has a permit with the same permit type but for a different lot
-                    const sameTypePermit = validUserPermits.find(p =>
-                        p.permitType === (permitType || 'Standard') &&
-                        !p.lots.some(l => l.lotId.toString() === lotId.toString())
-                    );
-
-                    if (sameTypePermit) {
-                        // User is switching lots but has the same permit type
-                        console.log('User is switching lots with same permit type - updating existing permit');
-                        permitToCancel = sameTypePermit;
-                        freeReservation = true;
-                        totalPrice = 0;
-                    } else {
-                        // Check if user has a permit with a different permit type
-                        // In this case, we'll refund the old permit and charge for the new one
-                        const differentTypePermit = validUserPermits.find(p =>
-                            p.permitType !== (permitType || 'Standard')
-                        );
-
-                        if (differentTypePermit && paymentInfo && paymentInfo.paymentMethodId) {
-                            console.log('User is switching to a different permit type - refunding old permit');
-                            permitToCancel = differentTypePermit;
-
-                            // Attempt to refund the old permit
-                            if (differentTypePermit.paymentId && differentTypePermit.price > 0) {
-                                try {
-                                    // Process refund via Stripe
-                                    const refund = await stripe.refunds.create({
-                                        payment_intent: differentTypePermit.paymentId,
-                                        amount: Math.round(differentTypePermit.price * 100) // Convert to cents for Stripe
-                                    });
-
-                                    console.log('Permit refund processed successfully:', refund);
-
-                                    // Update old permit's payment status
-                                    differentTypePermit.paymentStatus = 'refunded';
-                                    differentTypePermit.refundId = refund.id;
-                                    differentTypePermit.refundedAt = new Date();
-                                    differentTypePermit.status = 'inactive';
-                                    differentTypePermit.endDate = new Date(); // End immediately
-                                    await differentTypePermit.save();
-
-                                    console.log(`Successfully deactivated old permit ${differentTypePermit._id} of type ${differentTypePermit.permitType}`);
-
-                                    refundIssued = true;
-                                    refundAmount = differentTypePermit.price;
-
-                                    // Update revenue statistics to reflect the permit refund
-                                    try {
-                                        await RevenueStatistics.recordPermitRefund(differentTypePermit.price);
-                                        console.log(`Recorded permit refund of $${differentTypePermit.price} in revenue statistics`);
-                                    } catch (statsError) {
-                                        console.error('Failed to update revenue statistics for permit refund:', statsError);
-                                    }
-
-                                    // We still need to charge for the new permit
-                                    freeReservation = false;
-
-                                    // Add the following code for a dedicated refund email notification
-                                    try {
-                                        // Send a specific refund notification email to the user
-                                        const emailResult = await emailService.sendReservationConfirmation(
-                                            user.email,
-                                            `${user.firstName} ${user.lastName}`,
-                                            {
-                                                _id: differentTypePermit._id,
-                                                id: differentTypePermit.permitNumber,
-                                                lotId: { name: differentTypePermit.lots.map(l => l.lotName).join(', ') },
-                                                startTime: differentTypePermit.startDate,
-                                                endTime: differentTypePermit.endDate,
-                                                status: 'Permit Refunded',
-                                                totalPrice: differentTypePermit.price,
-                                                refundInfo: {
-                                                    refundId: refund.id,
-                                                    amount: differentTypePermit.price,
-                                                    status: refund.status
-                                                },
-                                                permitDetails: {
-                                                    permitName: differentTypePermit.permitName,
-                                                    permitType: differentTypePermit.permitType,
-                                                    message: `Your ${differentTypePermit.permitName} has been refunded for $${differentTypePermit.price.toFixed(2)} because you are switching to a new permit type.`
-                                                }
-                                            },
-                                            process.env.CLIENT_BASE_URL || 'http://localhost:5173'
-                                        );
-                                        console.log('Permit refund email sent:', emailResult.messageId);
-                                    } catch (emailError) {
-                                        console.error('Failed to send permit refund email:', emailError);
-                                        // Continue even if email sending fails
-                                    }
-                                } catch (refundError) {
-                                    console.error('Permit refund error:', refundError);
-
-                                    // Even if refund fails, still deactivate the old permit
-                                    try {
-                                        differentTypePermit.status = 'inactive';
-                                        differentTypePermit.endDate = new Date(); // End immediately
-
-                                        // Even if refund fails, still mark as refunded for billing history
-                                        differentTypePermit.paymentStatus = 'refunded';
-                                        differentTypePermit.refundedAt = new Date();
-
-                                        await differentTypePermit.save();
-                                        console.log(`Successfully deactivated old permit ${differentTypePermit._id} despite refund failure`);
-
-                                        // Still track as refunded for notification purposes
-                                        refundIssued = true;
-                                        refundAmount = differentTypePermit.price;
-                                    } catch (deactivateError) {
-                                        console.error('Error deactivating old permit after refund failure:', deactivateError);
-                                    }
-
-                                    // Continue even if refund fails, but still charge for new permit
-                                    freeReservation = false;
-                                }
-                            } else {
-                                // No payment ID or zero-price permit - just deactivate without refund
-                                try {
-                                    differentTypePermit.status = 'inactive';
-                                    differentTypePermit.endDate = new Date(); // End immediately
-
-                                    // Even for free permits, we need to set refund fields for billing history
-                                    differentTypePermit.paymentStatus = 'refunded';
-                                    differentTypePermit.refundedAt = new Date();
-
-                                    await differentTypePermit.save();
-                                    console.log(`Successfully deactivated old free permit ${differentTypePermit._id}`);
-
-                                    // For user notification consistency
-                                    refundIssued = true;
-                                    refundAmount = 0;
-                                } catch (deactivateError) {
-                                    console.error('Error deactivating old free permit:', deactivateError);
-                                }
-                                freeReservation = false;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Create or find car information
-        let car;
-        if (typeof vehicleInfo === 'string' || (vehicleInfo.carId && typeof vehicleInfo.carId === 'string')) {
-            // If vehicleInfo is already a Car document ID or contains a carId property
-            const carId = typeof vehicleInfo === 'string' ? vehicleInfo : vehicleInfo.carId;
-            car = await Car.findById(carId);
-            if (!car) {
-                return res.status(400).json({ message: 'Invalid vehicle information' });
-            }
-
-            // Verify the car belongs to the user
-            if (car.userId && car.userId.toString() !== req.user.userId) {
-                return res.status(403).json({ message: 'You do not have permission to use this vehicle' });
-            }
-        } else {
-            // First check if a car with the same license plate already exists for this user
-            let existingCar = null;
-            if (vehicleInfo.plateNumber) {
-                existingCar = await Car.findOne({
-                    userId: req.user.userId,
-                    plateNumber: vehicleInfo.plateNumber.toUpperCase(),
-                    stateProv: vehicleInfo.state || vehicleInfo.stateProv
-                });
-            }
-
-            if (existingCar) {
-                // Use the existing car
-                car = existingCar;
-                console.log(`Using existing car with plate ${car.plateNumber} for reservation`);
-            } else {
-                // Create a new car document only if we didn't find a matching one
-                car = new Car({
-                    plateNumber: vehicleInfo.plateNumber,
-                    stateProv: vehicleInfo.state || vehicleInfo.stateProv,
-                    make: vehicleInfo.make,
-                    model: vehicleInfo.model,
-                    color: vehicleInfo.color,
-                    bodyType: vehicleInfo.bodyType,
-                    year: vehicleInfo.year,
-                    userId: req.user.userId,
-                    isPrimary: vehicleInfo.saveAsPrimary || false
-                });
-                await car.save();
-                console.log(`Created new car with plate ${car.plateNumber} for reservation`);
-
-                // If this should be saved as primary car, update any existing primary cars
-                if (vehicleInfo.saveAsPrimary) {
-                    await Car.updateMany(
-                        { userId: req.user.userId, _id: { $ne: car._id }, isPrimary: true },
-                        { $set: { isPrimary: false } }
-                    );
-                }
-            }
-        }
-
-        // Process payment with Stripe (only if payment is needed)
-        let paymentStatus = freeReservation ? 'completed' : 'pending';
-        let stripePaymentIntentId = null;
-        let stripePaymentMethodId = null;
-        let stripeReceiptUrl = null;
-
-        if (paymentInfo && paymentInfo.paymentMethodId && totalPrice > 0 && !freeReservation) {
-            try {
-                // Get user to check for customer ID
-                const currentUser = await User.findById(req.user.userId);
-                if (!currentUser) {
-                    return res.status(404).json({ message: 'User not found' });
-                }
-
-                console.log('Processing payment with method:', {
-                    paymentMethodId: paymentInfo.paymentMethodId,
-                    userStripeCustomerId: currentUser.stripeCustomerId
-                });
-
-                // Check for customer ID and handle payment method attachment
-                let stripeCustomerId = currentUser.stripeCustomerId;
-                let paymentMethodBelongsToCustomer = false;
-
-                if (stripeCustomerId) {
-                    // Check if payment method belongs to this customer
-                    try {
-                        const paymentMethods = await stripe.paymentMethods.list({
-                            customer: stripeCustomerId,
-                            type: 'card',
-                        });
-
-                        paymentMethodBelongsToCustomer = paymentMethods.data.some(pm => pm.id === paymentInfo.paymentMethodId);
-                        console.log(`Payment method ${paymentInfo.paymentMethodId} belongs to customer? ${paymentMethodBelongsToCustomer}`);
-                    } catch (listError) {
-                        console.error('Error checking payment methods:', listError);
-                    }
-
-                    if (!paymentMethodBelongsToCustomer) {
-                        // Attach payment method to customer
-                        try {
-                            await stripe.paymentMethods.attach(paymentInfo.paymentMethodId, {
-                                customer: stripeCustomerId,
-                            });
-                            console.log('Payment method attached to customer');
-                        } catch (attachError) {
-                            console.error('Error attaching payment method:', attachError);
-                        }
-                    }
-                } else {
-                    // Create a customer if the user doesn't have one
-                    try {
-                        const customer = await stripe.customers.create({
-                            email: currentUser.email,
-                            name: `${currentUser.firstName} ${currentUser.lastName}`,
-                            metadata: {
-                                userId: currentUser._id.toString()
-                            }
-                        });
-
-                        stripeCustomerId = customer.id;
-                        // Update user with customer ID
-                        currentUser.stripeCustomerId = stripeCustomerId;
-                        await currentUser.save();
-                        console.log('Created new Stripe customer:', stripeCustomerId);
-
-                        // Attach payment method to new customer
-                        await stripe.paymentMethods.attach(paymentInfo.paymentMethodId, {
-                            customer: stripeCustomerId,
-                        });
-                        console.log('Payment method attached to new customer');
-                    } catch (customerError) {
-                        console.error('Error creating customer:', customerError);
-                        return res.status(400).json({
-                            message: 'Payment processing failed - unable to create customer',
-                            error: customerError.message
-                        });
-                    }
-                }
-
-                // Create payment intent with Stripe - always include customer ID
-                const paymentOptions = {
-                    amount: Math.round(totalPrice * 100), // Stripe uses cents
-                    currency: 'usd',
-                    customer: stripeCustomerId, // Include customer ID with payment method
-                    payment_method: paymentInfo.paymentMethodId,
-                    confirm: true,
-                    description: `Parking reservation at ${lot.name}`,
-                    metadata: {
-                        lotId: lotId.toString(),
-                        permitType: permitType || 'N/A',
-                        startTime: new Date(startTime).toISOString(),
-                        endTime: new Date(endTime).toISOString()
-                    },
-                    automatic_payment_methods: {
-                        enabled: true,
-                        allow_redirects: 'never'
-                    }
-                };
-
-                console.log('Creating payment intent with options:', JSON.stringify(paymentOptions));
-                const paymentIntent = await stripe.paymentIntents.create(paymentOptions);
-
-                // Set the payment fields
-                paymentStatus = paymentIntent.status === 'succeeded' ? 'completed' : 'pending';
-                stripePaymentIntentId = paymentIntent.id;
-                stripePaymentMethodId = paymentInfo.paymentMethodId;
-                stripeReceiptUrl = paymentIntent.charges?.data[0]?.receipt_url || null;
-
-                console.log('Stripe payment successful:', stripePaymentIntentId);
-
-                // Record revenue statistics for metered/hourly parking
-                if (paymentStatus === 'completed' && totalPrice > 0) {
-                    try {
-                        // For hourly lots, record as metered revenue
-                        if (lot.rateType === 'Hourly') {
-                            await RevenueStatistics.recordMeteredPurchase(totalPrice);
-                            console.log(`Recorded revenue for metered parking purchase: $${totalPrice}`);
-                        }
-                        // If we have a specific flag for metered parking that isn't captured by lot.rateType
-                        else if (lot.isMetered || lot.meteredParking) {
-                            await RevenueStatistics.recordMeteredPurchase(totalPrice);
-                            console.log(`Recorded revenue for special metered parking purchase: $${totalPrice}`);
-                        }
-                    } catch (revenueError) {
-                        console.error('Failed to record metered revenue statistics:', revenueError);
-                        // Continue processing even if revenue recording fails
-                    }
-                }
-            } catch (stripeError) {
-                console.error('Stripe payment failed:', stripeError);
-                return res.status(400).json({
-                    message: 'Payment processing failed',
-                    error: stripeError.message
-                });
-            }
-        }
-
-        // Generate a unique reservation ID
-        const reservationId = generateReservationId();
-
-        // Determine the correct reservation status
-        // Free reservations and zero-cost reservations should be active immediately
-        const reservationStatus = (freeReservation || totalPrice === 0) ? 'active' : (paymentStatus === 'completed' ? 'active' : 'pending');
-
-        // Create the reservation with the car reference
-        const reservation = new Reservation({
-            reservationId,
-            user: req.user.userId,
-            lotId,
-            startTime,
-            endTime,
-            permitType,
-            vehicleInfo: car._id, // Use the car document ID
-            paymentStatus,
-            stripePaymentIntentId,
-            stripePaymentMethodId,
-            stripeReceiptUrl,
-            totalPrice,
-            status: reservationStatus,
-            usedExistingPermit: freeReservation
-        });
-
-        // Save the reservation
-        console.log('Attempting to save reservation...', {
-            userId: req.user.userId,
-            lotId,
-            permitType,
-            vehicleId: car._id,
-            totalPrice,
-            freeReservation
-        });
-        const savedReservation = await reservation.save();
-        console.log('Reservation saved successfully:', savedReservation._id);
-
-        // Update the lot's available spaces
-        lot.availableSpaces -= 1;
-        await lot.save();
-        console.log('Updated lot available spaces:', lot.availableSpaces);
-
-        // If we're cancelling an existing permit (switching lots)
-        let cancelledPermitId = null;
-        if (permitToCancel) {
-            try {
-                console.log(`Cancelling existing permit ${permitToCancel._id} for lot switch`);
-                permitToCancel.status = 'inactive';
-                permitToCancel.endDate = new Date(); // End immediately
-                await permitToCancel.save();
-                cancelledPermitId = permitToCancel._id;
-            } catch (error) {
-                console.error('Error cancelling existing permit:', error);
-                // Continue even if cancellation fails
-            }
-        }
-
-        // For permit-based reservations, create a permit if user doesn't have one
-        let newPermit = null;
-        if (lot.rateType === 'Permit-based' && !existingPermit) {
-            try {
-                console.log('Creating permit for permit-based reservation');
-                let actualPermitType = permitType || 'Standard';
-
-                // Find permit type details if available
-                let permitTypeDetails = null;
-                try {
-                    // Try different ways to find the permit type
-                    const potentialPermitTypes = await PermitType.find({
-                        $or: [
-                            { name: actualPermitType },
-                            { category: actualPermitType }
-                        ]
-                    });
-
-                    // Filter to only valid (non-expired) permit types
-                    const validPermitTypes = potentialPermitTypes.filter(pt =>
-                        PermitType.isValidPermitType(pt)
-                    );
-
-                    if (validPermitTypes.length > 0) {
-                        // Sort by price (lowest first) and pick the first one
-                        permitTypeDetails = validPermitTypes.sort((a, b) => a.price - b.price)[0];
-
-                        // Check if quantity is available
-                        if (permitTypeDetails.quantity <= 0) {
-                            console.log('No permits available for type:', permitTypeDetails.name);
-                            throw new Error(`No ${permitTypeDetails.name} permits available`);
-                        }
-
-                        // Decrease the quantity
-                        permitTypeDetails.quantity -= 1;
-                        await permitTypeDetails.save();
-                        console.log('Decreased permit type quantity for:', permitTypeDetails.name);
-                    }
-                } catch (permitTypeError) {
-                    console.error('Error finding permit type:', permitTypeError);
-                }
-
-                // Generate a unique permit number
-                const permitNumber = `P-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-
-                // Create a new permit with end date 4 months from now
-                const fourMonthsFromNow = new Date();
-                fourMonthsFromNow.setMonth(fourMonthsFromNow.getMonth() + 4);
-                // Set time to end of day (23:59:59.999) to be consistent with expiration checks
-                fourMonthsFromNow.setHours(23, 59, 59, 999);
-
-                // Determine payment status - fix: 'unpaid' is not a valid enum value, using 'paid' instead
-                const permitPaymentStatus = freeReservation ? 'paid' : (paymentStatus === 'completed' ? 'paid' : 'paid');
-
-                // For free permits (price = 0), always set status to active and paymentStatus to paid
-                const permitPrice = totalPrice || 0;
-                const permitStatus = (permitPrice === 0 || paymentStatus === 'completed') ? 'active' : 'pending';
-
-                newPermit = new Permit({
-                    permitNumber,
-                    permitName: `${actualPermitType} Permit`,
-                    permitType: permitTypeDetails?.category || actualPermitType,
-                    userId: req.user.userId,
-                    userFullName: `${user.firstName} ${user.lastName}`,
-                    userEmail: user.email,
-                    lots: [{
-                        lotId: lot._id.toString(),
-                        lotName: lot.name
-                    }],
-                    startDate: new Date(),
-                    endDate: fourMonthsFromNow,
-                    status: permitStatus, // Always active for free permits
-                    price: permitPrice,
-                    paymentStatus: permitPaymentStatus,
-                    paymentId: stripePaymentIntentId || null,
-                    permitTypeId: permitTypeDetails?._id || null,
-                    replacesPermitId: cancelledPermitId
-                });
-
-                await newPermit.save();
-                console.log('Permit created:', newPermit._id);
-
-                // Deactivate all existing permits of different types 
-                // This ensures old permits don't remain active when switching types
-                if (newPermit && newPermit.permitType) {
-                    try {
-                        console.log(`Checking for permits to deactivate when creating new permit of type: ${newPermit.permitType}`);
-
-                        // Find all active permits with different types
-                        const permitsToDeactivate = await Permit.find({
-                            userId: req.user.userId,
-                            status: 'active',
-                            _id: { $ne: newPermit._id } // Exclude the newly created permit
-                        });
-
-                        // Log what we found
-                        console.log(`Found ${permitsToDeactivate.length} active permits to deactivate`);
-
-                        if (permitsToDeactivate.length > 0) {
-                            console.log('Permits to deactivate:', permitsToDeactivate.map(p => ({
-                                id: p._id,
-                                type: p.permitType,
-                                name: p.permitName,
-                                status: p.status
-                            })));
-                        }
-
-                        // Deactivate each permit
-                        for (const permit of permitsToDeactivate) {
-                            console.log(`Deactivating permit ${permit._id} of type ${permit.permitType}`);
-
-                            // Store reference to the new permit that's replacing this one
-                            permit.replacesPermitId = newPermit._id;
-
-                            // Mark as inactive
-                            permit.status = 'inactive';
-                            permit.endDate = new Date(); // End immediately
-
-                            // Set refund fields for billing history
-                            permit.paymentStatus = 'refunded';
-                            permit.refundedAt = new Date();
-
-                            await permit.save();
-                            console.log(`Successfully deactivated permit ${permit._id}`);
-
-                            // Create notification for the user about the permit change
-                            try {
-                                await NotificationHelper.createSystemNotification(
-                                    req.user.userId,
-                                    'Permit Changed',
-                                    `Your ${permit.permitName} has been replaced with a ${newPermit.permitName}.`,
-                                    'Your old permit has been deactivated and a new permit has been activated.',
-                                    '/permits'
-                                );
-                                console.log(`Sent notification about permit change to user: ${req.user.userId}`);
-                            } catch (notificationError) {
-                                console.error('Error creating permit change notification:', notificationError);
-                            }
-                        }
-                    } catch (deactivateError) {
-                        console.error('Error deactivating old permits:', deactivateError);
-                        // Continue even if deactivation fails
-                    }
-                }
-
-                // Record revenue statistics for paid permits
-                if (permitPaymentStatus === 'paid' && totalPrice > 0) {
-                    try {
-                        await RevenueStatistics.recordPermitPurchase(totalPrice);
-                        console.log(`Recorded revenue for permit purchase: $${totalPrice}`);
-                    } catch (revenueError) {
-                        console.error('Failed to record revenue statistics:', revenueError);
-                        // Continue processing even if revenue recording fails
-                    }
-                }
-            } catch (permitError) {
-                console.error('Error creating permit:', permitError);
-                // Don't fail the entire request if permit creation fails
-            }
-        }
-
-        // Create a notification for the user about their new reservation
-        try {
-            await NotificationHelper.createSystemNotification(
-                req.user.userId,
-                'New Reservation Confirmed',
-                `Your reservation at ${lot.name} has been confirmed from ${new Date(startTime).toLocaleString()} to ${new Date(endTime).toLocaleString()}.`,
-                '/dashboard'
-            );
-            console.log('Reservation creation notification sent to user:', req.user.userId);
-
-            // If a permit refund was issued, create a notification for that too
-            if (refundIssued) {
-                await NotificationHelper.createSystemNotification(
-                    req.user.userId,
-                    'Permit Refund Issued',
-                    `A refund of $${refundAmount.toFixed(2)} has been issued for your previous permit. Your new permit is now active.`,
-                    '/permits'
-                );
-                console.log('Permit refund notification sent to user:', req.user.userId);
-            }
-
-            // Send email confirmation for the reservation
-            try {
-                const emailResult = await emailService.sendReservationConfirmation(
-                    user.email,
-                    `${user.firstName} ${user.lastName}`,
-                    {
-                        _id: savedReservation._id,
-                        id: savedReservation.reservationId,
-                        lotId: { name: lot.name },
-                        startTime: startTime,
-                        endTime: endTime,
-                        status: savedReservation.status,
-                        totalPrice: totalPrice,
-                        freeReservation: freeReservation,
-                        permitToCancel: permitToCancel ? true : false,
-                        freeAfter4PM: freeAfter4PM
-                    },
-                    process.env.CLIENT_BASE_URL || 'http://localhost:5173'
-                );
-                console.log('Reservation confirmation email sent:', emailResult.messageId);
-            } catch (emailError) {
-                console.error('Failed to send reservation confirmation email:', emailError);
-                // Continue even if email sending fails
-            }
-        } catch (notificationError) {
-            console.error('Error creating reservation notification:', notificationError);
-            // Continue even if notification creation fails
-        }
-
-        // Create the appropriate success message
-        let successMessage = '';
-        if (freeAfter4PM) {
-            successMessage = 'Reservation created successfully - free access granted after 4PM with permit';
-        } else if (freeReservation) {
-            successMessage = 'Reservation created successfully using existing permit';
-        } else if (refundIssued) {
-            successMessage = 'Reservation created successfully. Your previous permit has been refunded and replaced with the new permit type.';
-        } else {
-            successMessage = 'Reservation created successfully';
-        }
-
-        res.status(201).json({
-            success: true,
-            message: successMessage,
-            data: {
-                reservation: savedReservation,
-                paymentStatus: stripePaymentIntentId ? 'completed' : (freeReservation ? 'completed' : 'pending'),
-                usedExistingPermit: freeReservation,
-                freeAfter4PM: freeAfter4PM,
-                newPermitCreated: newPermit ? true : false,
-                existingPermitId: existingPermit ? existingPermit._id : null,
-                cancelledPermitId: cancelledPermitId,
-                refundIssued: refundIssued,
-                refundAmount: refundIssued ? refundAmount : 0
-            }
-        });
-    } catch (error) {
-        console.error('Error creating reservation:', error);
-        res.status(500).json({ message: 'An error occurred while creating the reservation', error: error.message });
-    }
-});
-
-// GET /api/reservations - Get all reservations for the current user
+/**
+ * @route GET /api/reservations
+ * @desc Get all reservations for the current user
+ * @access Private - Requires authentication
+ * 
+ * Query parameters:
+ * - status: Filter by reservation status
+ * - startDate: Filter by reservations after this date
+ * - endDate: Filter by reservations before this date
+ * - showPastOnly: If true, show only completed or cancelled reservations
+ * - search: Search by lot name, address, permit type, or vehicle info
+ */
 router.get('/', verifyToken, async (req, res) => {
     try {
         // First update any expired reservations in the database
@@ -891,7 +144,14 @@ router.get('/', verifyToken, async (req, res) => {
     }
 });
 
-// GET /api/reservations/:id - Get a specific reservation
+/**
+ * @route GET /api/reservations/:id
+ * @desc Get a specific reservation by ID
+ * @access Private - Requires authentication
+ * 
+ * Path parameters:
+ * - id: The reservation ID to retrieve
+ */
 router.get('/:id', verifyToken, async (req, res) => {
     try {
         // First update any expired reservations in the database
@@ -925,7 +185,17 @@ router.get('/:id', verifyToken, async (req, res) => {
     }
 });
 
-// POST /api/reservations/:id/cancel - Cancel a reservation
+/**
+ * @route POST /api/reservations/:id/cancel
+ * @desc Cancel a reservation and process refund if applicable
+ * @access Private - Requires authentication
+ * 
+ * Path parameters:
+ * - id: The reservation ID to cancel
+ * 
+ * Request body:
+ * - reason: Optional reason for cancellation
+ */
 router.post('/:id/cancel', verifyToken, async (req, res) => {
     try {
         const reservationId = req.params.id;
@@ -934,9 +204,7 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
         const reservation = await Reservation.findOne({
             reservationId: reservationId,
             user: req.user.userId
-        })
-            .populate('lotId')
-            .populate('vehicleInfo');
+        }).populate('lotId');
 
         if (!reservation) {
             return res.status(404).json({
@@ -945,7 +213,7 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             });
         }
 
-        // Check if reservation already cancelled
+        // Check if reservation is already cancelled or completed
         if (reservation.status === 'cancelled') {
             return res.status(400).json({
                 success: false,
@@ -953,7 +221,6 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             });
         }
 
-        // Check if reservation already completed
         if (reservation.status === 'completed') {
             return res.status(400).json({
                 success: false,
@@ -961,72 +228,151 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             });
         }
 
-        // Determine if reservation created a new permit
-        const permitCreated = await Permit.findOne({
-            userId: req.user.userId,
-            paymentId: reservation.stripePaymentIntentId
-        });
+        // Get lot information for determining if it's metered/permit-based
+        const lot = reservation.lotId ? await Lot.findById(reservation.lotId) : null;
+        const isPermitBasedLot = lot && lot.rateType === 'Permit-based';
+        const isMeteredLot = lot && lot.features && lot.features.isMetered;
 
-        // Only refund if there was no permit created or if this was specifically a reservation-only payment
-        let amountToRefund = 0;
-        const paymentIntentId = reservation.stripePaymentIntentId;
+        // For metered lots, calculate the actual billable amount based on time constraints
+        let adjustedPrice = reservation.totalPrice;
 
-        // If a permit was created with this payment, don't issue a refund
-        // Permits are non-refundable one-time purchases
-        if (!permitCreated && paymentIntentId && reservation.paymentStatus === 'completed' && reservation.totalPrice > 0) {
-            amountToRefund = reservation.totalPrice;
+        if (isMeteredLot && lot) {
+            // Check if it's a weekend (0 = Sunday, 6 = Saturday)
+            const dayOfWeek = new Date(reservation.startTime).getDay();
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+            if (isWeekend) {
+                // Free on weekends
+                console.log("Weekend reservation - no charge for metered lot");
+                adjustedPrice = 0;
+            } else {
+                // Calculate billable hours (only between 7am and 7pm)
+                const startHour = new Date(reservation.startTime).getHours();
+                const startMinute = new Date(reservation.startTime).getMinutes();
+                const endHour = new Date(reservation.endTime).getHours();
+                const endMinute = new Date(reservation.endTime).getMinutes();
+
+                // Convert to decimal hours for more accurate calculation
+                const startTimeDecimal = startHour + (startMinute / 60);
+                const endTimeDecimal = endHour + (endMinute / 60);
+
+                // Define billable window (7AM to 7PM = 7.0 to 19.0)
+                const billableStartHour = 7.0;
+                const billableEndHour = 19.0;
+
+                // Calculate overlap with billable hours
+                const overlapStart = Math.max(startTimeDecimal, billableStartHour);
+                const overlapEnd = Math.min(endTimeDecimal, billableEndHour);
+                const billableHours = Math.max(0, overlapEnd - overlapStart);
+
+                // Use hourlyRate with a default of $2.50 if not defined
+                const hourlyRate = lot.hourlyRate || 2.50;
+                adjustedPrice = billableHours * hourlyRate;
+
+                // Ensure the price is a valid number
+                if (isNaN(adjustedPrice) || adjustedPrice < 0) {
+                    console.log("Warning: Invalid price calculation result. Using default pricing.");
+                    adjustedPrice = 0;
+                }
+
+                console.log(`Metered lot reservation: ${billableHours.toFixed(1)} billable hours (7am-7pm only) at $${hourlyRate}/hour = $${adjustedPrice.toFixed(2)}`);
+            }
         }
 
-        // If payment was made, process refund (only for non-permit payments)
+        // Log reservation details to help with debugging
+        console.log('Cancelling reservation:', {
+            id: reservation.reservationId,
+            originalPrice: reservation.totalPrice,
+            adjustedPrice: adjustedPrice,
+            status: reservation.status,
+            isFreeReservation: reservation.isFreeReservation,
+            freeReason: reservation.freeReason,
+            lotType: lot?.rateType,
+            isMeteredLot,
+            isPermitBasedLot,
+            hasPaymentId: !!reservation.stripePaymentIntentId
+        });
+
+        // Process refund if applicable
         let refundResult = null;
-        if (paymentIntentId && amountToRefund > 0) {
-            try {
-                // Process refund via Stripe
-                const refund = await stripe.refunds.create({
-                    payment_intent: paymentIntentId,
-                    amount: Math.round(amountToRefund * 100) // Convert to cents for Stripe
-                });
+        if (reservation.stripePaymentIntentId && reservation.totalPrice > 0) {
+            // First check: is this a permit-based lot (meaning the payment was for a permit, not just a reservation)
 
-                console.log('Refund processed successfully:', refund);
+            // Second check: is there a permit linked to this payment
+            const permitLinkedToPayment = await Permit.findOne({
+                userId: req.user.userId,
+                paymentId: reservation.stripePaymentIntentId
+            });
 
-                // Update payment status
-                reservation.paymentStatus = 'refunded';
-
-                // Add refund information to the reservation
-                reservation.refundInfo = {
-                    refundId: refund.id,
-                    amount: refund.amount / 100, // Convert from cents
-                    status: refund.status,
-                    refundedAt: new Date()
-                };
-
-                refundResult = {
-                    success: true,
-                    refundId: refund.id,
-                    amount: refund.amount / 100,
-                    status: refund.status
-                };
-
-                // If this reservation contributed to revenue statistics, update those as well
+            // Do not refund if this was a permit purchase (either permit-based lot or explicit permit link)
+            if (!isPermitBasedLot && !permitLinkedToPayment) {
                 try {
-                    // Update revenue statistics to reflect the refund
-                    if (reservation.lotId && reservation.lotId.rateType === 'Hourly') {
-                        // For hourly/metered reservations, use recordMeteredRefund
-                        await RevenueStatistics.recordMeteredRefund(amountToRefund);
-                        console.log(`Recorded metered refund of $${amountToRefund} in revenue statistics`);
+                    // Use the adjusted price based on billable hours for metered lots
+                    const refundAmount = isMeteredLot ? adjustedPrice : reservation.totalPrice;
+
+                    // Skip refund if the amount is zero
+                    if (refundAmount <= 0) {
+                        console.log("Skipping refund because adjusted amount is $0");
+                        refundResult = {
+                            refundId: null,
+                            amount: 0,
+                            status: 'skipped',
+                            reason: 'No billable hours based on time constraints'
+                        };
                     } else {
-                        // For permit-based reservations, use recordRefund
-                        await RevenueStatistics.recordRefund(amountToRefund);
-                        console.log(`Recorded refund of $${amountToRefund} in revenue statistics`);
+                        const refund = await stripe.refunds.create({
+                            payment_intent: reservation.stripePaymentIntentId,
+                            amount: Math.round(refundAmount * 100)
+                        });
+
+                        refundResult = {
+                            refundId: refund.id,
+                            amount: refund.amount / 100,
+                            status: refund.status,
+                            originalAmount: reservation.totalPrice,
+                            adjustedAmount: adjustedPrice
+                        };
+
+                        reservation.paymentStatus = 'refunded';
+                        // Update the refundInfo field for proper billing history tracking
+                        reservation.refundInfo = {
+                            refundId: refund.id,
+                            amount: refund.amount / 100,
+                            status: refund.status,
+                            refundedAt: new Date(),
+                            originalAmount: reservation.totalPrice,
+                            adjustedAmount: adjustedPrice
+                        };
                     }
-                } catch (statsError) {
-                    console.error('Failed to update revenue statistics for refund:', statsError);
-                    // Continue even if revenue statistics update fails
+
+                    // Add specific notification for metered lot refunds
+                    if (isMeteredLot) {
+                        try {
+                            // Only send notification if there was an actual refund
+                            if (refundResult.status !== 'skipped' && refundResult.amount > 0) {
+                                await NotificationHelper.createSystemNotification(
+                                    req.user.userId,
+                                    'Refund Processed',
+                                    `A refund of $${refundResult.amount.toFixed(2)} has been processed for your cancelled reservation at ${lot.name}.`,
+                                    '/billing'
+                                );
+                            } else {
+                                await NotificationHelper.createSystemNotification(
+                                    req.user.userId,
+                                    'Reservation Cancelled',
+                                    `Your reservation at ${lot.name} has been cancelled. No refund was processed as there were no billable hours based on time-based pricing rules.`,
+                                    '/billing'
+                                );
+                            }
+                        } catch (error) {
+                            console.error('Error sending refund notification:', error);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Refund processing error:', error);
                 }
-            } catch (refundError) {
-                console.error('Refund error:', refundError);
-                // Continue with cancellation even if refund fails
-                // We can handle failed refunds separately
+            } else {
+                console.log('Skipping refund because payment was for a permit purchase');
             }
         }
 
@@ -1034,10 +380,9 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
         reservation.status = 'cancelled';
         reservation.cancelledAt = new Date();
         reservation.cancelReason = req.body.reason || 'User cancelled';
-
         await reservation.save();
 
-        // Increase available spaces for the lot
+        // Free up the parking space
         if (reservation.lotId) {
             await Lot.findByIdAndUpdate(
                 reservation.lotId._id,
@@ -1045,94 +390,37 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             );
         }
 
-        // Create a notification for the user about their cancelled reservation
+        // Notify user
         try {
-            const notificationMessage = permitCreated
-                ? `Your reservation at ${reservation.lotId.name} has been cancelled. Your permit remains active and valid.`
+            // Create an appropriate message
+            const hasPermit = reservation.usedExistingPermit || reservation.compatiblePermitId;
+            const message = hasPermit
+                ? `Your reservation at ${reservation.lotId.name} has been cancelled. Your permit remains active for other compatible lots.`
                 : `Your reservation at ${reservation.lotId.name} has been cancelled.`;
 
             await NotificationHelper.createSystemNotification(
                 req.user.userId,
                 'Reservation Cancelled',
-                notificationMessage,
+                message,
                 '/dashboard'
             );
-
-            // Send cancellation email
-            try {
-                // Get user information for the email
-                const user = await User.findById(req.user.userId);
-
-                const emailResult = await emailService.sendReservationConfirmation(
-                    user.email,
-                    `${user.firstName} ${user.lastName}`,
-                    {
-                        _id: reservation._id,
-                        id: reservation.reservationId,
-                        lotId: reservation.lotId,
-                        startTime: reservation.startTime,
-                        endTime: reservation.endTime,
-                        status: 'cancelled',
-                        totalPrice: reservation.totalPrice,
-                        refundInfo: refundResult
-                    },
-                    process.env.CLIENT_BASE_URL || 'http://localhost:5173'
-                );
-                console.log('Reservation cancellation email sent:', emailResult.messageId);
-            } catch (emailError) {
-                console.error('Failed to send reservation cancellation email:', emailError);
-                // Continue even if email sending fails
-            }
-        } catch (notificationError) {
-            console.error('Error creating cancellation notification:', notificationError);
-            // Continue even if notification creation fails
+        } catch (error) {
+            console.error('Notification error:', error);
         }
 
-        // Add the following code for a dedicated metered refund email notification
-        if (amountToRefund > 0 && refundResult) {
-            try {
-                // Determine if this was a metered reservation
-                const isMetered = reservation.lotId &&
-                    (reservation.lotId.rateType === 'Hourly' ||
-                        reservation.lotId.isMetered ||
-                        reservation.lotId.meteredParking);
-
-                // Get user information for the email
-                const userForEmail = await User.findById(reservation.user);
-                if (userForEmail && userForEmail.email) {
-                    // Special subject and messaging for refund notifications
-                    const emailResult = await emailService.sendReservationConfirmation(
-                        userForEmail.email,
-                        `${userForEmail.firstName} ${userForEmail.lastName}`,
-                        {
-                            _id: reservation._id,
-                            id: reservation.reservationId,
-                            lotId: reservation.lotId,
-                            startTime: reservation.startTime,
-                            endTime: reservation.endTime,
-                            status: 'Refund Issued',
-                            totalPrice: amountToRefund,
-                            refundInfo: refundResult,
-                            additionalInfo: {
-                                isMetered: isMetered,
-                                message: isMetered ?
-                                    `Your metered parking reservation has been cancelled and a refund of $${amountToRefund.toFixed(2)} has been issued to your payment method.` :
-                                    `Your parking reservation has been cancelled and a refund of $${amountToRefund.toFixed(2)} has been issued to your payment method.`
-                            }
-                        },
-                        process.env.CLIENT_BASE_URL || 'http://localhost:5173'
-                    );
-                    console.log(`Reservation refund email sent to ${userForEmail.email}: ${emailResult.messageId}`);
-                }
-            } catch (emailError) {
-                console.error('Failed to send reservation refund email:', emailError);
-                // Continue even if email sending fails
-            }
+        // Return success response with info about permit retention
+        let responseMessage;
+        if (reservation.usedExistingPermit || reservation.compatiblePermitId) {
+            responseMessage = 'Reservation cancelled successfully. Your permit remains active for other compatible lots.';
+        } else if (refundResult) {
+            responseMessage = 'Reservation cancelled successfully with refund processed.';
+        } else if (reservation.totalPrice === 0 || reservation.isFreeReservation) {
+            responseMessage = 'Free reservation cancelled successfully.';
+        } else if (isMeteredLot) {
+            responseMessage = 'Metered parking reservation cancelled successfully.';
+        } else {
+            responseMessage = 'Reservation cancelled successfully.';
         }
-
-        const responseMessage = permitCreated
-            ? 'Reservation cancelled successfully. Your permit remains active and valid.'
-            : (refundResult ? 'Reservation cancelled successfully and refund processed' : 'Reservation cancelled successfully');
 
         res.status(200).json({
             success: true,
@@ -1140,7 +428,8 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
             data: {
                 reservation,
                 refund: refundResult,
-                permitRetained: permitCreated ? true : false
+                permitRetained: true, // Always true - permits are never deactivated
+                reservationRefunded: refundResult ? true : false
             }
         });
     } catch (error) {
@@ -1153,7 +442,19 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
     }
 });
 
-// POST /api/reservations/:id/extend - Extend a reservation's end time
+/**
+ * @route POST /api/reservations/:id/extend
+ * @desc Extend a reservation's end time
+ * @access Private - Requires authentication
+ * 
+ * Path parameters:
+ * - id: The reservation ID to extend
+ * 
+ * Request body:
+ * - additionalHours: Number of hours to extend the reservation
+ * - isMetered: Whether this is a metered parking spot (optional)
+ * - paymentMethodId: Stripe payment method ID for additional charges (optional)
+ */
 router.post('/:id/extend', verifyToken, async (req, res) => {
     try {
         const { additionalHours, isMetered } = req.body;
@@ -1190,98 +491,13 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
         const currentEndTime = new Date(reservation.endTime);
         const newEndTime = new Date(currentEndTime.getTime() + (additionalHours * 60 * 60 * 1000));
 
-        // Calculate additional price based on lot type
+        // Calculate additional price
         let additionalPrice = 0;
-        let isSemesterRate = false;
-        // Metered lot extension fee
-        const METERED_EXTENSION_FEE = 2.50;
-        let hasExtensionFee = false;
-
-        // Check if the extension goes beyond 7PM (19:00)
-        const isAfter7PM = () => {
-            // Get the new end time's hours in local time
-            const newEndHour = newEndTime.getHours();
-            return newEndHour >= 19; // 7PM or later
-        };
-
-        // Check if the extension starts after 4PM for permit holders
-        const isAfter4PM = async () => {
-            // Get the new end time's hours in local time
-            const currentTime = new Date();
-
-            // If the current time is after 4PM
-            if (currentTime.getHours() >= 16) {
-                // Check if the user has any valid permits
-                const userPermits = await Permit.find({
-                    userId: req.user.userId,
-                    status: 'active',
-                    paymentStatus: { $in: ['paid', 'completed'] }
-                });
-
-                // Filter valid permits
-                const validUserPermits = userPermits.filter(permit => Permit.isValidPermit(permit));
-
-                // If user has a valid permit and the lot has permit types
-                if (validUserPermits.length > 0 &&
-                    reservation.lotId &&
-                    reservation.lotId.permitTypes &&
-                    reservation.lotId.permitTypes.length > 0) {
-                    return true;
-                }
-            }
-            return false;
-        };
-
-        // Check if user has a permit and it's after 4PM
-        const freeAfter4PMExtension = await isAfter4PM();
-
         if (reservation.lotId && reservation.lotId.rateType === 'Hourly') {
-            // For hourly rates, calculate billable hours considering 7PM cutoff
-            let billableAdditionalHours = additionalHours;
-            const currentEndDateTime = new Date(reservation.endTime);
-
-            // Check if the current endTime is already after 7PM
-            if (currentEndDateTime.getHours() >= 19) {
-                // If already past 7PM, no charge for any extension
-                billableAdditionalHours = 0;
-                console.log('Current end time already past 7PM - extension is free');
-            }
-            // Check if extension crosses 7PM boundary
-            else {
-                // Create a 7PM timestamp for comparison
-                const sevenPM = new Date(currentEndDateTime);
-                sevenPM.setHours(19, 0, 0, 0);
-
-                // If the new end time is after 7PM, only charge until 7PM
-                if (newEndTime > sevenPM) {
-                    // Calculate billable hours only until 7PM
-                    billableAdditionalHours = (sevenPM - currentEndDateTime) / (1000 * 60 * 60);
-                    console.log(`Extension crosses 7PM - charging only until 7PM: ${billableAdditionalHours.toFixed(2)} billable hours`);
-                }
-            }
-
-            // For hourly rates, charge based on billable additional hours (respecting 7PM cutoff)
-            additionalPrice = billableAdditionalHours * reservation.lotId.hourlyRate;
-
-            // Add extension fee for metered lots only if extension is not after 7PM
-            if ((isMetered || (reservation.lotId.features && reservation.lotId.features.isMetered)) && !isAfter7PM()) {
-                additionalPrice += METERED_EXTENSION_FEE;
-                hasExtensionFee = true;
-            }
-
-            // If user has a permit and it's after 4PM, make the extension free
-            if (freeAfter4PMExtension) {
-                console.log('Extension after 4PM with valid permit - free access granted');
-                additionalPrice = 0;
-                hasExtensionFee = false;
-            }
-        } else if (reservation.lotId && reservation.lotId.rateType === 'Permit-based') {
-            // For semester/permit-based rates, no additional charge for time extensions
-            isSemesterRate = true;
-            additionalPrice = 0;
+            additionalPrice = additionalHours * reservation.lotId.hourlyRate;
         }
 
-        // Process additional payment if needed (only for hourly rates with a price > 0)
+        // Process additional payment if needed
         let paymentResult = null;
         if (additionalPrice > 0 && req.body.paymentMethodId) {
             try {
@@ -1291,88 +507,36 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
                     return res.status(404).json({ message: 'User not found' });
                 }
 
-                console.log('Processing extension payment with method:', {
-                    paymentMethodId: req.body.paymentMethodId,
-                    userStripeCustomerId: user.stripeCustomerId
-                });
-
-                // Set up payment options with proper customer ID handling
-                let stripeCustomerId = user.stripeCustomerId;
-                let paymentMethodBelongsToCustomer = false;
-
-                if (stripeCustomerId) {
-                    // Check if payment method belongs to this customer
-                    try {
-                        const paymentMethods = await stripe.paymentMethods.list({
-                            customer: stripeCustomerId,
-                            type: 'card',
-                        });
-
-                        paymentMethodBelongsToCustomer = paymentMethods.data.some(pm => pm.id === req.body.paymentMethodId);
-                        console.log(`Extension: Payment method ${req.body.paymentMethodId} belongs to customer? ${paymentMethodBelongsToCustomer}`);
-                    } catch (listError) {
-                        console.error('Error checking payment methods for extension:', listError);
-                    }
-
-                    if (!paymentMethodBelongsToCustomer) {
-                        // Attach payment method to customer
-                        try {
-                            await stripe.paymentMethods.attach(req.body.paymentMethodId, {
-                                customer: stripeCustomerId,
-                            });
-                            console.log('Extension: Payment method attached to customer');
-                        } catch (attachError) {
-                            console.error('Error attaching payment method for extension:', attachError);
-                        }
-                    }
-                } else {
-                    // Create a customer if the user doesn't have one
-                    try {
-                        const customer = await stripe.customers.create({
-                            email: user.email,
-                            name: `${user.firstName} ${user.lastName}`,
-                            metadata: {
-                                userId: user._id.toString()
-                            }
-                        });
-
-                        stripeCustomerId = customer.id;
-                        // Update user with customer ID
-                        user.stripeCustomerId = stripeCustomerId;
-                        await user.save();
-                        console.log('Extension: Created new Stripe customer:', stripeCustomerId);
-
-                        // Attach payment method to new customer
-                        await stripe.paymentMethods.attach(req.body.paymentMethodId, {
-                            customer: stripeCustomerId,
-                        });
-                        console.log('Extension: Payment method attached to new customer');
-                    } catch (customerError) {
-                        console.error('Error creating customer for extension:', customerError);
-                        return res.status(400).json({
-                            success: false,
-                            message: 'Payment processing failed - unable to create customer',
-                            error: customerError.message
-                        });
-                    }
-                }
-
-                // Create payment intent with Stripe - now including customer ID
+                // Create payment intent with Stripe
                 const paymentOptions = {
                     amount: Math.round(additionalPrice * 100), // Stripe uses cents
                     currency: 'usd',
-                    customer: stripeCustomerId, // Include the customer ID
+                    customer: user.stripeCustomerId,
                     payment_method: req.body.paymentMethodId,
                     confirm: true,
                     description: `Extending reservation at ${reservation.lotId.name}`,
                     metadata: {
                         reservationId: reservation.reservationId,
-                        additionalHours: additionalHours.toString(),
-                        hasExtensionFee: hasExtensionFee.toString()
+                        additionalHours: additionalHours.toString()
+                    },
+                    // Fix for redirect-based payment methods error
+                    automatic_payment_methods: {
+                        enabled: true,
+                        allow_redirects: 'never'
                     }
                 };
 
-                console.log('Creating extension payment intent with options:', JSON.stringify(paymentOptions));
+                // If customer has a Stripe customer ID, include it in the payment options
+                // This is required when using a saved payment method
+                if (user.stripeCustomerId) {
+                    paymentOptions.customer = user.stripeCustomerId;
+                    console.log(`Using customer ID from user: ${user.stripeCustomerId} for payment method: ${req.body.paymentMethodId}`);
+                } else if (req.body.customerId) {
+                    // If customerId is sent with the payment info, use that instead
+                    paymentOptions.customer = req.body.customerId;
+                    console.log(`Using customer ID from payment info: ${req.body.customerId} for payment method: ${req.body.paymentMethodId}`);
+                }
+
                 const paymentIntent = await stripe.paymentIntents.create(paymentOptions);
 
                 paymentResult = {
@@ -1380,17 +544,6 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
                     paymentIntentId: paymentIntent.id,
                     amount: additionalPrice
                 };
-
-                // Record revenue statistics for metered/hourly parking extension
-                if (additionalPrice > 0 && (isMetered || (reservation.lotId.rateType === 'Hourly'))) {
-                    try {
-                        await RevenueStatistics.recordMeteredPurchase(additionalPrice);
-                        console.log(`Recorded revenue for metered parking extension: $${additionalPrice}`);
-                    } catch (revenueError) {
-                        console.error('Failed to record metered extension revenue statistics:', revenueError);
-                        // Continue processing even if revenue recording fails
-                    }
-                }
             } catch (stripeError) {
                 console.error('Stripe payment failed for extension:', stripeError);
                 return res.status(400).json({
@@ -1407,79 +560,32 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
             reservation.totalPrice += additionalPrice;
         }
 
-        // If payment was successful or it's a semester rate (free extension), update extension history
+        // Save extension history
         reservation.extensionHistory = reservation.extensionHistory || [];
         reservation.extensionHistory.push({
             extendedAt: new Date(),
             additionalHours,
             additionalPrice,
-            extensionFee: hasExtensionFee ? METERED_EXTENSION_FEE : 0,
-            paymentIntentId: paymentResult?.paymentIntentId || null,
-            isSemesterRate
+            paymentIntentId: paymentResult?.paymentIntentId || null
         });
 
         await reservation.save();
 
-        // Create a notification for the user about their extended reservation
+        // Notify user of extension
         try {
-            const formattedOldEndTime = new Date(currentEndTime).toLocaleString();
-            const formattedNewEndTime = new Date(newEndTime).toLocaleString();
-
             await NotificationHelper.createSystemNotification(
                 req.user.userId,
                 'Reservation Extended',
-                `Your reservation at ${reservation.lotId.name} has been extended from ${formattedOldEndTime} to ${formattedNewEndTime}.`,
-                '/past-reservations'
+                `Your reservation at ${reservation.lotId.name} has been extended for ${additionalHours} hours.`,
+                '/dashboard'
             );
-            console.log('Reservation extension notification sent to user:', req.user.userId);
-
-            // Send extension email
-            try {
-                // Get user information for the email
-                const user = await User.findById(req.user.userId);
-
-                const emailResult = await emailService.sendReservationConfirmation(
-                    user.email,
-                    `${user.firstName} ${user.lastName}`,
-                    {
-                        _id: reservation._id,
-                        id: reservation.reservationId,
-                        lotId: reservation.lotId,
-                        startTime: reservation.startTime,
-                        endTime: newEndTime,
-                        status: reservation.status,
-                        totalPrice: reservation.totalPrice,
-                        extensionDetails: {
-                            previousEndTime: currentEndTime,
-                            additionalHours: additionalHours,
-                            additionalCost: additionalPrice
-                        }
-                    },
-                    process.env.CLIENT_BASE_URL || 'http://localhost:5173'
-                );
-                console.log('Reservation extension email sent:', emailResult.messageId);
-            } catch (emailError) {
-                console.error('Failed to send reservation extension email:', emailError);
-                // Continue even if email sending fails
-            }
-        } catch (notificationError) {
-            console.error('Error creating reservation extension notification:', notificationError);
-            // Continue even if notification creation fails
+        } catch (error) {
+            console.error('Error creating notification:', error);
         }
-
-        const successMessage = isSemesterRate
-            ? 'Reservation extended successfully at no additional cost (semester rate)'
-            : hasExtensionFee
-                ? `Reservation extended successfully with a $${METERED_EXTENSION_FEE.toFixed(2)} extension fee`
-                : isMetered || (reservation.lotId.features && reservation.lotId.features.isMetered)
-                    ? 'Reservation extended successfully at no additional cost (after 7PM extension)'
-                    : freeAfter4PMExtension
-                        ? 'Reservation extended successfully at no additional cost (free after 4PM with permit)'
-                        : 'Reservation extended successfully';
 
         res.status(200).json({
             success: true,
-            message: successMessage,
+            message: 'Reservation extended successfully',
             data: {
                 reservation,
                 extension: {
@@ -1487,10 +593,6 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
                     newEndTime,
                     additionalHours,
                     additionalPrice,
-                    extensionFee: hasExtensionFee ? METERED_EXTENSION_FEE : 0,
-                    isSemesterRate,
-                    isAfter7PMFree: isMetered && isAfter7PM(),
-                    isFreeAfter4PMWithPermit: freeAfter4PMExtension,
                     paymentResult
                 }
             }
@@ -1505,7 +607,14 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
     }
 });
 
-// PUT /api/reservations/check-expired - Admin endpoint to manually check and update expired reservations
+/**
+ * @route PUT /api/reservations/check-expired
+ * @desc Manual endpoint to check and update expired reservations
+ * @access Private - Requires authentication
+ * 
+ * This endpoint is typically called by an admin or scheduled job
+ * to ensure reservation statuses are updated appropriately
+ */
 router.put('/check-expired', verifyToken, async (req, res) => {
     try {
         const updatedCount = await updateExpiredReservations();
@@ -1516,6 +625,538 @@ router.put('/check-expired', verifyToken, async (req, res) => {
     } catch (error) {
         console.error('Error checking expired reservations:', error);
         res.status(500).json({ message: 'Server error' });
+    }
+});
+
+/**
+ * @route POST /api/reservations
+ * @desc Create a new parking reservation
+ * @access Private - Requires authentication
+ * 
+ * Request body:
+ * - lotId: ID of the parking lot
+ * - startTime: Start time of the reservation
+ * - endTime: End time of the reservation
+ * - permitType: Type of permit (e.g., 'student', 'faculty')
+ * - vehicleInfo: Either a vehicle ID or complete vehicle information
+ * - paymentInfo: Payment method details
+ * - isSwitchingPermitType: Boolean indicating if user is switching permit types
+ * - permitToReplaceId: ID of permit to replace (if switching)
+ */
+router.post('/', verifyToken, async (req, res) => {
+    try {
+        const { lotId, startTime, endTime, permitType, vehicleInfo, paymentInfo, isSwitchingPermitType, permitToReplaceId } = req.body;
+
+        // Get user information
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Validate lot exists
+        const lot = await Lot.findById(lotId);
+        if (!lot) {
+            return res.status(404).json({ message: 'Parking lot not found' });
+        }
+
+        // Check if lot has available spaces
+        if (lot.availableSpaces <= 0) {
+            return res.status(400).json({ message: 'No available spaces in this lot' });
+        }
+
+        // Check if user already has an active reservation
+        const existingActiveReservations = await Reservation.find({
+            user: req.user.userId,
+            status: { $in: ['active', 'pending'] },
+            endTime: { $gt: new Date() }
+        });
+
+        if (existingActiveReservations && existingActiveReservations.length > 0) {
+            return res.status(400).json({
+                message: 'You already have an active reservation. Please complete or cancel your existing reservation before creating a new one.'
+            });
+        }
+
+        // Calculate initial price based on lot type
+        let totalPrice = 0;
+        if (lot.rateType === 'Hourly') {
+            const start = new Date(startTime);
+            const end = new Date(endTime);
+
+            // Check if the reservation starts on a weekend (0 = Sunday, 6 = Saturday)
+            const isWeekend = start.getDay() === 0 || start.getDay() === 6;
+
+            // Free parking on weekends
+            if (isWeekend) {
+                console.log(`Reservation starts on weekend (day ${start.getDay()}) - parking is free`);
+                totalPrice = 0;
+            } else {
+                // For metered lots, charges are only imposed from 7am to 7pm on weekdays
+                const isMeteredLot = lot.features && lot.features.isMetered;
+
+                if (isMeteredLot) {
+                    // Check if it's a weekend (0 = Sunday, 6 = Saturday)
+                    const dayOfWeek = start.getDay();
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+                    if (isWeekend) {
+                        // Free on weekends
+                        console.log("Weekend reservation - no charge for metered lot");
+                        totalPrice = 0;
+                    } else {
+                        // Calculate billable hours (only between 7am and 7pm)
+                        const startHour = start.getHours();
+                        const startMinute = start.getMinutes();
+                        const endHour = end.getHours();
+                        const endMinute = end.getMinutes();
+
+                        // Convert to decimal hours for more accurate calculation
+                        const startTimeDecimal = startHour + (startMinute / 60);
+                        const endTimeDecimal = endHour + (endMinute / 60);
+
+                        // Define billable window (7AM to 7PM = 7.0 to 19.0)
+                        const billableStartHour = 7.0;
+                        const billableEndHour = 19.0;
+
+                        // Calculate overlap with billable hours
+                        const overlapStart = Math.max(startTimeDecimal, billableStartHour);
+                        const overlapEnd = Math.min(endTimeDecimal, billableEndHour);
+                        const billableHours = Math.max(0, overlapEnd - overlapStart);
+
+                        // Use hourlyRate with a default of $2.50 if not defined
+                        const hourlyRate = lot.hourlyRate || 2.50;
+                        totalPrice = billableHours * hourlyRate;
+
+                        // Ensure the price is a valid number
+                        if (isNaN(totalPrice) || totalPrice < 0) {
+                            console.log("Warning: Invalid price calculation result. Using default pricing.");
+                            totalPrice = 0;
+                        }
+
+                        console.log(`Metered lot reservation: ${billableHours.toFixed(1)} billable hours (7am-7pm only) at $${hourlyRate}/hour = $${totalPrice.toFixed(2)}`);
+                    }
+                } else {
+                    // For non-metered hourly lots, charge for all hours
+                    const hours = (end - start) / (1000 * 60 * 60);
+                    totalPrice = hours * lot.hourlyRate;
+                }
+            }
+        } else if (lot.rateType === 'Permit-based') {
+            // Check if the reservation starts on a weekend (0 = Sunday, 6 = Saturday)
+            const start = new Date(startTime);
+            const isWeekend = start.getDay() === 0 || start.getDay() === 6;
+
+            // Free parking on weekends
+            if (isWeekend) {
+                console.log(`Permit-based reservation starts on weekend (day ${start.getDay()}) - parking is free`);
+                totalPrice = 0;
+            } else {
+                totalPrice = lot.semesterRate || 0;
+            }
+        }
+
+        // Handle permit switching if requested
+        let permitSwitchResult = null;
+        if (isSwitchingPermitType && permitToReplaceId) {
+            console.log(`Handling permit switch request: replacing permit ${permitToReplaceId} with new ${permitType} permit`);
+
+            // Find the permit to replace
+            const oldPermit = await Permit.findById(permitToReplaceId);
+            if (!oldPermit) {
+                return res.status(404).json({ message: 'Permit to replace not found' });
+            }
+
+            // Verify the permit belongs to this user
+            if (oldPermit.userId.toString() !== user._id.toString()) {
+                return res.status(403).json({ message: 'Not authorized to replace this permit' });
+            }
+
+            // Process refund for the old permit if it was paid
+            let refundResult = null;
+            if (oldPermit.paymentId && oldPermit.price > 0 && oldPermit.paymentStatus === 'paid') {
+                try {
+                    // Issue refund via Stripe
+                    const refund = await stripe.refunds.create({
+                        payment_intent: oldPermit.paymentId,
+                    });
+
+                    // Update permit status
+                    oldPermit.paymentStatus = 'refunded';
+                    oldPermit.status = 'inactive';
+                    oldPermit.refundId = refund.id;
+                    oldPermit.refundedAt = new Date();
+                    await oldPermit.save();
+
+                    refundResult = {
+                        success: true,
+                        refundId: refund.id,
+                        amount: refund.amount / 100,
+                        status: refund.status
+                    };
+
+                    console.log(`Successfully refunded permit ${oldPermit.permitNumber} (${oldPermit.permitType})`);
+
+                    // Notify user of refund
+                    try {
+                        await NotificationHelper.createSystemNotification(
+                            user._id,
+                            'Permit Refunded',
+                            `Your ${oldPermit.permitType} permit has been refunded as part of switching to a new permit type.`,
+                            '/dashboard'
+                        );
+                    } catch (notificationError) {
+                        console.error('Error creating refund notification:', notificationError);
+                    }
+                } catch (refundError) {
+                    console.error('Refund processing error:', refundError);
+                    return res.status(400).json({
+                        message: 'Failed to process refund for existing permit',
+                        error: refundError.message
+                    });
+                }
+            }
+
+            permitSwitchResult = {
+                oldPermitId: oldPermit._id,
+                oldPermitType: oldPermit.permitType,
+                refundResult
+            };
+        }
+
+        // Retrieve all active user permits
+        const userPermits = await Permit.find({
+            userId: user._id,
+            status: 'active',
+            paymentStatus: { $in: ['paid', 'completed'] }
+        });
+
+        // Filter to only valid permits
+        const validUserPermits = userPermits.filter(permit => Permit.isValidPermit(permit));
+        console.log(`User has ${validUserPermits.length} valid permits. Checking compatibility...`);
+
+        // Check if any permit is compatible with the lot's required types
+        let permitCompatible = false;
+        let compatiblePermitId = null;
+
+        if (validUserPermits.length > 0 && lot.permitTypes && lot.permitTypes.length > 0) {
+            for (const permit of validUserPermits) {
+                // Use exact permit type matching - the permit type must exactly match one of the lot's required types
+                if (lot.permitTypes.includes(permit.permitType)) {
+                    permitCompatible = true;
+                    compatiblePermitId = permit._id;
+                    console.log(`Permit type "${permit.permitType}" is compatible with lot requirements: ${lot.permitTypes.join(', ')}`);
+                    break;
+                }
+            }
+        }
+
+        // Check if this is a reservation starting on a weekend
+        const startTimeDay = new Date(startTime).getDay();
+        const isWeekend = startTimeDay === 0 || startTimeDay === 6; // 0 = Sunday, 6 = Saturday
+
+        // If reservation is on a weekend, it's free
+        if (isWeekend) {
+            permitCompatible = true;
+            if (validUserPermits.length > 0) {
+                compatiblePermitId = validUserPermits[0]._id; // Use the first valid permit if available
+            }
+            console.log(`Weekend reservation (day ${startTimeDay}) - parking is free for all lot types`);
+        }
+        // Otherwise, check the time-based rules for weekdays
+        else {
+            // Check if this is a reservation starting before 7am or after 4pm with any valid permit
+            const startTimeHour = new Date(startTime).getHours();
+            const hasAnyPermit = validUserPermits.length > 0;
+            const isAfter4PM = startTimeHour >= 16; // 4pm is 16 in 24-hour format
+            const isBefore7AM = startTimeHour < 7;  // Before 7am
+            const isPermitBasedLot = lot.rateType === 'Permit-based';
+
+            // If reservation is for a permit-based lot, starts before 7am or after 4pm, and user has any permit, make it free
+            if (isPermitBasedLot && (isBefore7AM || isAfter4PM) && hasAnyPermit) {
+                permitCompatible = true;
+                compatiblePermitId = validUserPermits[0]._id; // Use the first valid permit
+                console.log(`Permit-based lot reservation during free hours (${startTimeHour}:00) with permit - reservation will be free`);
+            }
+        }
+
+        // If permit is compatible, make reservation free
+        if (permitCompatible) {
+            totalPrice = 0;
+            console.log('Compatible permit found or weekend - reservation will be free');
+        }
+
+        // Process payment if needed
+        let paymentStatus = 'completed'; // Default to completed for free reservations
+        let stripePaymentIntentId = null;
+        let stripePaymentMethodId = null;
+        let stripeReceiptUrl = null;
+
+        // Only process payment if the price is greater than 0 and payment info is provided
+        if (totalPrice > 0 && paymentInfo) {
+            try {
+                const amount = totalPrice * 100; // Stripe expects amount in cents
+
+                // Define payment options
+                const paymentOptions = {
+                    amount: Math.round(amount),
+                    currency: 'usd',
+                    payment_method: paymentInfo.paymentMethodId,
+                    confirm: true,
+                    description: `Reservation for ${lot.name}`,
+                    metadata: {
+                        userId: req.user.userId,
+                        lotId: lotId,
+                        lotName: lot.name,
+                        startTime,
+                        endTime,
+                        permitType
+                    },
+                    receipt_email: user.email,
+                    automatic_payment_methods: {
+                        enabled: true,
+                        allow_redirects: 'never'
+                    }
+                };
+
+                // If customer has a Stripe customer ID, include it in the payment options
+                // This is required when using a saved payment method
+                if (user.stripeCustomerId) {
+                    paymentOptions.customer = user.stripeCustomerId;
+                    console.log(`Using customer ID from user: ${user.stripeCustomerId} for payment method: ${paymentInfo.paymentMethodId}`);
+                } else if (paymentInfo.customerId) {
+                    // If customerId is sent with the payment info, use that instead
+                    paymentOptions.customer = paymentInfo.customerId;
+                    console.log(`Using customer ID from payment info: ${paymentInfo.customerId} for payment method: ${paymentInfo.paymentMethodId}`);
+                }
+
+                const paymentIntent = await stripe.paymentIntents.create(paymentOptions);
+                paymentStatus = paymentIntent.status === 'succeeded' ? 'completed' : 'pending';
+                stripePaymentIntentId = paymentIntent.id;
+                stripePaymentMethodId = paymentInfo.paymentMethodId;
+                stripeReceiptUrl = paymentIntent.charges?.data[0]?.receipt_url || null;
+            } catch (stripeError) {
+                console.error('Stripe payment failed:', stripeError);
+                return res.status(400).json({
+                    message: 'Payment processing failed',
+                    error: stripeError.message
+                });
+            }
+        } else {
+            // For free reservations, mark payment as completed
+            if (totalPrice === 0) {
+                console.log('Free reservation - setting payment status to completed');
+                paymentStatus = 'completed';
+            }
+        }
+
+        // Process vehicle information
+        let car;
+        if (typeof vehicleInfo === 'string' || (vehicleInfo.carId && typeof vehicleInfo.carId === 'string')) {
+            const carId = typeof vehicleInfo === 'string' ? vehicleInfo : vehicleInfo.carId;
+            car = await Car.findById(carId);
+            if (!car) {
+                return res.status(400).json({ message: 'Invalid vehicle information' });
+            }
+        } else {
+            // Check if car already exists
+            let existingCar = null;
+            if (vehicleInfo.plateNumber) {
+                existingCar = await Car.findOne({
+                    userId: req.user.userId,
+                    plateNumber: vehicleInfo.plateNumber.toUpperCase(),
+                    stateProv: vehicleInfo.state || vehicleInfo.stateProv
+                });
+            }
+
+            if (existingCar) {
+                car = existingCar;
+            } else {
+                // Create a new car
+                car = new Car({
+                    plateNumber: vehicleInfo.plateNumber,
+                    stateProv: vehicleInfo.state || vehicleInfo.stateProv,
+                    make: vehicleInfo.make,
+                    model: vehicleInfo.model,
+                    color: vehicleInfo.color,
+                    bodyType: vehicleInfo.bodyType,
+                    year: vehicleInfo.year,
+                    userId: req.user.userId,
+                    isPrimary: vehicleInfo.saveAsPrimary || false
+                });
+                await car.save();
+            }
+        }
+
+        // Create a permit if needed and none exists yet
+        let newPermit = null;
+        if (lot.rateType === 'Permit-based' && !permitCompatible && totalPrice > 0) {
+            try {
+                console.log('Creating new permit for permit-based reservation');
+
+                // Generate a unique permit number
+                const permitNumber = `P-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
+
+                // Trim permitType to remove any trailing/leading spaces
+                const cleanPermitType = permitType ? permitType.trim() : permitType;
+
+                // Create a new permit with end date 4 months from now
+                const fourMonthsFromNow = new Date();
+                fourMonthsFromNow.setMonth(fourMonthsFromNow.getMonth() + 4);
+                fourMonthsFromNow.setHours(23, 59, 59, 999); // Set to end of day
+
+                const permitStatus = paymentStatus === 'completed' ? 'active' : 'pending';
+
+                newPermit = new Permit({
+                    permitNumber,
+                    permitName: `${cleanPermitType} Permit`,
+                    permitType: cleanPermitType,
+                    userId: req.user.userId,
+                    userFullName: `${user.firstName} ${user.lastName}`,
+                    userEmail: user.email,
+                    lots: [{
+                        lotId: lot._id.toString(),
+                        lotName: lot.name
+                    }],
+                    startDate: new Date(),
+                    endDate: fourMonthsFromNow,
+                    status: permitStatus,
+                    price: totalPrice,
+                    paymentStatus: paymentStatus === 'completed' ? 'paid' : 'pending',
+                    paymentId: stripePaymentIntentId,
+                    // If this permit is replacing another, store the reference
+                    replacedPermitId: permitSwitchResult ? permitSwitchResult.oldPermitId : null,
+                    notes: permitSwitchResult ? `Replaced previous ${permitSwitchResult.oldPermitType} permit` : ''
+                });
+
+                await newPermit.save();
+                console.log('New permit created:', newPermit._id);
+
+                // Create notification for permit
+                try {
+                    await NotificationHelper.createSystemNotification(
+                        req.user.userId,
+                        'New Permit Created',
+                        `Your ${cleanPermitType} permit has been created and is now active until ${fourMonthsFromNow.toLocaleDateString()}.`,
+                        '/dashboard'
+                    );
+                } catch (notificationError) {
+                    console.error('Error creating permit notification:', notificationError);
+                }
+            } catch (permitError) {
+                console.error('Error creating permit:', permitError);
+                // Don't fail the entire request if permit creation fails
+            }
+        }
+
+        // Generate a unique reservation ID
+        const reservationId = generateReservationId();
+
+        // Determine the reservation status
+        // For free reservations or when a permit is compatible, always set to active
+        let reservationStatus = 'active';
+
+        // Only use pending status for non-free reservations that haven't been paid
+        if (totalPrice > 0 && !permitCompatible && paymentStatus !== 'completed') {
+            reservationStatus = 'pending';
+        }
+
+        // Track if this price was adjusted due to time-based rules
+        const isWeekendParking = new Date(startTime).getDay() === 0 || new Date(startTime).getDay() === 6;
+        const startHour = new Date(startTime).getHours();
+        const isMeteredLotWithTimeDiscount = (lot.features && lot.features.isMetered) &&
+            (startHour < 7 || startHour >= 19 || isWeekendParking);
+        const isPermitLotWithTimeDiscount = (lot.rateType === 'Permit-based') &&
+            ((startHour < 7 || startHour >= 16) || isWeekendParking);
+
+        const adjustedForTimeRules = isWeekendParking || isMeteredLotWithTimeDiscount || isPermitLotWithTimeDiscount;
+        const freeReason = isWeekendParking ? 'Weekend (free parking)' :
+            isMeteredLotWithTimeDiscount ? 'Outside metered hours (7am-7pm)' :
+                isPermitLotWithTimeDiscount ? 'Outside permit enforcement hours (7am-4pm)' : '';
+
+        // Create the reservation
+        const reservation = new Reservation({
+            reservationId,
+            user: req.user.userId,
+            lotId,
+            startTime,
+            endTime,
+            permitType,
+            vehicleInfo: car._id,
+            paymentStatus,
+            stripePaymentIntentId,
+            stripePaymentMethodId,
+            stripeReceiptUrl,
+            totalPrice,
+            status: reservationStatus,
+            usedExistingPermit: permitCompatible,
+            compatiblePermitId: compatiblePermitId,
+            // Add explicit free reservation flag if client sent it or if time-based rules apply
+            isFreeReservation: req.body.isFreeReservation === true || totalPrice === 0,
+            freeReason: req.body.freeReason || freeReason,
+            // Add field to track if time-based rules applied
+            adjustedForTimeRules: adjustedForTimeRules,
+            // Store time details for better tracking
+            timeDetails: {
+                isWeekend: isWeekendParking,
+                startHour,
+                isMeteredLot: lot.features && lot.features.isMetered,
+                isPermitBasedLot: lot.rateType === 'Permit-based'
+            }
+        });
+
+        // Save the reservation
+        const savedReservation = await reservation.save();
+
+        // Update the lot's available spaces
+        lot.availableSpaces -= 1;
+        await lot.save();
+
+        // Create notification
+        try {
+            await NotificationHelper.createSystemNotification(
+                req.user.userId,
+                'New Reservation Confirmed',
+                `Your reservation at ${lot.name} has been confirmed.`,
+                '/dashboard'
+            );
+        } catch (notificationError) {
+            console.error('Error creating notification:', notificationError);
+        }
+
+        // Return success response with reservation and permit details
+        return res.status(201).json({
+            success: true,
+            message: 'Reservation created successfully!',
+            data: {
+                reservation: {
+                    id: savedReservation._id,
+                    reservationId: savedReservation.reservationId,
+                    status: savedReservation.status,
+                    startTime: savedReservation.startTime,
+                    endTime: savedReservation.endTime,
+                    totalPrice: savedReservation.totalPrice
+                },
+                permit: newPermit ? {
+                    id: newPermit._id,
+                    permitNumber: newPermit.permitNumber,
+                    permitType: newPermit.permitType,
+                    status: newPermit.status,
+                    validFrom: newPermit.startDate,
+                    validUntil: newPermit.endDate
+                } : null,
+                lotName: lot.name,
+                // Include permit switching info if applicable
+                permitSwitched: isSwitchingPermitType && permitSwitchResult ? {
+                    oldPermitType: permitSwitchResult.oldPermitType,
+                    newPermitType: newPermit ? newPermit.permitType : permitType,
+                    refundProcessed: permitSwitchResult.refundResult ? true : false,
+                    refundAmount: permitSwitchResult.refundResult ? permitSwitchResult.refundResult.amount : 0
+                } : null
+            }
+        });
+    } catch (error) {
+        console.error('Error creating reservation:', error);
+        res.status(500).json({ message: 'An error occurred while creating the reservation', error: error.message });
     }
 });
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { FaHome, FaEnvelope, FaUser, FaCog, FaSignOutAlt, FaUserShield, FaInfoCircle, FaParking, FaBell, FaCheck, FaTrash, FaClock, FaExclamationTriangle } from 'react-icons/fa';
+import { FaHome, FaEnvelope, FaUser, FaCog, FaSignOutAlt, FaUserShield, FaInfoCircle, FaParking, FaBell, FaCheck, FaTrash, FaClock, FaExclamationTriangle, FaCalendarAlt } from 'react-icons/fa';
 import { MdDashboard } from 'react-icons/md';
 import { NotificationService } from '../utils/api';
 
@@ -202,6 +202,15 @@ const Navbar = ({ darkMode, setDarkMode, isAuthenticated, user, logout }) => {
     // Add Find Parking link for all users except admins
     if (!isAuthenticated || user?.userType !== 'admin') {
       links.push({ name: 'Find Parking', path: '/find-parking', icon: <FaParking className="mr-2" /> });
+    }
+
+    // Add Special Event Parking link for faculty only
+    if (isAuthenticated && user?.userType === 'faculty') {
+      links.push({
+        name: 'Event Parking',
+        path: '/faculty/event-parking-requests',
+        icon: <FaCalendarAlt className="mr-2" />
+      });
     }
 
     // Add About Us link for all users

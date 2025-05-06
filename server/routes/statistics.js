@@ -1,3 +1,13 @@
+/**
+ * This module defines API routes for generating and retrieving statistical data, including:
+ * - Revenue statistics for the parking system
+ * - PDF and CSV report generation for administrative purposes
+ * - Data aggregation from multiple sources (permits, citations, metered parking)
+ * 
+ * These endpoints are primarily used by administrators to monitor system performance
+ * and generate reports for financial analysis and auditing purposes.
+ */
+
 const express = require('express');
 const router = express.Router();
 const Ticket = require('../models/tickets');
@@ -13,7 +23,18 @@ const fsExtra = require('fs-extra');
 const reportsDir = path.join(__dirname, '../reports');
 fsExtra.ensureDirSync(reportsDir);
 
-// Get Revenue Statistics (Admin)
+/**
+ * GET /api/statistics/revenue
+ * 
+ * Retrieves revenue statistics data for administrative dashboard
+ * Combines data from multiple sources including permits, citations, and metered parking
+ * Default period is 4 months of historical data
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware verifyAdmin - Verifies the user has admin privileges
+ * @returns {Object} - Revenue data broken down by month and category
+ */
 router.get('/revenue', verifyToken, verifyAdmin, async (req, res) => {
     try {
         // Get revenue data from the RevenueStatistics model
@@ -86,7 +107,19 @@ router.get('/revenue', verifyToken, verifyAdmin, async (req, res) => {
     }
 });
 
-// Generate and download a PDF report of revenue statistics
+/**
+ * GET /api/statistics/revenue/report/pdf
+ * 
+ * Generates a formatted PDF report of revenue statistics
+ * Creates a downloadable file with tables, charts, and summary information
+ * Includes data aggregation across revenue sources
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware verifyAdmin - Verifies the user has admin privileges
+ * @query {number} [months=12] - Number of months to include in the report
+ * @returns {File} - Downloadable PDF file with revenue statistics
+ */
 router.get('/revenue/report/pdf', verifyToken, verifyAdmin, async (req, res) => {
     try {
         // Get the number of months from query params, default to 12
@@ -395,7 +428,19 @@ router.get('/revenue/report/pdf', verifyToken, verifyAdmin, async (req, res) => 
     }
 });
 
-// Generate and download a CSV report of revenue statistics
+/**
+ * GET /api/statistics/revenue/report/csv
+ * 
+ * Generates a CSV report of revenue statistics for export and analysis
+ * Creates a downloadable file with detailed revenue data by month and category
+ * Includes percentage breakdowns of revenue sources
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware verifyAdmin - Verifies the user has admin privileges
+ * @query {number} [months=12] - Number of months to include in the report
+ * @returns {File} - Downloadable CSV file with revenue statistics
+ */
 router.get('/revenue/report/csv', verifyToken, verifyAdmin, async (req, res) => {
     try {
         // Get the number of months from query params, default to 12

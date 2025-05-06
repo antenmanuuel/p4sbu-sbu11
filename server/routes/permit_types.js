@@ -1,10 +1,28 @@
+/**
+ * This module defines API routes for managing parking permit types, including:
+ * - Public access to valid, non-expired permit options
+ * - Admin management of permit types (CRUD operations)
+ * - Handling of both MongoDB ObjectID and custom ID lookups
+ * 
+ * Permit types represent the different parking permits that can be purchased
+ * by users, with various durations, prices, and applicable parking locations.
+ */
+
 const express = require('express');
 const router = express.Router();
 const PermitType = require('../models/permit_types');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 
-// GET /api/permit-types/public - Retrieve permit types for public consumption
-// This endpoint doesn't require admin permissions
+/**
+ * GET /api/permit-types/public
+ * 
+ * Retrieves a list of valid, non-expired permit types for public display
+ * Filters out expired permits and removes sensitive fields
+ * Used by the client application to show purchase options to users
+ * 
+ * @access Public
+ * @returns {Object} - List of available permit types with core details only
+ */
 router.get('/public', async (req, res) => {
   try {
     // Get all permit types
@@ -31,7 +49,21 @@ router.get('/public', async (req, res) => {
   }
 });
 
-// GET /api/permit-types - Retrieve permit types with optional search and pagination
+/**
+ * GET /api/permit-types
+ * 
+ * Retrieves a paginated and searchable list of all permit types
+ * Used in the admin dashboard for managing permit types
+ * Includes expired permits and full permit details
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @query {string} [search] - Optional search term for permit type names
+ * @query {number} [page=1] - Page number for pagination
+ * @query {number} [limit=10] - Number of results per page
+ * @returns {Object} - Permit types array and pagination metadata
+ */
 router.get('/', verifyToken, isAdmin, async (req, res) => {
   try {
     const { search = '', page = 1, limit = 10 } = req.query;
@@ -60,7 +92,19 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
-// GET /api/permit-types/:id - Get a single permit type by ID
+/**
+ * GET /api/permit-types/:id
+ * 
+ * Retrieves a single permit type by ID
+ * Supports lookup by both MongoDB _id and custom ID format (PT001)
+ * Includes all permit type details
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} id - Either MongoDB ObjectID or custom permit type ID
+ * @returns {Object} - Complete permit type information
+ */
 router.get('/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     const permitTypeId = req.params.id;
@@ -93,7 +137,25 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
-// POST /api/permit-types - Create a new permit type
+/**
+ * POST /api/permit-types
+ * 
+ * Creates a new permit type with auto-generated ID
+ * Automatically generates sequential custom IDs in format PT001, PT002, etc.
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @body {string} name - Name of the permit type (e.g., "Student Semester Pass")
+ * @body {string} category - Category of the permit (e.g., "Student", "Faculty")
+ * @body {number} quantity - Available quantity of this permit type
+ * @body {string} startDate - Date when the permit becomes valid
+ * @body {string} endDate - Expiration date of the permit
+ * @body {number} price - Cost of the permit
+ * @body {Array} lots - Array of parking lots where this permit is valid
+ * @body {string} duration - Duration of the permit (e.g., "Semester", "Annual")
+ * @returns {Object} - Success message and created permit type data
+ */
 router.post('/', verifyToken, isAdmin, async (req, res) => {
   try {
     const { name, category, quantity, startDate, endDate, price, lots, duration } = req.body;
@@ -128,8 +190,20 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
-
-// PUT /api/permit-types/:id - Update an existing permit type
+/**
+ * PUT /api/permit-types/:id
+ * 
+ * Updates an existing permit type
+ * Supports updates by both MongoDB _id and custom ID format
+ * All fields are optional for partial updates
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} id - Either MongoDB ObjectID or custom permit type ID
+ * @body {Object} - Object containing fields to update
+ * @returns {Object} - Success message and updated permit type data
+ */
 router.put('/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     const permitTypeId = req.params.id;
@@ -171,7 +245,19 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
-// DELETE /api/permit-types/:id - Delete a permit type
+/**
+ * DELETE /api/permit-types/:id
+ * 
+ * Removes a permit type from the system
+ * Supports deletion by both MongoDB _id and custom ID format
+ * This does not affect existing permits of this type already purchased
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} id - Either MongoDB ObjectID or custom permit type ID
+ * @returns {Object} - Success message
+ */
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     const permitTypeId = req.params.id;

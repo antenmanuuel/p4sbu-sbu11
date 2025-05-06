@@ -1,9 +1,29 @@
+/**
+ * This module defines API routes for user vehicle management, including:
+ * - Retrieving user vehicles (all and primary)
+ * - Creating new vehicle records
+ * - Updating existing vehicle information
+ * - Deleting vehicles from user profile
+ * 
+ * All routes in this module are protected with authentication middleware
+ * and enforce ownership verification to ensure users can only access
+ * their own vehicle data.
+ */
+
 const express = require('express');
 const router = express.Router();
 const Car = require('../models/car');
 const { verifyToken } = require('../middleware/auth');
 
-// GET /api/cars - Get all cars for the current user
+/**
+ * GET /api/cars
+ * 
+ * Retrieves all vehicles registered for the current authenticated user
+ * Results are sorted by creation date (newest first)
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @returns {Object} - Success status and array of user's vehicles
+ */
 router.get('/', verifyToken, async (req, res) => {
     try {
         // Get all cars for the user, sorted by creation date instead of isPrimary
@@ -25,7 +45,16 @@ router.get('/', verifyToken, async (req, res) => {
     }
 });
 
-// GET /api/cars/primary - Get the user's primary car
+/**
+ * GET /api/cars/primary
+ * 
+ * Retrieves the user's primary vehicle
+ * If no vehicle is marked as primary, returns the most recently added vehicle
+ * Used for pre-filling reservation forms and user preferences
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @returns {Object} - Success status, vehicle data, and primary status
+ */
 router.get('/primary', verifyToken, async (req, res) => {
     try {
         const primaryCar = await Car.findOne({
@@ -65,7 +94,22 @@ router.get('/primary', verifyToken, async (req, res) => {
     }
 });
 
-// POST /api/cars - Save a new car for the user
+/**
+ * POST /api/cars
+ * 
+ * Creates a new vehicle record for the current user
+ * All vehicle identification details are captured including plate, make, model
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @body {string} plateNumber - Vehicle license plate number
+ * @body {string} stateProv - State/province where vehicle is registered
+ * @body {string} make - Vehicle manufacturer
+ * @body {string} model - Vehicle model
+ * @body {string} color - Vehicle color
+ * @body {string} bodyType - Vehicle body type (sedan, SUV, etc.)
+ * @body {number} year - Vehicle manufacturing year
+ * @returns {Object} - Success status and newly created vehicle data
+ */
 router.post('/', verifyToken, async (req, res) => {
     try {
         const { plateNumber, stateProv, make, model, color, bodyType, year } = req.body;
@@ -102,7 +146,23 @@ router.post('/', verifyToken, async (req, res) => {
     }
 });
 
-// PUT /api/cars/:id - Update an existing car
+/**
+ * PUT /api/cars/:id
+ * 
+ * Updates an existing vehicle's information
+ * Verifies ownership before allowing updates to prevent unauthorized access
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @param {string} id - ID of the vehicle to update
+ * @body {string} plateNumber - Vehicle license plate number
+ * @body {string} stateProv - State/province where vehicle is registered
+ * @body {string} make - Vehicle manufacturer
+ * @body {string} model - Vehicle model
+ * @body {string} color - Vehicle color
+ * @body {string} bodyType - Vehicle body type (sedan, SUV, etc.)
+ * @body {number} year - Vehicle manufacturing year
+ * @returns {Object} - Success status and updated vehicle data
+ */
 router.put('/:id', verifyToken, async (req, res) => {
     try {
         const carId = req.params.id;
@@ -159,7 +219,16 @@ router.put('/:id', verifyToken, async (req, res) => {
     }
 });
 
-// DELETE /api/cars/:id - Delete a car
+/**
+ * DELETE /api/cars/:id
+ * 
+ * Removes a vehicle from the user's profile
+ * Verifies ownership before allowing deletion to prevent unauthorized access
+ * 
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @param {string} id - ID of the vehicle to delete
+ * @returns {Object} - Success status and confirmation message
+ */
 router.delete('/:id', verifyToken, async (req, res) => {
     try {
         const carId = req.params.id;
@@ -197,4 +266,4 @@ router.delete('/:id', verifyToken, async (req, res) => {
     }
 });
 
-module.exports = router; 
+module.exports = router;
