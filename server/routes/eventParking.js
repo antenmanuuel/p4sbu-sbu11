@@ -14,6 +14,7 @@ const User = require('../models/users');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const NotificationHelper = require('../utils/notificationHelper');
 const emailService = require('../services/emailService');
+const mongoose = require('mongoose');
 
 /**
  * Middleware to check if user is faculty
@@ -58,6 +59,41 @@ router.post('/', verifyToken, isFaculty, async (req, res) => {
                 success: false,
                 message: 'Please provide all required information'
             });
+        }
+
+        // If a parking lot is selected, check if it has enough capacity
+        if (parkingLotPreference) {
+            try {
+                // First try to find by the string ID
+                let lot = await Lot.findOne({ lotId: parkingLotPreference });
+
+                // If not found, then try to find by MongoDB ObjectId
+                if (!lot && mongoose.Types.ObjectId.isValid(parkingLotPreference)) {
+                    lot = await Lot.findById(parkingLotPreference);
+                }
+
+                if (!lot) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Selected parking lot not found'
+                    });
+                }
+
+                // Check if lot has enough spaces, but DO NOT deduct them yet
+                // Only validate capacity is sufficient
+                if (lot.availableSpaces < expectedAttendees) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Not enough parking spaces available. The selected lot only has ${lot.availableSpaces} spaces.`
+                    });
+                }
+            } catch (error) {
+                console.error('Error finding parking lot:', error);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Error processing parking lot information'
+                });
+            }
         }
 
         // Create new event request
@@ -161,13 +197,47 @@ router.get('/', verifyToken, async (req, res) => {
             });
         }
 
-        // Get requests with pagination
+        // Get requests with pagination, but don't populate parkingLotPreference yet
         const requests = await EventRequest.find(query)
-            .populate('parkingLotPreference', 'name address')
             .populate('requestedBy', 'firstName lastName email department')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(parseInt(limit));
+
+        // Process the results to handle lot information manually
+        const processedRequests = await Promise.all(requests.map(async (request) => {
+            const requestObj = request.toObject();
+
+            // If there's a parking lot preference, fetch the lot info
+            if (request.parkingLotPreference) {
+                try {
+                    // Try different approaches to find the lot
+                    let lot = null;
+
+                    // Try by lotId first
+                    lot = await Lot.findOne({ lotId: request.parkingLotPreference });
+
+                    // If not found and it looks like a valid ObjectId, try by _id
+                    if (!lot && mongoose.Types.ObjectId.isValid(request.parkingLotPreference)) {
+                        lot = await Lot.findById(request.parkingLotPreference);
+                    }
+
+                    // If lot was found, add its info to the response
+                    if (lot) {
+                        requestObj.parkingLotPreference = {
+                            _id: lot._id,
+                            name: lot.name,
+                            address: lot.address
+                        };
+                    }
+                } catch (error) {
+                    console.error('Error finding parking lot:', error);
+                    // Just leave the lot ID as is if there was an error
+                }
+            }
+
+            return requestObj;
+        }));
 
         // Get total count for pagination
         const total = await EventRequest.countDocuments(query);
@@ -175,7 +245,7 @@ router.get('/', verifyToken, async (req, res) => {
         res.status(200).json({
             success: true,
             data: {
-                requests,
+                requests: processedRequests,
                 pagination: {
                     total,
                     page: parseInt(page),
@@ -201,13 +271,49 @@ router.get('/', verifyToken, async (req, res) => {
 router.get('/my-requests', verifyToken, isFaculty, async (req, res) => {
     try {
         console.log('Faculty user requesting their event parking requests:', req.user.userId);
+
+        // First get all the requests without populating
         const requests = await EventRequest.find({ requestedBy: req.user.userId })
-            .populate('parkingLotPreference', 'name address')
             .sort({ createdAt: -1 });
+
+        // Process the results to handle lot information manually
+        const processedRequests = await Promise.all(requests.map(async (request) => {
+            const requestObj = request.toObject();
+
+            // If there's a parking lot preference, fetch the lot info
+            if (request.parkingLotPreference) {
+                try {
+                    // Try different approaches to find the lot
+                    let lot = null;
+
+                    // Try by lotId first
+                    lot = await Lot.findOne({ lotId: request.parkingLotPreference });
+
+                    // If not found and it looks like a valid ObjectId, try by _id
+                    if (!lot && mongoose.Types.ObjectId.isValid(request.parkingLotPreference)) {
+                        lot = await Lot.findById(request.parkingLotPreference);
+                    }
+
+                    // If lot was found, add its info to the response
+                    if (lot) {
+                        requestObj.parkingLotPreference = {
+                            _id: lot._id,
+                            name: lot.name,
+                            address: lot.address
+                        };
+                    }
+                } catch (error) {
+                    console.error('Error finding parking lot:', error);
+                    // Just leave the lot ID as is if there was an error
+                }
+            }
+
+            return requestObj;
+        }));
 
         res.status(200).json({
             success: true,
-            data: requests
+            data: processedRequests
         });
     } catch (error) {
         console.error('Error fetching faculty event parking requests:', error);
@@ -256,8 +362,8 @@ router.get('/:requestId', verifyToken, async (req, res) => {
     try {
         const { requestId } = req.params;
 
+        // Find the request without populating parkingLotPreference
         const request = await EventRequest.findOne({ requestId })
-            .populate('parkingLotPreference', 'name address totalSpaces availableSpaces')
             .populate('requestedBy', 'firstName lastName email department')
             .populate('approvedBy', 'firstName lastName');
 
@@ -277,9 +383,40 @@ router.get('/:requestId', verifyToken, async (req, res) => {
             });
         }
 
+        // Convert to a plain object for modification
+        const requestObj = request.toObject();
+
+        // If there's a parking lot preference, fetch the lot info
+        if (request.parkingLotPreference) {
+            try {
+                // First try to find by lotId (string identifier)
+                let lot = await Lot.findOne({ lotId: request.parkingLotPreference });
+
+                // If not found and it's a valid ObjectId, try by _id as fallback
+                if (!lot && mongoose.Types.ObjectId.isValid(request.parkingLotPreference)) {
+                    lot = await Lot.findById(request.parkingLotPreference);
+                }
+
+                // If lot was found, add its info to the response
+                if (lot) {
+                    requestObj.parkingLotPreference = {
+                        _id: lot._id,
+                        lotId: lot.lotId,
+                        name: lot.name,
+                        address: lot.address,
+                        totalSpaces: lot.totalSpaces,
+                        availableSpaces: lot.availableSpaces
+                    };
+                }
+            } catch (error) {
+                console.error('Error finding parking lot:', error);
+                // Just leave the lot ID as is if there was an error
+            }
+        }
+
         res.status(200).json({
             success: true,
-            data: request
+            data: requestObj
         });
     } catch (error) {
         console.error('Error fetching event parking request:', error);
@@ -309,11 +446,63 @@ router.put('/:requestId/status', verifyToken, isAdmin, async (req, res) => {
         }
 
         const request = await EventRequest.findOne({ requestId });
+
         if (!request) {
             return res.status(404).json({
                 success: false,
                 message: 'Request not found'
             });
+        }
+
+        // Get the lot (needed for both approving and cancelling)
+        let lot = null;
+        if (request.parkingLotPreference) {
+            try {
+                // First try to find by lotId (which is a string identifier)
+                lot = await Lot.findOne({ lotId: request.parkingLotPreference });
+
+                // If not found and it's a valid ObjectId, try by _id as fallback
+                if (!lot && mongoose.Types.ObjectId.isValid(request.parkingLotPreference)) {
+                    lot = await Lot.findById(request.parkingLotPreference);
+                }
+
+                if (!lot) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Selected parking lot not found'
+                    });
+                }
+            } catch (lotError) {
+                console.error('Error finding parking lot:', lotError);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Error processing parking lot information'
+                });
+            }
+        }
+
+        // If changing status to approved and a parking lot is selected,
+        // check and update the available spaces
+        if (status === 'approved' && lot) {
+            // Ensure lot has enough spaces
+            if (lot.availableSpaces < request.expectedAttendees) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Not enough parking spaces available. This lot only has ${lot.availableSpaces} spaces.`
+                });
+            }
+
+            // Deduct the number of spaces only on approval
+            lot.availableSpaces -= request.expectedAttendees;
+            await lot.save();
+        }
+        // If cancelling a previously approved request, restore the spaces
+        else if (status === 'cancelled' && request.status === 'approved' && lot) {
+            // Add the spaces back to the lot
+            lot.availableSpaces += request.expectedAttendees;
+            // Make sure we don't exceed total spaces
+            lot.availableSpaces = Math.min(lot.availableSpaces, lot.totalSpaces);
+            await lot.save();
         }
 
         // Update request status
@@ -328,34 +517,28 @@ router.put('/:requestId/status', verifyToken, isAdmin, async (req, res) => {
 
         await request.save();
 
-        // Notify the faculty member who requested it
+        // Send notification to the faculty member
         try {
-            const statusMap = {
-                'approved': 'Approved',
-                'denied': 'Denied',
-                'cancelled': 'Cancelled'
-            };
-
-            await NotificationHelper.createSystemNotification(
-                request.requestedBy,
-                `Event Parking Request ${statusMap[status]}`,
-                `Your special event parking request (${requestId}) has been ${status}.`,
-                `/faculty/event-parking/${requestId}`
-            );
-
-            // Send email notification
             const faculty = await User.findById(request.requestedBy);
-            if (faculty && faculty.email) {
+            if (faculty) {
+                // Create a notification for the faculty
+                await NotificationHelper.createSystemNotification(
+                    faculty._id,
+                    `Event Parking Request ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+                    `Your special event parking request (${requestId}) has been ${status}.`,
+                    `/faculty/event-parking/${requestId}`
+                );
+
+                // Send email notification
                 await emailService.sendGenericEmail(
                     faculty.email,
-                    `Special Event Parking Request ${statusMap[status]}`,
+                    `Special Event Parking Request ${status.charAt(0).toUpperCase() + status.slice(1)}`,
                     `<p>Dear ${faculty.firstName} ${faculty.lastName},</p>
-                    <p>Your request for special event parking (${requestId}) has been <strong>${status}</strong>.</p>
+                    <p>Your special event parking request (${requestId}) has been ${status}.</p>
                     <p><strong>Event:</strong> ${request.eventName}<br>
                     <strong>Date:</strong> ${new Date(request.eventDate).toLocaleDateString()}</p>
-                    ${adminNotes ? `<p><strong>Notes:</strong> ${adminNotes}</p>` : ''}
-                    <p>For more information, please log in to your account and check the details of your request.</p>
-                    <p>Thank you for using our services.</p>`
+                    ${adminNotes ? `<p><strong>Admin Notes:</strong> ${adminNotes}</p>` : ''}
+                    <p>Please contact the Office of Mobility & Parking Services if you have any questions.</p>`
                 );
             }
         } catch (notificationError) {
@@ -369,10 +552,10 @@ router.put('/:requestId/status', verifyToken, isAdmin, async (req, res) => {
             data: request
         });
     } catch (error) {
-        console.error('Error updating event parking request:', error);
+        console.error(`Error updating event parking request status:`, error);
         res.status(500).json({
             success: false,
-            message: 'Failed to update request',
+            message: `Failed to update request status`,
             error: error.message
         });
     }

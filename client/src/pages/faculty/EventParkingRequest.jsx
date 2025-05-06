@@ -3,14 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
-import { EventParkingService } from '../../utils/api';
+import { EventParkingService, LotService } from '../../utils/api';
 import NotificationModal from '../../components/NotificationModal';
+import { searchSbuLocations } from '../../utils/sbuLocations';
 
 const EventParkingRequest = ({ darkMode, user, isAuthenticated }) => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [availableLots, setAvailableLots] = useState([]);
+    const [selectedLot, setSelectedLot] = useState(null);
     const [formData, setFormData] = useState({
         eventName: '',
         eventDescription: '',
@@ -26,6 +28,17 @@ const EventParkingRequest = ({ darkMode, user, isAuthenticated }) => {
         organizerPhone: '',
         departmentName: user ? user.department || '' : ''
     });
+
+    // For capacity validation
+    const [capacityWarning, setCapacityWarning] = useState('');
+    const [hasCapacityError, setHasCapacityError] = useState(false);
+
+    // For autocomplete
+    const [showBuildingSuggestions, setShowBuildingSuggestions] = useState(false);
+    const [buildingSuggestions, setBuildingSuggestions] = useState([]);
+    const [showLotSuggestions, setShowLotSuggestions] = useState(false);
+    const [filteredLots, setFilteredLots] = useState([]);
+    const [lotSearchText, setLotSearchText] = useState('');
 
     // For time dropdowns
     const [startHour, setStartHour] = useState('09');
@@ -61,18 +74,19 @@ const EventParkingRequest = ({ darkMode, user, isAuthenticated }) => {
             setLoading(true);
             try {
                 console.log('Fetching available lots for event parking');
-                const result = await EventParkingService.getAvailableLots();
+                // Use LotService instead of EventParkingService
+                const result = await LotService.getLots();
 
                 if (result.success) {
                     console.log('Available lots fetched successfully:', result.data);
                     setAvailableLots(result.data || []);
                 } else {
                     console.error('Failed to fetch available lots:', result.error);
-                    alert(`Failed to load available parking lots: ${result.error}`);
+                    showNotification('Error', `Failed to load available parking lots: ${result.error}`, 'error');
                 }
             } catch (error) {
                 console.error('Error fetching lots:', error);
-                alert(`Error loading available parking lots: ${error.message}`);
+                showNotification('Error', `Error loading available parking lots: ${error.message}`, 'error');
             } finally {
                 setLoading(false);
             }
@@ -99,6 +113,29 @@ const EventParkingRequest = ({ darkMode, user, isAuthenticated }) => {
         setEndAmPm(endDate.getHours() >= 12 ? 'PM' : 'AM');
     }, []);
 
+    // Check lot capacity when expected attendees or selected lot changes
+    useEffect(() => {
+        if (selectedLot && formData.expectedAttendees) {
+            const attendees = parseInt(formData.expectedAttendees);
+            const availableSpaces = selectedLot.availableSpaces;
+
+            if (attendees > availableSpaces) {
+                setHasCapacityError(true);
+                setCapacityWarning(`Warning: The selected lot only has ${availableSpaces} spaces, but you need ${attendees} spaces.`);
+            } else if (attendees > (availableSpaces * 0.75)) {
+                // Warning if using more than 75% of available spaces
+                setHasCapacityError(false);
+                setCapacityWarning(`Note: Your event will use ${Math.round(attendees / availableSpaces * 100)}% of the available parking spaces.`);
+            } else {
+                setHasCapacityError(false);
+                setCapacityWarning('');
+            }
+        } else {
+            setHasCapacityError(false);
+            setCapacityWarning('');
+        }
+    }, [selectedLot, formData.expectedAttendees]);
+
     const handleInputChange = (e) => {
         const { name, value } = e.target;
 
@@ -108,12 +145,66 @@ const EventParkingRequest = ({ darkMode, user, isAuthenticated }) => {
                 ...prev,
                 [name]: value || null // Use null instead of empty string
             }));
+        } else if (name === 'expectedAttendees') {
+            // Convert to number and ensure it's at least 1
+            const attendees = Math.max(1, parseInt(value) || 1);
+            setFormData(prev => ({
+                ...prev,
+                [name]: attendees
+            }));
         } else {
             setFormData(prev => ({
                 ...prev,
                 [name]: value
             }));
         }
+    };
+
+    // Handle building input change with autocomplete
+    const handleBuildingChange = (e) => {
+        const query = e.target.value;
+        setFormData(prev => ({ ...prev, location: query }));
+
+        if (query.trim()) {
+            // Search for SBU locations matching the query
+            const matches = searchSbuLocations(query);
+            setBuildingSuggestions(matches);
+            setShowBuildingSuggestions(matches.length > 0);
+        } else {
+            setBuildingSuggestions([]);
+            setShowBuildingSuggestions(false);
+        }
+    };
+
+    // Handle building selection from suggestions
+    const handleBuildingSelect = (building) => {
+        setFormData(prev => ({ ...prev, location: building.name }));
+        setShowBuildingSuggestions(false);
+    };
+
+    // Handle parking lot input change with autocomplete
+    const handleLotSearchChange = (e) => {
+        const query = e.target.value;
+        setLotSearchText(query);
+
+        if (query.trim() && availableLots.length > 0) {
+            const matches = availableLots.filter(lot =>
+                lot.name.toLowerCase().includes(query.toLowerCase())
+            );
+            setFilteredLots(matches);
+            setShowLotSuggestions(matches.length > 0);
+        } else {
+            setFilteredLots([]);
+            setShowLotSuggestions(false);
+        }
+    };
+
+    // Handle lot selection from suggestions
+    const handleLotSelect = (lot) => {
+        setSelectedLot(lot);
+        setFormData(prev => ({ ...prev, parkingLotPreference: lot.id }));
+        setLotSearchText(lot.name);
+        setShowLotSuggestions(false);
     };
 
     const handleDateChange = (date, field) => {
@@ -173,7 +264,7 @@ const EventParkingRequest = ({ darkMode, user, isAuthenticated }) => {
         // Basic form validation
         if (!formData.eventName || !formData.eventDescription || !formData.location ||
             !formData.organizerName || !formData.organizerEmail || !formData.organizerPhone ||
-            !formData.departmentName) {
+            !formData.departmentName || !formData.parkingLotPreference) {
             showNotification('Missing Information', 'Please fill in all required fields.', 'error');
             return;
         }
@@ -184,16 +275,21 @@ const EventParkingRequest = ({ darkMode, user, isAuthenticated }) => {
             return;
         }
 
+        // Validate lot capacity if a lot is selected
+        if (selectedLot && formData.expectedAttendees > selectedLot.availableSpaces) {
+            showNotification(
+                'Insufficient Capacity',
+                `The selected parking lot (${selectedLot.name}) only has ${selectedLot.availableSpaces} spaces available, but your event requires ${formData.expectedAttendees} spaces.`,
+                'error'
+            );
+            return;
+        }
+
         setSubmitting(true);
 
         try {
             // Create a copy of the data to send
             const dataToSubmit = { ...formData };
-
-            // Ensure parkingLotPreference is null if empty string
-            if (dataToSubmit.parkingLotPreference === '') {
-                dataToSubmit.parkingLotPreference = null;
-            }
 
             console.log('Submitting event parking request', dataToSubmit);
             const result = await EventParkingService.submitEventRequest(dataToSubmit);
@@ -266,7 +362,7 @@ const EventParkingRequest = ({ darkMode, user, isAuthenticated }) => {
                             />
                         </div>
 
-                        <div className="mb-4">
+                        <div className="mb-4 relative">
                             <label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-1">
                                 Event Location/Building*
                             </label>
@@ -275,11 +371,34 @@ const EventParkingRequest = ({ darkMode, user, isAuthenticated }) => {
                                 id="location"
                                 name="location"
                                 value={formData.location}
-                                onChange={handleInputChange}
+                                onChange={handleBuildingChange}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-600"
                                 placeholder="Building/Venue Name"
                                 required
+                                autoComplete="off"
                             />
+                            {/* Building Suggestions */}
+                            {showBuildingSuggestions && buildingSuggestions.length > 0 && (
+                                <div className="mt-1 absolute z-50 w-full rounded-lg overflow-hidden shadow-lg bg-white text-gray-900">
+                                    <ul className="max-h-40 overflow-y-auto">
+                                        {buildingSuggestions.slice(0, 5).map((building, index) => (
+                                            <li
+                                                key={`building-${index}`}
+                                                className="px-4 py-2 cursor-pointer hover:bg-gray-100 transition-colors border-b border-gray-100"
+                                                onClick={() => handleBuildingSelect(building)}
+                                            >
+                                                <div className="font-medium">{building.name}</div>
+                                                <div className="text-xs text-gray-500">{building.description}</div>
+                                            </li>
+                                        ))}
+                                        {buildingSuggestions.length > 5 && (
+                                            <li className="px-4 py-2 text-xs text-gray-500 italic">
+                                                {buildingSuggestions.length - 5} more results...
+                                            </li>
+                                        )}
+                                    </ul>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -403,27 +522,57 @@ const EventParkingRequest = ({ darkMode, user, isAuthenticated }) => {
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-600"
                                 required
                             />
+                            <p className="text-sm text-gray-500 mt-1">
+                                This is the number of parking spaces that will be reserved for your event.
+                            </p>
                         </div>
 
-                        <div className="mb-4">
+                        <div className="mb-4 relative">
                             <label htmlFor="parkingLotPreference" className="block text-sm font-medium text-gray-700 mb-1">
-                                Preferred Parking Lot (Optional)
+                                Preferred Parking Lot*
                             </label>
                             {availableLots.length > 0 ? (
-                                <select
-                                    id="parkingLotPreference"
-                                    name="parkingLotPreference"
-                                    value={formData.parkingLotPreference || ''}
-                                    onChange={handleInputChange}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-600"
-                                >
-                                    <option value="">No Preference</option>
-                                    {availableLots.map(lot => (
-                                        <option key={lot._id} value={lot._id}>
-                                            {lot.name} ({lot.availableSpaces} spaces available)
-                                        </option>
-                                    ))}
-                                </select>
+                                <>
+                                    <input
+                                        type="text"
+                                        id="lotSearch"
+                                        value={lotSearchText}
+                                        onChange={handleLotSearchChange}
+                                        className={`w-full px-3 py-2 border ${hasCapacityError ? 'border-red-500' : 'border-gray-300'} rounded-md focus:outline-none focus:ring-2 focus:ring-red-600`}
+                                        placeholder="Search for a parking lot"
+                                        autoComplete="off"
+                                        required
+                                    />
+                                    {/* Lot Suggestions */}
+                                    {showLotSuggestions && filteredLots.length > 0 && (
+                                        <div className="mt-1 absolute z-50 w-full rounded-lg overflow-hidden shadow-lg bg-white text-gray-900">
+                                            <ul className="max-h-40 overflow-y-auto">
+                                                {filteredLots.map(lot => (
+                                                    <li
+                                                        key={lot.id}
+                                                        className="px-4 py-2 cursor-pointer hover:bg-gray-100 transition-colors border-b border-gray-100"
+                                                        onClick={() => handleLotSelect(lot)}
+                                                    >
+                                                        <div className="font-medium">{lot.name}</div>
+                                                        <div className="text-xs text-gray-500">
+                                                            {lot.availableSpaces} spaces available
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    {capacityWarning && (
+                                        <p className={`text-sm mt-1 ${hasCapacityError ? 'text-red-500' : 'text-amber-600'}`}>
+                                            {capacityWarning}
+                                        </p>
+                                    )}
+                                    {selectedLot && !hasCapacityError && !capacityWarning && (
+                                        <p className="text-sm text-green-600 mt-1">
+                                            {selectedLot.name} has {selectedLot.availableSpaces} spaces available.
+                                        </p>
+                                    )}
+                                </>
                             ) : (
                                 <input
                                     type="text"
@@ -432,7 +581,8 @@ const EventParkingRequest = ({ darkMode, user, isAuthenticated }) => {
                                     value={formData.parkingLotPreference || ''}
                                     onChange={handleInputChange}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-600"
-                                    placeholder="Enter preferred lot if any"
+                                    placeholder="Enter a parking lot name"
+                                    required
                                 />
                             )}
                         </div>
@@ -521,32 +671,24 @@ const EventParkingRequest = ({ darkMode, user, isAuthenticated }) => {
                     </div>
                 </div>
 
-                <div className="flex justify-between items-center mt-8">
-                    <button
-                        type="button"
-                        onClick={() => navigate(-1)}
-                        className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
-                    >
-                        Cancel
-                    </button>
-
+                <div className="flex justify-end">
                     <button
                         type="submit"
-                        disabled={submitting}
-                        className={`px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-600 ${submitting ? 'opacity-70 cursor-not-allowed' : ''}`}
+                        disabled={submitting || hasCapacityError}
+                        className={`px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 ${(submitting || hasCapacityError) ? 'opacity-70 cursor-not-allowed' : ''}`}
                     >
                         {submitting ? 'Submitting...' : 'Submit Request'}
                     </button>
                 </div>
             </form>
 
-            {/* Add the notification modal at the end of the component */}
+            {/* Notification Modal */}
             <NotificationModal
                 isOpen={notification.isOpen}
-                onClose={closeNotification}
                 title={notification.title}
                 message={notification.message}
                 type={notification.type}
+                onClose={closeNotification}
             />
         </div>
     );
