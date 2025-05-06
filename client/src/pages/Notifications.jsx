@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NotificationService, AuthService } from '../utils/api';
-import { FaCheck, FaCheckDouble, FaTrash, FaClock, FaFilter, FaExclamationTriangle, FaParking, FaInfoCircle, FaArrowLeft } from 'react-icons/fa';
+import { FaCheck, FaCheckDouble, FaTrash, FaClock, FaFilter, FaExclamationTriangle, FaParking, FaInfoCircle, FaArrowLeft, FaCog } from 'react-icons/fa';
 
 const Notifications = ({ darkMode }) => {
     const navigate = useNavigate();
@@ -248,9 +248,20 @@ const Notifications = ({ darkMode }) => {
                                         }`}
                                 >
                                     <FaCheckDouble className="mr-2" />
-                                    Mark All as Read
+                                    Mark All Read
                                 </button>
                             )}
+                            <button
+                                onClick={() => navigate('/settings', { state: { activeSection: 'notifications' } })}
+                                className={`flex items-center px-3 py-1.5 rounded-md text-sm ${darkMode
+                                    ? 'bg-gray-700 hover:bg-gray-600 text-white'
+                                    : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+                                    }`}
+                                title="Notification Settings"
+                            >
+                                <FaCog className="mr-2" />
+                                Settings
+                            </button>
                         </div>
                     </div>
                 </div>

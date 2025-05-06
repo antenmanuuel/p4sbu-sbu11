@@ -157,12 +157,78 @@ mongoose.Types = {
 // Create a shared mock for Reservation aggregate
 const mockReservationAggregate = jest.fn();
 
-// Mock mongoose models
+// Add the missing mock for PermitSchema.statics.isValidPermit
+jest.mock('../models/permits', () => {
+    // Create a mock permit model
+    const mockPermitModel = function (data) {
+        return data;
+    };
+
+    // Add the required static method that's causing the error
+    mockPermitModel.isValidPermit = jest.fn().mockReturnValue(true);
+
+    // Add aggregate method that's needed for billing history
+    mockPermitModel.aggregate = jest.fn().mockResolvedValue([
+        {
+            _id: 'permit1',
+            date: new Date(),
+            description: 'Student Permit',
+            amount: 100,
+            status: 'paid',
+            type: 'permit'
+        }
+    ]);
+
+    return mockPermitModel;
+});
+
+// Create a more consistent structure for mocks
+const permitFindMock = jest.fn().mockReturnValue({
+    populate: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+            {
+                _id: 'permit1',
+                createdAt: new Date(),
+                permitName: 'Student Permit',
+                price: 100,
+                paymentStatus: 'paid',
+                lots: [{ lotId: { name: 'Faculty Lot' } }],
+                startDate: new Date(),
+                endDate: new Date(Date.now() + 86400000 * 30)
+            }
+        ])
+    })
+});
+
+const reservationFindMock = jest.fn().mockReturnValue({
+    populate: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+            {
+                _id: 'reservation1',
+                createdAt: new Date(),
+                reservationId: '12345678',
+                totalPrice: 10.50,
+                paymentStatus: 'paid',
+                lotId: { name: 'North Lot', rateType: 'Hourly', hourlyRate: 2.5 },
+                startTime: new Date(),
+                endTime: new Date(Date.now() + 3600000)
+            }
+        ])
+    })
+});
+
+// Mock mongoose models with consistent functions 
 mongoose.model = jest.fn().mockImplementation((modelName) => {
     if (modelName === 'Reservation') {
-        // Return the shared mock aggregate function
         return {
-            aggregate: mockReservationAggregate
+            aggregate: mockReservationAggregate,
+            find: reservationFindMock
+        };
+    }
+    if (modelName === 'Permit') {
+        return {
+            find: permitFindMock,
+            aggregate: jest.fn().mockResolvedValue([])
         };
     }
     if (modelName === 'Lot') {
@@ -355,57 +421,39 @@ describe('User Routes', () => {
         });
     });
 
-    // Add new tests for billing history
+    // Tests for billing history
     describe('GET /api/user/billing-history', () => {
+        beforeEach(() => {
+            // Reset mocks before each test
+            permitFindMock.mockClear();
+            reservationFindMock.mockClear();
+        });
+
         it('should get user billing history successfully', async () => {
-            mockUserMethods.aggregate.mockResolvedValue([
-                {
-                    _id: 'permit1',
-                    date: new Date(),
-                    description: 'Student Permit',
-                    amount: 100,
-                    status: 'paid',
-                    type: 'permit'
-                }
-            ]);
-
-            // Set up mock return values for the two expected aggregate calls
-            mockReservationAggregate
-                .mockResolvedValueOnce([ // First call (metered reservations)
-                    {
-                        _id: 'reservation1',
-                        date: new Date(),
-                        description: 'Metered Parking at North Lot (Reservation #12345678)',
-                        amount: 10.50,
-                        status: 'Paid',
-                        type: 'metered'
-                    }
-                ])
-                .mockResolvedValueOnce([ // Second call (refunds)
-                    {
-                        _id: 'refund1',
-                        date: new Date(),
-                        description: 'Refund: Cancelled Reservation at South Lot (Reservation #87654321)',
-                        amount: -5.75,
-                        status: 'Refunded',
-                        type: 'refund'
-                    }
-                ]);
-
+            // Make the request
             const res = await request(app).get('/api/user/billing-history');
 
+            // Verify the response
             expect(res.status).toBe(200);
             expect(res.body).toHaveProperty('success', true);
-            expect(mockUserMethods.aggregate).toHaveBeenCalled();
-            // Check that the shared aggregate mock was called twice
-            expect(mockReservationAggregate).toHaveBeenCalledTimes(2);
+            expect(res.body).toHaveProperty('billingHistory');
+            expect(Array.isArray(res.body.billingHistory)).toBe(true);
+
+            // Verify that the find methods were called
+            expect(permitFindMock).toHaveBeenCalled();
+            expect(reservationFindMock).toHaveBeenCalled();
         });
 
         it('should handle errors when fetching billing history', async () => {
-            mockUserMethods.aggregate.mockRejectedValue(new Error('Database error'));
+            // Make the permit find throw an error for this test only
+            permitFindMock.mockImplementationOnce(() => {
+                throw new Error('Database error');
+            });
 
+            // Make the request
             const res = await request(app).get('/api/user/billing-history');
 
+            // Verify the error response
             expect(res.status).toBe(500);
             expect(res.body).toHaveProperty('success', false);
             expect(res.body).toHaveProperty('message', 'Server error');

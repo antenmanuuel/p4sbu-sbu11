@@ -14,7 +14,7 @@ const PermitSchema = new mongoose.Schema(
     permitType: {
       type: String,
       required: true,
-      enum: ['Student', 'Faculty', 'Staff', 'Visitor']
+      enum: ['Student', 'Faculty', 'Staff', 'Visitor', 'Commuter Core', 'Commuter Perimeter', 'Commuter Satelite']
     },
     // Reference to the user (if available), stored as ObjectId to relate to our User model
     userId: {
@@ -76,6 +76,22 @@ const PermitSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'PermitType',
       required: false
+    },
+    // Refund information
+    refundId: {
+      type: String
+    },
+    refundedAt: {
+      type: Date
+    },
+    // Reference to permit this one replaced, if applicable
+    replacedPermitId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Permit'
+    },
+    // Notes or comments about this permit
+    notes: {
+      type: String
     }
   },
   { timestamps: true }

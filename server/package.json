@@ -8,7 +8,8 @@
         "dev": "nodemon server.js",
         "debug": "nodemon --inspect server.js",
         "test": "jest --detectOpenHandles",
-        "test:watch": "jest --watch"
+        "test:watch": "jest --watch",
+        "test:concurrency": "node tests/concurrencyTest.js"
     },
     "dependencies": {
         "bcrypt": "^5.1.1",
@@ -27,7 +28,8 @@
         "nodemailer": "^6.10.0",
         "nodemailer-mailgun-transport": "^2.1.5",
         "pdfkit": "^0.16.0",
-        "stripe": "^17.7.0"
+        "stripe": "^17.7.0",
+        "axios": "^1.6.0"
     },
     "devDependencies": {
         "jest": "^29.7.0",

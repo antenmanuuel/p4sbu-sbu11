@@ -70,7 +70,45 @@ const ReservationSchema = new Schema({
         status: { type: String },
         refundedAt: { type: Date }
     },
-
+    // Track if user used an existing permit
+    usedExistingPermit: {
+        type: Boolean,
+        default: false
+    },
+    // ID of compatible permit if one was used
+    compatiblePermitId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Permit',
+        required: false
+    },
+    // Flag for free reservations and reason
+    isFreeReservation: {
+        type: Boolean,
+        default: false
+    },
+    freeReason: {
+        type: String,
+        default: ''
+    },
+    // Track if price was adjusted due to time-based rules
+    adjustedForTimeRules: {
+        type: Boolean,
+        default: false
+    },
+    // Store time details for better billing history tracking
+    timeDetails: {
+        isWeekend: Boolean,
+        startHour: Number,
+        isMeteredLot: Boolean,
+        isPermitBasedLot: Boolean
+    },
+    // Extension history for tracking when/how a reservation was extended
+    extensionHistory: [{
+        extendedAt: Date,
+        additionalHours: Number,
+        additionalPrice: Number,
+        paymentIntentId: String
+    }],
     cancelledAt: { type: Date },
     cancelReason: { type: String },
 }, {

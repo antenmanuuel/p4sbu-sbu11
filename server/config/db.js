@@ -1,8 +1,29 @@
+/**
+ * This module provides functionality for:
+ * - Establishing a reliable MongoDB connection with retry logic
+ * - Creating initial application data for the database
+ * - Setting up event handlers for database connection states
+ * - Properly closing database connections on application termination
+ * 
+ * The module creates default admin users and parking lots when
+ * the database is first initialized to ensure the application
+ * has baseline data to operate with.
+ */
+
 const mongoose = require('mongoose');
 const User = require('../models/users');
 const Lot = require('../models/lot');
 
-// Create default admin user function
+/**
+ * Creates a default admin user if none exists in the database
+ * 
+ * This function ensures there's always at least one admin user
+ * available in the system for first-time setup. The default
+ * admin credentials are logged to the console for initial access.
+ * 
+ * @async
+ * @returns {Promise<void>}
+ */
 const createDefaultAdmin = async () => {
     try {
         // Check if admin user already exists
@@ -15,7 +36,7 @@ const createDefaultAdmin = async () => {
                 lastName: 'User',
                 email: 'admin@stonybrook.edu',
                 password: 'admin123', // Will be hashed by the pre-save hook
-                sbuId: '99999999', // Special admin ID
+                sbuId: '999999999', // Special admin ID
                 phone: '',
                 userType: 'admin',
                 isApproved: true // Admin is automatically approved
@@ -31,7 +52,16 @@ const createDefaultAdmin = async () => {
     }
 };
 
-// Create default lots
+/**
+ * Creates default parking lots if none exist in the database
+ * 
+ * This function ensures the system has initial parking lot data
+ * for testing and demonstration purposes. Each lot is created with
+ * default values for capacity, rates, and features.
+ * 
+ * @async
+ * @returns {Promise<void>}
+ */
 const createDefaultLots = async () => {
     try {
         const lotsCount = await Lot.countDocuments();
@@ -42,11 +72,11 @@ const createDefaultLots = async () => {
                     name: 'North P Lot',
                     address: 'im an address 1',
                     description: 'im a description 1',
-                    location: {latitude: 40.922, longitude: -72.124},
+                    location: { latitude: 40.922, longitude: -72.124 },
                     totalSpaces: 100,
                     availableSpaces: 42,
                     permitTypes: ['Faculty', 'Commuter Student'],
-                    hourlyRate: 2.5, 
+                    hourlyRate: 2.5,
                     semesterRate: 150,
                     rateType: 'Permit-based',
                     status: 'Active',
@@ -57,11 +87,11 @@ const createDefaultLots = async () => {
                     name: 'South P Lot',
                     address: 'im an address 2',
                     description: 'im a description 2',
-                    location: {latitude: 40.922, longitude: -72.124},
+                    location: { latitude: 40.922, longitude: -72.124 },
                     totalSpaces: 100,
                     availableSpaces: 42,
                     permitTypes: ['Faculty', 'Commuter Student'],
-                    hourlyRate: 2.5, 
+                    hourlyRate: 2.5,
                     semesterRate: 150,
                     rateType: 'Permit-based',
                     status: 'Active',
@@ -72,11 +102,11 @@ const createDefaultLots = async () => {
                     name: 'Administration Garage',
                     address: 'im an address 3',
                     description: 'im a description 3',
-                    location: {latitude: 40.922, longitude: -72.124},
+                    location: { latitude: 40.922, longitude: -72.124 },
                     totalSpaces: 100,
                     availableSpaces: 42,
                     permitTypes: ['Faculty', 'Commuter Student'],
-                    hourlyRate: 2.5, 
+                    hourlyRate: 2.5,
                     semesterRate: 150,
                     rateType: 'Permit-based',
                     status: 'Active',
@@ -87,11 +117,11 @@ const createDefaultLots = async () => {
                     name: 'Health Sciences Garage',
                     address: 'im an address 4',
                     description: 'im a description 4',
-                    location: {latitude: 40.922, longitude: -72.124},
+                    location: { latitude: 40.922, longitude: -72.124 },
                     totalSpaces: 100,
                     availableSpaces: 42,
                     permitTypes: ['Faculty', 'Commuter Student'],
-                    hourlyRate: 2.5, 
+                    hourlyRate: 2.5,
                     semesterRate: 150,
                     rateType: 'Permit-based',
                     status: 'Active',
@@ -102,11 +132,11 @@ const createDefaultLots = async () => {
                     name: 'Chapin Apartments Lot',
                     address: 'im an address 5',
                     description: 'im a description 5',
-                    location: {latitude: 40.922, longitude: -72.124},
+                    location: { latitude: 40.922, longitude: -72.124 },
                     totalSpaces: 100,
                     availableSpaces: 42,
                     permitTypes: ['Faculty', 'Commuter Student'],
-                    hourlyRate: 2.5, 
+                    hourlyRate: 2.5,
                     semesterRate: 150,
                     rateType: 'Permit-based',
                     status: 'Active',
@@ -117,11 +147,11 @@ const createDefaultLots = async () => {
                     name: 'Stadium Lot',
                     address: 'im an address 6',
                     description: 'im a description 6',
-                    location: {latitude: 40.922, longitude: -72.124},
+                    location: { latitude: 40.922, longitude: -72.124 },
                     totalSpaces: 100,
                     availableSpaces: 42,
                     permitTypes: ['Faculty', 'Commuter Student'],
-                    hourlyRate: 2.5, 
+                    hourlyRate: 2.5,
                     semesterRate: 150,
                     rateType: 'Permit-based',
                     status: 'Active',
@@ -132,11 +162,11 @@ const createDefaultLots = async () => {
                     name: 'West Apartment Lot',
                     address: 'im an address 7',
                     description: 'im a description 7',
-                    location: {latitude: 40.922, longitude: -72.124},
+                    location: { latitude: 40.922, longitude: -72.124 },
                     totalSpaces: 100,
                     availableSpaces: 42,
                     permitTypes: ['Faculty', 'Commuter Student'],
-                    hourlyRate: 2.5, 
+                    hourlyRate: 2.5,
                     semesterRate: 150,
                     rateType: 'Permit-based',
                     status: 'Active',
@@ -147,11 +177,11 @@ const createDefaultLots = async () => {
                     name: 'Engineering Lot',
                     address: 'im an address 8',
                     description: 'im a description 8',
-                    location: {latitude: 40.922, longitude: -72.124},
+                    location: { latitude: 40.922, longitude: -72.124 },
                     totalSpaces: 100,
                     availableSpaces: 42,
                     permitTypes: ['Faculty', 'Commuter Student'],
-                    hourlyRate: 2.5, 
+                    hourlyRate: 2.5,
                     semesterRate: 150,
                     rateType: 'Permit-based',
                     status: 'Active',
@@ -162,11 +192,11 @@ const createDefaultLots = async () => {
                     name: 'East Campus Lot',
                     address: 'im an address 9',
                     description: 'im a description 9',
-                    location: {latitude: 40.922, longitude: -72.124},
+                    location: { latitude: 40.922, longitude: -72.124 },
                     totalSpaces: 100,
                     availableSpaces: 42,
                     permitTypes: ['Faculty', 'Commuter Student'],
-                    hourlyRate: 2.5, 
+                    hourlyRate: 2.5,
                     semesterRate: 150,
                     rateType: 'Permit-based',
                     status: 'Active',
@@ -177,11 +207,11 @@ const createDefaultLots = async () => {
                     name: 'Visitor Parking Center',
                     address: 'im an address 10',
                     description: 'im a description 10',
-                    location: {latitude: 40.922, longitude: -72.124},
+                    location: { latitude: 40.922, longitude: -72.124 },
                     totalSpaces: 100,
                     availableSpaces: 42,
                     permitTypes: ['Faculty', 'Commuter Student'],
-                    hourlyRate: 2.5, 
+                    hourlyRate: 2.5,
                     semesterRate: 150,
                     rateType: 'Permit-based',
                     status: 'Active',
@@ -197,7 +227,19 @@ const createDefaultLots = async () => {
     }
 };
 
-// Enhanced connect function with retry logic
+/**
+ * Establishes a connection to the MongoDB database with retry logic
+ * 
+ * This function attempts to connect to MongoDB using the connection
+ * string from environment variables. If connection fails, it will
+ * retry with a configurable delay up to a maximum number of attempts.
+ * After successful connection, it initializes default data.
+ * 
+ * @async
+ * @param {number} retryCount - Maximum number of connection attempts
+ * @param {number} delay - Delay in milliseconds between retry attempts
+ * @returns {Promise<boolean>} True if connection is successful
+ */
 const connectDB = async (retryCount = 3, delay = 3000) => {
     let attempts = 0;
 
@@ -260,4 +302,4 @@ process.on('SIGINT', async () => {
     process.exit(0);
 });
 
-module.exports = { connectDB }; 
+module.exports = { connectDB };

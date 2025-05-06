@@ -8,7 +8,7 @@ const UserActivitySchema = new mongoose.Schema({
     },
     activity_type: {
         type: String,
-        enum: ['login', 'password_change', 'account_created', 'profile_update', 'login_failed', 'password_change_failed', 'password_changed'],
+        enum: ['login', 'password_change', 'account_created', 'profile_update', 'login_failed', 'password_change_failed', 'password_changed', 'session_timeout'],
         required: true
     },
     description: {
