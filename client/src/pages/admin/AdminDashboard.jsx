@@ -7,8 +7,8 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
 } from 'recharts';
-import { FaUsers, FaUserCog, FaParking, FaMapMarkerAlt, FaCheckCircle, FaTimesCircle, FaInfoCircle, FaExclamationCircle, FaTicketAlt, FaCar, FaFileAlt, FaSync, FaFileDownload } from 'react-icons/fa';
-import { AdminService, PermitService } from '../../utils/api';
+import { FaUsers, FaUserCog, FaParking, FaMapMarkerAlt, FaCheckCircle, FaTimesCircle, FaInfoCircle, FaExclamationCircle, FaTicketAlt, FaCar, FaFileAlt, FaSync, FaFileDownload, FaEnvelope, FaCalendarAlt } from 'react-icons/fa';
+import { AdminService, PermitService, ReservationService, EventParkingService } from '../../utils/api';
 
 const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     const navigate = useNavigate();
@@ -44,11 +44,11 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     const [revenueError, setRevenueError] = useState('');
 
     // State for current month and pie data
-    const [currentMonth, setCurrentMonth] = useState({ month: '', value: 0, permits: 0, citations: 0, other: 0 });
+    const [currentMonth, setCurrentMonth] = useState({ month: '', value: 0, permits: 0, citations: 0, metered: 0 });
     const [pieData, setPieData] = useState([
         { name: 'Permits', value: 0 },
         { name: 'Citations', value: 0 },
-        { name: 'Other', value: 0 },
+        { name: 'Metered', value: 0 },
     ]);
 
     // State for growth data
@@ -67,14 +67,27 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     // Add useRef to imports
     const isInitialLoad = useRef(true);
 
-    // Update the loadDashboardData function to mark initial load as complete after first fetch
+    // Add state for contact submissions count
+    const [contactSubmissionsCount, setContactSubmissionsCount] = useState(0);
+    const [isContactSubmissionsCountLoading, setIsContactSubmissionsCountLoading] = useState(true);
+    const [contactSubmissionsCountError, setContactSubmissionsCountError] = useState('');
+
+    // Add state for event parking requests count
+    const [eventRequestsCount, setEventRequestsCount] = useState(0);
+    const [isEventRequestsLoading, setIsEventRequestsLoading] = useState(true);
+    const [eventRequestsError, setEventRequestsError] = useState('');
+
+    // Update the loadDashboardData function to include event requests
     const loadDashboardData = useCallback(() => {
+        // Load all dashboard data without setting up any automatic refresh
         fetchPendingUsers();
         fetchUsersCount();
         fetchLotsCount();
         fetchRevenueStats();
         fetchActivePermitsCount();
         fetchActiveReservationsCount();
+        fetchContactSubmissionsCount();
+        fetchEventRequestsCount();
 
         // Mark initial load as complete after a short delay
         setTimeout(() => {
@@ -85,18 +98,45 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
     // Replace the existing useEffect for initial data loading with this improved version
     useEffect(() => {
         if (isAuthenticated) {
-            // Load data initially
-            loadDashboardData();
+            console.log('Admin Dashboard: Loading initial data on startup');
 
-            // Set up polling for live updates (every 30 seconds)
-            const pollingInterval = setInterval(() => {
-                fetchRevenueStats();
-                fetchActivePermitsCount();
-                fetchActiveReservationsCount();
-            }, 30000); // 30 seconds
+            // Show the "refreshing" notification on startup
+            setNotificationMessage('Refreshing data...');
+            setNotificationType('success');
+            setShowNotification(true);
 
-            // Clean up interval on component unmount
-            return () => clearInterval(pollingInterval);
+            // Load all data on startup
+            const loadStartupData = async () => {
+                try {
+                    // Load all data sources
+                    await fetchPendingUsers();
+                    await fetchUsersCount();
+                    await fetchLotsCount();
+                    await fetchRevenueStats();
+                    await fetchActivePermitsCount();
+                    await fetchActiveReservationsCount();
+                    await fetchContactSubmissionsCount();
+                    await fetchEventRequestsCount();
+
+                    // Show success notification after loading
+                    setNotificationMessage('Data refreshed successfully');
+                    setNotificationType('success');
+
+                    // Mark initial load as complete
+                    isInitialLoad.current = false;
+                } catch (error) {
+                    console.error('Error loading initial data:', error);
+                    setNotificationMessage('Failed to refresh data');
+                    setNotificationType('error');
+                }
+
+                // Hide notification after 3 seconds
+                setTimeout(() => {
+                    setShowNotification(false);
+                }, 3000);
+            };
+
+            loadStartupData();
         }
     }, [isAuthenticated]);
 
@@ -194,7 +234,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                     value: 0,
                     permits: 0,
                     citations: 0,
-                    other: 0
+                    metered: 0,
                 };
 
                 setCurrentMonth(currentMonthData);
@@ -203,7 +243,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                 const newPieData = [
                     { name: 'Permits', value: currentMonthData.permits || 0 },
                     { name: 'Citations', value: currentMonthData.citations || 0 },
-                    { name: 'Other', value: currentMonthData.other || 0 }
+                    { name: 'Metered', value: currentMonthData.metered || 0 },
                 ].filter(item => item.value > 0);
 
                 setPieData(newPieData.length > 0 ? newPieData : [
@@ -253,22 +293,11 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                 } else {
                     setGrowthData([]);
                 }
-
-                // Show notification for revenue data update
-                if (!isInitialLoad.current) {
-                    setNotificationMessage('Revenue statistics updated');
-                    setNotificationType('info');
-                    setShowNotification(true);
-
-                    setTimeout(() => {
-                        setShowNotification(false);
-                    }, 3000);
-                }
             } else {
                 // Handle empty or error response
                 console.error('Empty or error response from revenue statistics:', response);
                 setRevenueData([]);
-                setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, other: 0 });
+                setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, metered: 0 });
                 setPieData([{ name: 'No Revenue', value: 1 }]);
                 setGrowthData([]);
             }
@@ -276,7 +305,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
             console.error('Error fetching revenue statistics:', error);
             // Handle error state
             setRevenueData([]);
-            setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, other: 0 });
+            setCurrentMonth({ month: getCurrentMonthString(), value: 0, permits: 0, citations: 0, metered: 0 });
             setPieData([{ name: 'No Revenue', value: 1 }]);
             setGrowthData([]);
         } finally {
@@ -334,11 +363,61 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
         }
     };
 
+    // Add function to fetch contact submissions count
+    const fetchContactSubmissionsCount = async () => {
+        setIsContactSubmissionsCountLoading(true);
+        setContactSubmissionsCountError('');
+
+        try {
+            const result = await AdminService.getContactSubmissionCounts();
+            if (result.success) {
+                setContactSubmissionsCount(result.data.counts.total || 0);
+            } else {
+                setContactSubmissionsCountError(result.error || 'Failed to fetch contact submissions count');
+                console.error('Error fetching contact submissions count:', result.error);
+            }
+        } catch (error) {
+            setContactSubmissionsCountError('An unexpected error occurred');
+            console.error('Unexpected error fetching contact submissions count:', error);
+        } finally {
+            setIsContactSubmissionsCountLoading(false);
+        }
+    };
+
+    // Update the fetchEventRequestsCount function
+    const fetchEventRequestsCount = async () => {
+        setIsEventRequestsLoading(true);
+        setEventRequestsError('');
+
+        try {
+            console.log('Fetching event requests count');
+
+            // Use EventParkingService instead of direct fetch
+            const result = await EventParkingService.getEventRequests({
+                status: 'pending',
+                limit: 1
+            });
+
+            if (result.success) {
+                console.log('Event requests count data:', result.data);
+                setEventRequestsCount(result.data.pagination.total || 0);
+            } else {
+                console.error('API returned error:', result.error);
+                setEventRequestsError(result.error || 'Failed to fetch event requests count');
+            }
+        } catch (err) {
+            console.error('Error fetching event requests count:', err);
+            setEventRequestsError('An unexpected error occurred while fetching event requests count');
+        } finally {
+            setIsEventRequestsLoading(false);
+        }
+    };
+
     if (!isAuthenticated) {
         navigate('/');
     }
 
-    const COLORS = ['#4CAF50', '#F44336', '#2196F3'];
+    const COLORS = ['#4CAF50', '#F44336', '#2196F3', '#FF9800'];
 
     const revenue = revenueData.length > 0 ? revenueData[revenueData.length - 1].value : 0;
     const prevRevenue = revenueData.length > 1 ? revenueData[revenueData.length - 2].value : 0;
@@ -476,20 +555,33 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
         navigate('/admin/tickets');
     };
 
+    // Add function to navigate to Manage Contact Submissions page
+    const goToManageContactSubmissions = () => {
+        navigate('/contact-submissions');
+    };
+
+    // Add function to navigate to Manage Event Requests page
+    const goToManageEventRequests = () => {
+        navigate('/admin/event-requests');
+    };
+
     // Add function to handle manual refresh
     const handleManualRefresh = async () => {
         setNotificationMessage('Refreshing data...');
-        setNotificationType('info');
+        setNotificationType('success');
         setShowNotification(true);
 
         try {
+            // This is now the only way revenue statistics are updated
             await fetchRevenueStats();
             await fetchActivePermitsCount();
             await fetchActiveReservationsCount();
+            await fetchEventRequestsCount();
 
             setNotificationMessage('Data refreshed successfully');
             setNotificationType('success');
         } catch (error) {
+            console.error('Error refreshing data:', error);
             setNotificationMessage('Failed to refresh data');
             setNotificationType('error');
         }
@@ -588,10 +680,14 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
             {showNotification && (
                 <div className={`fixed top-20 right-4 px-4 py-3 rounded z-50 shadow-md flex items-center ${notificationType === 'success'
                     ? 'bg-green-100 border border-green-400 text-green-700'
-                    : 'bg-red-100 border border-red-400 text-red-700'
+                    : notificationType === 'info'
+                        ? 'bg-blue-100 border border-blue-400 text-blue-700'
+                        : 'bg-red-100 border border-red-400 text-red-700'
                     }`}>
                     {notificationType === 'success' ? (
                         <FaCheckCircle className="mr-2" />
+                    ) : notificationType === 'info' ? (
+                        <FaInfoCircle className="mr-2" />
                     ) : (
                         <FaTimesCircle className="mr-2" />
                     )}
@@ -672,7 +768,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                             )}
                             <p className="text-xs text-blue-600 mt-1">Click to manage lots</p>
                         </div>
-                        <div className={`rounded-full p-2 ${darkMode ? 'bg-red-900' : 'bg-red-50'}`}>
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-red-900' : 'bg-red-100'}`}>
                             <FaMapMarkerAlt className="h-5 w-5 text-red-500" />
                         </div>
                     </div>
@@ -696,7 +792,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                             )}
                             <p className="text-xs text-blue-600 mt-1">Click to manage reservations</p>
                         </div>
-                        <div className={`rounded-full p-2 ${darkMode ? 'bg-yellow-900' : 'bg-yellow-50'}`}>
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-yellow-900' : 'bg-yellow-100'}`}>
                             <FaCar className="h-5 w-5 text-yellow-500" />
                         </div>
                     </div>
@@ -712,8 +808,58 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                             <p className="text-2xl font-bold mt-1">Fines</p>
                             <p className="text-xs text-blue-600 mt-1">Click to manage fines</p>
                         </div>
-                        <div className={`rounded-full p-2 ${darkMode ? 'bg-yellow-900' : 'bg-yellow-50'}`}>
-                            <FaTicketAlt className="h-5 w-5 text-yellow-500" />
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-yellow-900' : 'bg-yellow-100'}`}>
+                            <FaFileAlt className="h-5 w-5 text-yellow-500" />
+                        </div>
+                    </div>
+                </div>
+                <div
+                    className={`p-6 shadow-sm rounded-lg border hover:shadow-md transition-shadow cursor-pointer
+                               ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}
+                    onClick={goToManageContactSubmissions}
+                >
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Contact Submissions</p>
+                            {isContactSubmissionsCountLoading ? (
+                                <div className="mt-1 h-8 w-16 bg-gray-200 rounded animate-pulse"></div>
+                            ) : contactSubmissionsCountError ? (
+                                <p className="text-2xl font-bold mt-1 text-red-500">Error</p>
+                            ) : (
+                                <p className="text-2xl font-bold mt-1">{contactSubmissionsCount}</p>
+                            )}
+                        </div>
+                        <div className={`p-3 rounded-full ${darkMode ? 'bg-indigo-900' : 'bg-indigo-100'}`}>
+                            <FaEnvelope className={`h-5 w-5 ${darkMode ? 'text-indigo-200' : 'text-indigo-600'}`} />
+                        </div>
+                    </div>
+                    <div className="mt-2">
+                        <p className={`text-sm ${darkMode ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                            Click to manage form submissions
+                        </p>
+                    </div>
+                </div>
+                <div
+                    onClick={goToManageEventRequests}
+                    className={`p-6 shadow-sm rounded-lg border hover:shadow-md transition-shadow cursor-pointer
+                              ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}
+                >
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Event Parking Requests</p>
+                            {isEventRequestsLoading ? (
+                                <p className="text-2xl font-bold mt-1">
+                                    <span className="inline-block animate-pulse">...</span>
+                                </p>
+                            ) : eventRequestsError ? (
+                                <p className="text-sm text-red-500 mt-1">Error loading count</p>
+                            ) : (
+                                <p className="text-2xl font-bold mt-1">{eventRequestsCount}</p>
+                            )}
+                            <p className="text-xs text-blue-600 mt-1">Click to manage event requests</p>
+                        </div>
+                        <div className={`rounded-full p-2 ${darkMode ? 'bg-purple-900' : 'bg-purple-100'}`}>
+                            <FaCalendarAlt className="h-5 w-5 text-purple-500" />
                         </div>
                     </div>
                 </div>
@@ -738,7 +884,7 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                                 } transition-colors`}
                             title="Refresh revenue data"
                         >
-                            <FaSync className={`${isRevenueLoading ? 'animate-spin' : ''} text-red-600`} />
+                            <FaSync className={`${isRevenueLoading ? 'animate-spin' : ''} text-green-600`} />
                         </button>
                     </div>
 
@@ -801,7 +947,11 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                                                                 fill="#8884d8"
                                                                 dataKey="value"
                                                                 nameKey="name"
-                                                                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                                                label={({ name, percent }) => {
+                                                                    const percentValue = percent * 100;
+                                                                    // Always use 1 decimal place for consistency with the table
+                                                                    return `${name}: ${percentValue.toFixed(1)}%`;
+                                                                }}
                                                             >
                                                                 {pieData.map((entry, index) => (
                                                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -916,6 +1066,17 @@ const AdminDashboard = ({ isAuthenticated, darkMode }) => {
                                             </td>
                                             <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>
                                                 {currentMonth.value ? ((currentMonth.citations / currentMonth.value) * 100).toFixed(1) : 0}%
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                                Metered Parking
+                                            </td>
+                                            <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>
+                                                {formatCurrency(currentMonth.metered || 0)}
+                                            </td>
+                                            <td className={`px-6 py-4 whitespace-nowrap text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>
+                                                {currentMonth.value ? ((currentMonth.metered / currentMonth.value) * 100).toFixed(1) : 0}%
                                             </td>
                                         </tr>
                                         <tr>

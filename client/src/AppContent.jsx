@@ -20,6 +20,7 @@ import ManageUsers from './pages/admin/ManageUsers.jsx';
 import ManagePermits from './pages/admin/ManagePermits.jsx';
 import ManageLots from './pages/admin/ManageLots.jsx';
 import ManagePermitTypes from './pages/admin/ManagePermitTypes.jsx';
+import ContactSubmissions from './pages/admin/ContactSubmissions.jsx';
 import FindParking from './pages/FindParking.jsx';
 import Billing from './pages/Billing.jsx';
 import PastReservations from './pages/PastReservations.jsx';
@@ -27,8 +28,14 @@ import PastCitations from './pages/PastCitations.jsx';
 import PastPermits from './pages/PastPermits.jsx';
 import ManageTickets from './pages/admin/ManageTickets';
 import ManageReservations from './pages/admin/ManageReservations';
+import ManageEventRequests from './pages/admin/ManageEventRequests';
 import Notifications from './pages/Notifications.jsx';
 import PaymentComplete from './components/PaymentComplete.jsx';
+import InactivityTimer from './components/InactivityTimer.jsx';
+import EventParkingRequest from './pages/faculty/EventParkingRequest.jsx';
+import EventParkingRequests from './pages/faculty/EventParkingRequests.jsx';
+import EventParkingDetail from './pages/faculty/EventParkingDetail.jsx';
+import EventParkingConfirmation from './pages/faculty/EventParkingConfirmation.jsx';
 import { AuthService, UserService } from './utils/api.js';
 
 // Protected route component
@@ -53,6 +60,15 @@ const AppContent = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [inactivityTimeout, setInactivityTimeout] = useState(1200000); // Default 20 minutes
+
+  // Load inactivity timeout from localStorage if available
+  useEffect(() => {
+    const savedTimeout = localStorage.getItem('inactivityTimeout');
+    if (savedTimeout) {
+      setInactivityTimeout(parseInt(savedTimeout));
+    }
+  }, []);
 
   // Fetch user profile data from backend
   const fetchUserProfile = async () => {
@@ -74,10 +90,10 @@ const AppContent = () => {
   };
 
   // Real login function using AuthService
-  const login = async (email, password) => {
+  const login = async (email, password, redirectPath = '/dashboard', reservationPending = false, rememberMe = false) => {
     try {
       console.log('Login attempt for:', email);
-      const result = await AuthService.login({ email, password });
+      const result = await AuthService.login({ email, password, rememberMe });
 
       if (result.success) {
         console.log('Login successful, result:', result.data);
@@ -130,6 +146,16 @@ const AppContent = () => {
     setUser(null);
   };
 
+  // Handle session timeout
+  const handleSessionTimeout = () => {
+    // Already handled by InactivityTimer component
+    setIsAuthenticated(false);
+    setUser(null);
+
+    // Redirect to login page with timeout indicator
+    window.location.href = '/login?expired=1';
+  };
+
   // Check authentication status on component mount
   useEffect(() => {
     const checkAuth = async () => {
@@ -173,6 +199,14 @@ const AppContent = () => {
 
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
+      {/* Inactivity Timer */}
+      <InactivityTimer
+        darkMode={darkMode}
+        isAuthenticated={isAuthenticated}
+        onLogout={handleSessionTimeout}
+        inactivityTimeout={inactivityTimeout}
+      />
+
       <Routes>
         <Route
           path="/"
@@ -343,7 +377,7 @@ const AppContent = () => {
                 logout={logout}
               />
               <main className="flex-grow">
-                <AboutUs darkMode={darkMode} />
+                <AboutUs darkMode={darkMode} user={user} />
               </main>
               <Footer darkMode={darkMode} />
             </>
@@ -434,6 +468,29 @@ const AppContent = () => {
                     darkMode={darkMode}
                     user={user}
                     isAuthenticated={isAuthenticated} />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/contact-submissions"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} requiredUserType="admin" user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <ContactSubmissions
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                  />
                 </main>
                 <Footer darkMode={darkMode} />
               </>
@@ -740,7 +797,131 @@ const AppContent = () => {
                   logout={logout}
                 />
                 <main className="flex-grow">
-                  <Notifications darkMode={darkMode} user={user} />
+                  <Notifications
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                    user={user}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/faculty/event-parking-request"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} requiredUserType="faculty" user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <EventParkingRequest
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                    user={user}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/faculty/event-parking-requests"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} requiredUserType="faculty" user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <EventParkingRequests
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                    user={user}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/faculty/event-parking/:requestId"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} requiredUserType="faculty" user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <EventParkingDetail
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                    user={user}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/faculty/event-parking-confirmation"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} requiredUserType="faculty" user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <EventParkingConfirmation
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                    user={user}
+                  />
+                </main>
+                <Footer darkMode={darkMode} />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/event-requests"
+          element={
+            <ProtectedRoute isAuthenticated={isAuthenticated} requiredUserType="admin" user={user}>
+              <>
+                <Navbar
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  logout={logout}
+                />
+                <main className="flex-grow">
+                  <ManageEventRequests
+                    darkMode={darkMode}
+                    isAuthenticated={isAuthenticated}
+                    user={user}
+                  />
                 </main>
                 <Footer darkMode={darkMode} />
               </>

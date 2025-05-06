@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaMapMarkerAlt, FaClock, FaPlug, FaMoneyBillWave, FaCarAlt, FaSearch, FaFilter, FaCalendarAlt, FaArrowLeft, FaInfoCircle, FaTimes, FaHistory, FaFileDownload, FaExclamationTriangle } from "react-icons/fa";
 import { ReservationService } from "../utils/api";
@@ -16,121 +16,145 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
     const [reservations, setReservations] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [debouncedSearch, setDebouncedSearch] = useState("");
 
+    // Set up debounced search
     useEffect(() => {
-        // Check authentication
+        const handler = setTimeout(() => {
+            setDebouncedSearch(searchTerm);
+        }, 500);
+
+        return () => {
+            clearTimeout(handler);
+        };
+    }, [searchTerm]);
+
+    // Fetch reservations with current filters
+    const fetchReservations = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            // Only use showPastOnly for server-side filtering
+            // We'll filter by status on the client side
+            const queryParams = { showPastOnly: true };
+
+            // Search term (server-side filtering)
+            if (debouncedSearch.trim()) {
+                queryParams.search = debouncedSearch.trim();
+            }
+
+            // Date filters - explicit date range from inputs
+            if (dateRange.start && dateRange.end) {
+                queryParams.startDate = dateRange.start;
+                queryParams.endDate = dateRange.end;
+            }
+            // Quick date range filters
+            else if (filterDateRange !== "all") {
+                const today = new Date();
+                let startDate;
+
+                // Convert quick date filters to actual dates
+                if (filterDateRange === "last-week") {
+                    startDate = new Date();
+                    startDate.setDate(today.getDate() - 7);
+                } else if (filterDateRange === "last-month") {
+                    startDate = new Date();
+                    startDate.setMonth(today.getMonth() - 1);
+                } else if (filterDateRange === "last-year") {
+                    startDate = new Date();
+                    startDate.setFullYear(today.getFullYear() - 1);
+                }
+
+                if (startDate) {
+                    queryParams.startDate = startDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+                    queryParams.endDate = today.toISOString().split('T')[0];
+                }
+            }
+
+            const response = await ReservationService.getUserReservations(queryParams);
+
+            if (response.success) {
+                // Check different possible data structures
+                const reservationsData = response.data?.data?.reservations || response.data?.reservations || [];
+
+                if (Array.isArray(reservationsData) && reservationsData.length > 0) {
+                    // Transform API data to match the component's expected format
+                    const formattedReservations = reservationsData.map(reservation => ({
+                        id: reservation.reservationId || reservation._id,
+                        lotName: reservation.lotId?.name || 'Unknown Lot',
+                        spotNumber: reservation.permitType || 'Standard',
+                        startTime: reservation.startTime,
+                        endTime: reservation.endTime,
+                        totalCost: reservation.totalPrice || 0,
+                        // Convert status from database format to UI format - capitalize first letter
+                        status: reservation.status.charAt(0).toUpperCase() + reservation.status.slice(1),
+                        rawStatus: reservation.status, // Keep the original status for filtering
+                        paymentMethod: reservation.paymentMethod || 'Credit Card',
+                        chargerType: reservation.isEV ? "Level 2" : "None",
+                        createdAt: reservation.createdAt || new Date().toISOString(),
+                        cancelReason: reservation.cancelReason,
+                        refundAmount: reservation.refundInfo?.amount || 0
+                    }));
+
+                    setReservations(formattedReservations);
+                } else {
+                    setReservations([]);
+                }
+            } else {
+                throw new Error(response.error || 'Failed to fetch reservations');
+            }
+        } catch (error) {
+            console.error('Error fetching past reservations:', error);
+            setError(error.message || 'An unexpected error occurred while fetching reservations');
+        } finally {
+            setLoading(false);
+        }
+    }, [debouncedSearch, dateRange.start, dateRange.end, filterDateRange]);
+
+    // Refetch reservations when authentication changes
+    useEffect(() => {
         if (!isAuthenticated) {
             navigate("/login", { state: { from: '/past-reservations' } });
             return;
         }
 
-        // Fetch reservations from the backend
-        const fetchReservations = async () => {
-            setLoading(true);
-            setError(null);
-            try {
-                // Pass filters to specifically get past reservations (completed or canceled)
-                const response = await ReservationService.getUserReservations({
-                    status: 'all',
-                    showPastOnly: true
-                });
-                console.log('Past reservations response:', response);
-
-                if (response.success) {
-                    // Check different possible data structures
-                    const reservationsData = response.data?.data?.reservations || response.data?.reservations || [];
-
-                    if (Array.isArray(reservationsData) && reservationsData.length > 0) {
-                        // Transform API data to match the component's expected format
-                        const formattedReservations = reservationsData.map(reservation => ({
-                            id: reservation.reservationId || reservation._id,
-                            lotName: reservation.lotId?.name || 'Unknown Lot',
-                            spotNumber: reservation.permitType || 'Standard',
-                            startTime: reservation.startTime,
-                            endTime: reservation.endTime,
-                            totalCost: reservation.totalPrice || 0,
-                            status: reservation.status || 'Pending',
-                            paymentMethod: reservation.paymentMethod || 'Credit Card',
-                            chargerType: reservation.isEV ? "Level 2" : "None",
-                            createdAt: reservation.createdAt || new Date().toISOString()
-                        }));
-
-                        setReservations(formattedReservations);
-                    } else {
-                        setReservations([]);
-                    }
-                } else {
-                    throw new Error(response.error || 'Failed to fetch reservations');
-                }
-            } catch (error) {
-                console.error('Error fetching past reservations:', error);
-                setError(error.message || 'An unexpected error occurred while fetching reservations');
-            } finally {
-                setLoading(false);
-            }
-        };
-
         fetchReservations();
-    }, [isAuthenticated, navigate]);
+    }, [isAuthenticated, navigate, fetchReservations]);
 
-    // Filter reservations based on search term, status, and date range
-    const filteredReservations = reservations.filter(reservation => {
-        // Search term filter
-        const matchesSearch =
-            reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            reservation.lotName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            reservation.spotNumber.toLowerCase().includes(searchTerm.toLowerCase());
+    // Refetch when search term changes after debounce
+    useEffect(() => {
+        if (isAuthenticated) {
+            fetchReservations();
+        }
+    }, [debouncedSearch, isAuthenticated, fetchReservations]);
 
-        // Status filter
-        const matchesStatus =
-            filterStatus === "all" ||
-            reservation.status.toLowerCase() === filterStatus.toLowerCase();
+    // No need to refetch when filter status changes since we filter client-side now
+    const handleSortChange = (e) => {
+        setSortBy(e.target.value);
+    };
 
-        // Date range filter
-        let matchesDateRange = true;
+    // Filter reservations by status
+    const filteredReservations = useMemo(() => {
+        return filterStatus === "all"
+            ? reservations
+            : reservations.filter(res => res.rawStatus.toLowerCase() === filterStatus.toLowerCase());
+    }, [reservations, filterStatus]);
 
-        if (dateRange.start && dateRange.end) {
-            const reservationDate = new Date(reservation.startTime);
-            const startDate = new Date(dateRange.start);
-            const endDate = new Date(dateRange.end);
-            endDate.setHours(23, 59, 59); // Include the entire end day
-
-            matchesDateRange = reservationDate >= startDate && reservationDate <= endDate;
-        } else if (filterDateRange !== "all") {
-            const reservationDate = new Date(reservation.startTime);
-            const today = new Date();
-            const lastWeek = new Date();
-            lastWeek.setDate(today.getDate() - 7);
-            const lastMonth = new Date();
-            lastMonth.setMonth(today.getMonth() - 1);
-            const lastYear = new Date();
-            lastYear.setFullYear(today.getFullYear() - 1);
-
-            if (filterDateRange === "last-week") {
-                matchesDateRange = reservationDate >= lastWeek;
-            } else if (filterDateRange === "last-month") {
-                matchesDateRange = reservationDate >= lastMonth;
-            } else if (filterDateRange === "last-year") {
-                matchesDateRange = reservationDate >= lastYear;
+    // Then sort the filtered reservations
+    const sortedReservations = useMemo(() => {
+        return [...filteredReservations].sort((a, b) => {
+            if (sortBy === "date-desc") {
+                return new Date(b.startTime) - new Date(a.startTime);
+            } else if (sortBy === "date-asc") {
+                return new Date(a.startTime) - new Date(b.startTime);
+            } else if (sortBy === "cost-desc") {
+                return b.totalCost - a.totalCost;
+            } else if (sortBy === "cost-asc") {
+                return a.totalCost - b.totalCost;
             }
-        }
-
-        return matchesSearch && matchesStatus && matchesDateRange;
-    });
-
-    // Sort reservations
-    const sortedReservations = [...filteredReservations].sort((a, b) => {
-        if (sortBy === "date-desc") {
-            return new Date(b.startTime) - new Date(a.startTime);
-        } else if (sortBy === "date-asc") {
-            return new Date(a.startTime) - new Date(b.startTime);
-        } else if (sortBy === "cost-desc") {
-            return b.totalCost - a.totalCost;
-        } else if (sortBy === "cost-asc") {
-            return a.totalCost - b.totalCost;
-        }
-        return 0;
-    });
+            return 0;
+        });
+    }, [filteredReservations, sortBy]);
 
     const formatDateTime = (dateString) => {
         const options = {
@@ -166,11 +190,13 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
     };
 
     const getStatusClass = (status) => {
-        if (status === "Completed") {
+        const normalizedStatus = status.toLowerCase();
+
+        if (normalizedStatus === "completed") {
             return darkMode
                 ? "bg-green-600 text-green-100"
                 : "bg-green-100 text-green-800 border border-green-200";
-        } else if (status === "Canceled") {
+        } else if (normalizedStatus === "cancelled") {
             return darkMode
                 ? "bg-red-600 text-red-100"
                 : "bg-red-100 text-red-800 border border-red-200";
@@ -202,15 +228,26 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                             </p>
                         </div>
                     </div>
-                    <button
-                        onClick={() => window.print()}
-                        className={`px-4 py-2 rounded-lg flex items-center text-sm font-medium
+                    <div className="flex space-x-2">
+                        <button
+                            onClick={fetchReservations}
+                            className={`px-4 py-2 rounded-lg flex items-center text-sm font-medium
+                                ${darkMode
+                                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                                    : 'bg-red-100 hover:bg-red-200 text-red-800'}`}
+                        >
+                            <FaHistory className="mr-2" /> Refresh
+                        </button>
+                        <button
+                            onClick={() => window.print()}
+                            className={`px-4 py-2 rounded-lg flex items-center text-sm font-medium
                             ${darkMode
-                                ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                                : 'bg-blue-100 hover:bg-blue-200 text-blue-800'}`}
-                    >
-                        <FaFileDownload className="mr-2" /> Export List
-                    </button>
+                                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                                    : 'bg-red-100 hover:bg-red-200 text-red-800'}`}
+                        >
+                            <FaFileDownload className="mr-2" /> Export List
+                        </button>
+                    </div>
                 </div>
 
                 {/* Main content area */}
@@ -228,7 +265,7 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                     className={`w-full px-4 py-2 pl-10 rounded-lg border ${darkMode
                                         ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                                         : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                                        } focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-600'
+                                        } focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-500' : 'focus:ring-red-600'
                                         }`}
                                 />
                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -240,25 +277,27 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                             <div className="flex items-center space-x-2 w-full md:w-auto justify-between md:justify-start">
                                 <select
                                     value={filterStatus}
-                                    onChange={(e) => setFilterStatus(e.target.value)}
+                                    onChange={(e) => {
+                                        setFilterStatus(e.target.value);
+                                    }}
                                     className={`px-4 py-2 rounded-lg border text-sm ${darkMode
                                         ? 'bg-gray-700 border-gray-600 text-white'
                                         : 'bg-white border-gray-300 text-gray-900'
-                                        } focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-600'
+                                        } focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-500' : 'focus:ring-red-600'
                                         }`}
                                 >
                                     <option value="all">All Statuses</option>
                                     <option value="completed">Completed</option>
-                                    <option value="canceled">Canceled</option>
+                                    <option value="cancelled">Cancelled</option>
                                 </select>
 
                                 <select
                                     value={sortBy}
-                                    onChange={(e) => setSortBy(e.target.value)}
+                                    onChange={handleSortChange}
                                     className={`px-4 py-2 rounded-lg border text-sm ${darkMode
                                         ? 'bg-gray-700 border-gray-600 text-white'
                                         : 'bg-white border-gray-300 text-gray-900'
-                                        } focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-600'
+                                        } focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-500' : 'focus:ring-red-600'
                                         }`}
                                 >
                                     <option value="date-desc">Newest First</option>
@@ -270,8 +309,8 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                 <button
                                     onClick={() => setShowFilters(!showFilters)}
                                     className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium ${darkMode
-                                        ? showFilters ? 'bg-blue-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-600'
-                                        : showFilters ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                                        ? showFilters ? 'bg-red-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-600'
+                                        : showFilters ? 'bg-red-100 text-red-800' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
                                         }`}
                                 >
                                     <FaFilter className="mr-2" />
@@ -290,14 +329,22 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                     <select
                                         value={filterDateRange}
                                         onChange={(e) => {
-                                            setFilterDateRange(e.target.value);
+                                            const newValue = e.target.value;
+                                            setFilterDateRange(newValue);
                                             setDateRange({ start: '', end: '' }); // Clear custom date range when using preset
+                                            // Trigger fetch immediately when changing the quick date filter
+                                            if (newValue !== 'all') {
+                                                // Force a small delay for the state to update
+                                                setTimeout(() => fetchReservations(), 0);
+                                            } else {
+                                                fetchReservations();
+                                            }
                                         }}
                                         className={`w-full px-3 py-2 rounded-lg border text-sm
                                             ${darkMode
                                                 ? 'bg-gray-700 text-white border-gray-600'
                                                 : 'bg-white text-gray-900 border-gray-300'} 
-                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-600'
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-500' : 'focus:ring-red-600'
                                             }`}
                                     >
                                         <option value="all">All Time</option>
@@ -315,14 +362,21 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                         type="date"
                                         value={dateRange.start}
                                         onChange={(e) => {
-                                            setDateRange({ ...dateRange, start: e.target.value });
-                                            if (e.target.value) setFilterDateRange('all'); // Clear preset when using custom range
+                                            const newDateRange = { ...dateRange, start: e.target.value };
+                                            setDateRange(newDateRange);
+                                            if (e.target.value) {
+                                                setFilterDateRange('all'); // Clear preset when using custom range
+                                                // If both dates are set, trigger fetch
+                                                if (newDateRange.start && newDateRange.end) {
+                                                    fetchReservations();
+                                                }
+                                            }
                                         }}
                                         className={`w-full px-3 py-2 rounded-lg border text-sm
                                             ${darkMode
                                                 ? 'bg-gray-700 text-white border-gray-600'
                                                 : 'bg-white text-gray-900 border-gray-300'} 
-                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-600'
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-500' : 'focus:ring-red-600'
                                             }`}
                                     />
                                 </div>
@@ -335,14 +389,21 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                         type="date"
                                         value={dateRange.end}
                                         onChange={(e) => {
-                                            setDateRange({ ...dateRange, end: e.target.value });
-                                            if (e.target.value) setFilterDateRange('all'); // Clear preset when using custom range
+                                            const newDateRange = { ...dateRange, end: e.target.value };
+                                            setDateRange(newDateRange);
+                                            if (e.target.value) {
+                                                setFilterDateRange('all'); // Clear preset when using custom range
+                                                // If both dates are set, trigger fetch
+                                                if (newDateRange.start && newDateRange.end) {
+                                                    fetchReservations();
+                                                }
+                                            }
                                         }}
                                         className={`w-full px-3 py-2 rounded-lg border text-sm
                                             ${darkMode
                                                 ? 'bg-gray-700 text-white border-gray-600'
                                                 : 'bg-white text-gray-900 border-gray-300'} 
-                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-600'
+                                            focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-red-500' : 'focus:ring-red-600'
                                             }`}
                                     />
                                 </div>
@@ -427,7 +488,8 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                                 {formatCurrency(reservation.totalCost)}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(reservation.status)}`}>
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(reservation.status)}`}
+                                                    data-raw-status={reservation.rawStatus}>
                                                     {reservation.status}
                                                 </span>
                                             </td>
@@ -435,8 +497,8 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                                 <button
                                                     onClick={() => handleViewDetails(reservation)}
                                                     className={`px-3 py-1 rounded text-xs font-medium ${darkMode
-                                                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                                                        : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
+                                                        ? 'bg-red-600 hover:bg-red-700 text-white'
+                                                        : 'bg-red-100 hover:bg-red-200 text-red-800'
                                                         }`}
                                                 >
                                                     View Details
@@ -537,7 +599,7 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                                         <p className="font-medium">{selectedReservation.paymentMethod}</p>
                                     </div>
 
-                                    {selectedReservation.status === "Canceled" && (
+                                    {selectedReservation.status === "Cancelled" && (
                                         <div>
                                             <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Refund Amount</p>
                                             <p className="font-medium text-green-500">{formatCurrency(selectedReservation.refundAmount || 0)}</p>
@@ -548,7 +610,7 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                         </div>
 
                         {/* Cancellation reason if available */}
-                        {selectedReservation.status === "Canceled" && selectedReservation.cancelReason && (
+                        {selectedReservation.status === "Cancelled" && selectedReservation.cancelReason && (
                             <div className={`rounded-lg p-4 mb-6 ${darkMode ? 'bg-red-900/20 border border-red-800' : 'bg-red-50 border border-red-100'}`}>
                                 <h4 className={`font-medium mb-2 ${darkMode ? 'text-red-300' : 'text-red-800'}`}>Cancellation Reason</h4>
                                 <p className={darkMode ? 'text-gray-300' : 'text-gray-700'}>{selectedReservation.cancelReason}</p>
@@ -559,8 +621,8 @@ const PastReservations = ({ darkMode, isAuthenticated }) => {
                             <button
                                 onClick={() => setShowDetailsModal(false)}
                                 className={`px-4 py-2 rounded-lg font-medium text-sm ${darkMode
-                                    ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                                    : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+                                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                                    : 'bg-red-100 hover:bg-red-200 text-red-800'
                                     }`}
                             >
                                 Close

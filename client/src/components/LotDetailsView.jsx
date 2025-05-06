@@ -1,9 +1,10 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useState, useEffect, useMemo } from 'react';
-import { FaArrowLeft, FaParking, FaCheckCircle, FaCar, FaWheelchair, FaChargingStation, FaInfoCircle, FaClock, FaMapMarkerAlt, FaWalking, FaLocationArrow, FaCalendarAlt, FaCreditCard, FaDollarSign, FaBus } from 'react-icons/fa';
+import { FaArrowLeft, FaParking, FaCheckCircle, FaCar, FaWheelchair, FaChargingStation, FaInfoCircle, FaClock, FaMapMarkerAlt, FaWalking, FaLocationArrow, FaCalendarAlt, FaCreditCard, FaDollarSign, FaBus, FaMoneyBillWave } from 'react-icons/fa';
 import ReactMapGL, { Marker, NavigationControl, Source, Layer } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MAPBOX_TOKEN } from '../utils/env';
+import ParkingForecast from './ParkingForecast';
 
 const LotDetailsView = ({
     darkMode,
@@ -27,7 +28,7 @@ const LotDetailsView = ({
     const [route, setRoute] = useState(null);
     const [routeDistance, setRouteDistance] = useState(null);
     const [routeDuration, setRouteDuration] = useState(null);
-    const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+    const [isLoading, setIsLoading] = useState(false); // Renamed from isLoadingRoute to fix linter
 
     // Handle transport mode change
     const handleTransportModeChange = (mode) => {
@@ -55,7 +56,7 @@ const LotDetailsView = ({
         const fetchRoute = async () => {
             if (!destination || !lot) return;
 
-            setIsLoadingRoute(true);
+            setIsLoading(true);
             try {
                 // Format coordinates as "lng,lat" strings
                 const start = `${lot.coordinates[1]},${lot.coordinates[0]}`;
@@ -121,7 +122,7 @@ const LotDetailsView = ({
                 };
                 setRoute(fallbackRoute);
             } finally {
-                setIsLoadingRoute(false);
+                setIsLoading(false);
             }
         };
 
@@ -149,7 +150,7 @@ const LotDetailsView = ({
     const handleReserveClick = () => {
         // Use either the first permitted type or a default one
         const defaultPermitType = lot.permitTypes && lot.permitTypes.length > 0
-            ? lot.permitTypes[0]
+            ? lot.permitTypes[0].trim() // Trim to remove any spaces
             : "Standard";
 
         console.log(`Using permit type: ${defaultPermitType} for reservation`);
@@ -186,6 +187,24 @@ const LotDetailsView = ({
     const estimatedCost = useMemo(() => {
         if (!lot || !duration) return "$0.00";
 
+        // If we have a start date/time, check if it's a weekend
+        if (startDateTime) {
+            // Parse the formatted date string like "Tue, May 6, 12:33 PM"
+            const dateMatch = startDateTime.match(/^(\w+),/);
+            if (dateMatch) {
+                const dayOfWeek = dateMatch[1];
+                console.log('Day of week from string:', dayOfWeek);
+
+                // Check if it's Saturday or Sunday
+                const isWeekend = dayOfWeek === 'Sat' || dayOfWeek === 'Sun';
+
+                // Free parking on weekends for all lot types
+                if (isWeekend) {
+                    return "Free on weekends";
+                }
+            }
+        }
+
         // For EV charging lots, use EV rate
         if (lot.isEV) {
             const evRate = lot.evChargingRate || 1.86; // Default from image if not set
@@ -207,39 +226,92 @@ const LotDetailsView = ({
                 return `$${(parseFloat(duration) * lot.hourlyRate).toFixed(2)}`;
             }
 
-            // Convert to Date objects
-            const start = new Date(startDateTime);
-            const end = new Date(endDateTime);
+            // Convert strings to Date objects
+            // startDateTime format is like "Mon, May 5, 8:24 AM"
+            const startTimeMatch = startDateTime.match(/(\d+):(\d+)\s*([AP]M)/);
+            const endTimeMatch = endDateTime.match(/(\d+):(\d+)\s*([AP]M)/);
 
-            // Check if the reservation extends past 7PM (19:00) for metered lots
-            if (lot.features && lot.features.includes('Metered Parking')) {
-                // Create 7PM timestamp of the same day
-                const sevenPM = new Date(start);
-                sevenPM.setHours(19, 0, 0, 0);
+            if (!startTimeMatch || !endTimeMatch) {
+                return `$${(parseFloat(duration) * lot.hourlyRate).toFixed(2)}`;
+            }
 
-                // Calculate billable duration respecting the 7PM cutoff
-                let billableDurationHours;
+            // Parse the time components
+            let startHour = parseInt(startTimeMatch[1]);
+            const startMinute = parseInt(startTimeMatch[2]);
+            const startPeriod = startTimeMatch[3];
 
-                if (start.getHours() >= 19) {
-                    // If starting after 7PM, no charge for metered parking
-                    return "$0.00";
-                } else if (end > sevenPM) {
-                    // If ending after 7PM, only charge until 7PM
-                    billableDurationHours = (sevenPM - start) / (1000 * 60 * 60);
-                    return `$${(billableDurationHours * lot.hourlyRate).toFixed(2)}`;
+            let endHour = parseInt(endTimeMatch[1]);
+            const endMinute = parseInt(endTimeMatch[2]);
+            const endPeriod = endTimeMatch[3];
+
+            // Convert to 24-hour format
+            if (startPeriod === 'PM' && startHour < 12) startHour += 12;
+            if (startPeriod === 'AM' && startHour === 12) startHour = 0;
+
+            if (endPeriod === 'PM' && endHour < 12) endHour += 12;
+            if (endPeriod === 'AM' && endHour === 12) endHour = 0;
+
+            // Check if this is a metered lot
+            const isMeteredLot = lot.features &&
+                (lot.features.includes('Metered Parking') ||
+                    (lot.features.isMetered));
+
+            if (isMeteredLot) {
+                console.log('Metered lot detected - applying 7am-7pm charging rule');
+
+                // Early exit conditions for metered lots
+                if (startHour >= 19 || startHour < 7) {
+                    // If starting after 7PM or before 7AM
+                    if (endHour < 7 || endHour >= 19) {
+                        // Entirely during free hours
+                        return "$0.00";
+                    }
                 }
+
+                // Calculate billable hours (only between 7am and 7pm)
+                let billableHours = 0;
+                const startTimeInDecimal = startHour + (startMinute / 60);
+                const endTimeInDecimal = endHour + (endMinute / 60);
+
+                // Clamp the billable period to 7AM-7PM (7.0 to 19.0 in decimal hours)
+                const billableStart = Math.max(startTimeInDecimal, 7.0);
+                const billableEnd = Math.min(endTimeInDecimal, 19.0);
+
+                if (billableEnd > billableStart) {
+                    billableHours = billableEnd - billableStart;
+                }
+
+                const cost = billableHours * lot.hourlyRate;
+                console.log(`Metered lot: ${billableHours.toFixed(2)} billable hours (7am-7pm only) at $${lot.hourlyRate}/hour = $${cost.toFixed(2)}`);
+
+                // If cost is 0, make it clear it's free
+                if (cost === 0) {
+                    return "$0.00";
+                }
+
+                return `$${cost.toFixed(2)}`;
             }
 
             // Normal case: charge for full duration
             return `$${(parseFloat(duration) * lot.hourlyRate).toFixed(2)}`;
         }
 
-        // For permit-based rates with 4PM cutoff
+        // For permit-based rates with time-based cutoffs
         if (lot.rateType === 'Permit-based' && startDateTime) {
-            const start = new Date(startDateTime);
+            const startTimeMatch = startDateTime.match(/(\d+):(\d+)\s*([AP]M)/);
+            if (!startTimeMatch) {
+                return lot.price;
+            }
 
-            // If starting after 4PM, permit-based lots are free
-            if (start.getHours() >= 16) {
+            let startHour = parseInt(startTimeMatch[1]);
+            const startPeriod = startTimeMatch[3];
+
+            // Convert to 24-hour format
+            if (startPeriod === 'PM' && startHour < 12) startHour += 12;
+            if (startPeriod === 'AM' && startHour === 12) startHour = 0;
+
+            // If starting before 7AM or after 4PM, permit-based lots are free with any permit
+            if (startHour < 7 || startHour >= 16) {
                 return "$0.00";
             }
         }
@@ -248,12 +320,33 @@ const LotDetailsView = ({
         return lot.price;
     }, [lot, duration, startDateTime, endDateTime]);
 
+    // Prepare special pricing note
+    const pricingNote = useMemo(() => {
+        if (!lot) return null;
+
+        // Base pricing note with weekend rule for all lots
+        let note = "Note: All parking is free on weekends (Saturday and Sunday).";
+
+        // Add lot-specific rules for weekdays
+        if (lot.rateType === 'Hourly' && lot.features &&
+            (lot.features.includes('Metered Parking') || lot.features.isMetered)) {
+            note += " Metered lots only charge between 7AM-7PM on weekdays.";
+        }
+
+        // For permit-based lots
+        if (lot.rateType === 'Permit-based') {
+            note += " Permit-based lots are free before 7AM and after 4PM on weekdays with any valid permit.";
+        }
+
+        return note;
+    }, [lot]);
+
     if (!lot) return null;
 
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 animate-fadeIn">
             {/* Hero Section */}
-            <div className="relative mb-10">
+            <div className="relative mb-6">
                 {/* Decorative elements */}
                 <div className="absolute -top-10 -right-10 w-40 h-40 bg-red-600 opacity-5 rounded-full blur-2xl"></div>
                 <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-blue-500 opacity-5 rounded-full blur-2xl"></div>
@@ -289,7 +382,6 @@ const LotDetailsView = ({
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left sidebar - Lot Information */}
                 <div className="lg:col-span-1 space-y-6">
-                    {/* Map Preview Card - REMOVED */}
                     <div className={`rounded-2xl overflow-hidden shadow-lg ${darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'}`}>
                         <div className="p-6 relative">
                             {/* Decorative accent */}
@@ -347,27 +439,50 @@ const LotDetailsView = ({
                                 </h3>
                                 <div className={`flex items-center p-4 rounded-xl ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
                                     <div className={`flex-shrink-0 h-12 w-12 rounded-full flex items-center justify-center ${darkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-700'} mr-4`}>
-                                        <FaDollarSign className="text-xl" />
+                                        <FaMoneyBillWave className="text-xl" />
                                     </div>
-                                    <div>
-                                        <p className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                            {lot.price}
+                                    <div className="flex-1">
+                                        <h4 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                            {lot.rateType === 'Hourly'
+                                                ? `Hourly Rate: $${lot.hourlyRate}/hr`
+                                                : `Semester Permit: $${lot.semesterRate || 0}`}
+                                        </h4>
+                                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            {duration ? `Estimated cost: ${estimatedCost}` : 'Select time and duration to see estimated cost'}
                                         </p>
-                                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                            {lot.rateType}
-                                        </p>
-                                        {/* Time-based pricing rules */}
-                                        {lot.rateType === 'Hourly' && lot.features?.includes('Metered Parking') && (
-                                            <p className={`text-xs mt-1 ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
-                                                Free after 7:00 PM
+
+                                        {/* Add special pricing notes */}
+                                        {pricingNote && (
+                                            <p className={`mt-2 text-sm italic ${darkMode ? 'text-amber-400' : 'text-amber-600'}`}>
+                                                {pricingNote}
                                             </p>
                                         )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Pricing Rules - New Section */}
+                            <div className="mb-6">
+                                <h3 className={`font-medium mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                    Pricing Rules
+                                </h3>
+                                <div className={`p-4 rounded-xl border ${darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-blue-50 border-blue-200'}`}>
+                                    <ul className={`list-disc pl-5 ${darkMode ? 'text-gray-300' : 'text-gray-700'} text-sm space-y-2`}>
+                                        <li><span className="font-semibold">Weekends:</span> Free parking on Saturdays and Sundays for all parking types</li>
+
+                                        {lot.rateType === 'Hourly' && lot.features &&
+                                            (lot.features.includes('Metered Parking') || lot.features.isMetered) && (
+                                                <li><span className="font-semibold">Metered Parking:</span> Charges apply only between 7:00 AM and 7:00 PM on weekdays</li>
+                                            )}
+
                                         {lot.rateType === 'Permit-based' && (
-                                            <p className={`text-xs mt-1 ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
-                                                Free after 4:00 PM with valid permit
-                                            </p>
+                                            <li><span className="font-semibold">Permit-Based Lots:</span> Free before 7:00 AM and after 4:00 PM on weekdays with any valid permit</li>
                                         )}
-                                    </div>
+
+                                        {lot.isEV && (
+                                            <li><span className="font-semibold">EV Charging:</span> Rate of ${lot.evChargingRate || 1.86}/hour applies 24/7 when using charging stations</li>
+                                        )}
+                                    </ul>
                                 </div>
                             </div>
 
@@ -423,13 +538,50 @@ const LotDetailsView = ({
                             </div>
                         </div>
                     </div>
+
+                    {/* EV Charging Information - Only show if lot has EV features */}
+                    {lot.features && lot.features.isEV && (
+                        <div className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-blue-50 border-blue-200'}`}>
+                            <div className="flex items-start">
+                                <FaChargingStation className={`text-xl mr-3 mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+                                <div>
+                                    <h3 className={`font-bold text-lg mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        EV Charging Information
+                                    </h3>
+
+                                    <div className="grid grid-cols-1 gap-y-3 mb-3">
+                                        <div>
+                                            <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Charging Rate</p>
+                                            <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                                ${lot.evChargingRate || 1.86}/hour ({lot.evMinimumHours || 1}-Hour Minimum, {lot.evMaximumHours || 24}-Hour Maximum)
+                                            </p>
+                                        </div>
+
+                                        <div>
+                                            <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Idle Charging Fee</p>
+                                            <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                                ${lot.idleChargingFee || 2.50}/hour after {lot.evGracePeriodMinutes || 30} minute grace period
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                        <p className="mb-2">
+                                            <span className="font-medium">Note: </span>
+                                            EV Charging Station payment is required instead of metered parking payment.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Right content - Map and Reservation */}
                 <div className="lg:col-span-2">
                     {/* Transport Mode Selector */}
                     {destination && (
-                        <div className={`mb-8 flex items-center justify-center`}>
+                        <div className={`mb-6 flex items-center justify-center`}>
                             <div className={`inline-flex rounded-lg p-1 shadow-md ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                 <button
                                     type="button"
@@ -557,6 +709,16 @@ const LotDetailsView = ({
                                     </div>
                                 </div>
                             )}
+
+                            {/* Loading indicator for route */}
+                            {isLoading && (
+                                <div className={`absolute top-4 right-4 z-10 ${darkMode ? 'bg-gray-800/90 text-white' : 'bg-white/90 text-gray-900'} rounded-lg shadow-lg p-3 text-sm backdrop-blur-sm`}>
+                                    <div className="flex items-center">
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+                                        <p>Loading route...</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -596,18 +758,38 @@ const LotDetailsView = ({
                                         {estimatedCost === "$0.00" ? "FREE" : estimatedCost}
                                     </span>
                                 </div>
-                                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                    {estimatedCost === "$0.00" && lot.rateType === 'Hourly' && lot.features?.includes('Metered Parking') && startDateTime && new Date(startDateTime).getHours() >= 19
-                                        ? "Free after 7:00 PM for metered parking"
-                                        : estimatedCost === "$0.00" && lot.rateType === 'Permit-based' && startDateTime && new Date(startDateTime).getHours() >= 16
-                                            ? "Free after 4:00 PM for permit-based lots"
-                                            : lot.isEV
-                                                ? `$${lot.evChargingRate}/hour × ${duration.replace(' hours', '')}`
-                                                : lot.rateType === 'Hourly'
-                                                    ? `$${lot.hourlyRate}/hour × ${duration.replace(' hours', '')}`
-                                                    : 'Semester permit rate'
-                                    }
-                                </p>
+
+                                {/* Detailed price explanation */}
+                                {startDateTime && lot.rateType === 'Hourly' && lot.features &&
+                                    (lot.features.includes('Metered Parking') || lot.features.isMetered) &&
+                                    estimatedCost !== "$0.00" && estimatedCost !== "Free on weekends" &&
+                                    !startDateTime.match(/^(Sat|Sun),/) ? (
+                                    <div className={`mt-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'} text-xs`}>
+                                        <p className="text-amber-500 font-medium mb-1">Partial-day pricing:</p>
+                                        <p>• Charges only apply 7:00 AM - 7:00 PM</p>
+                                        <p>• Free before 7:00 AM and after 7:00 PM</p>
+                                        <p>• ${lot.hourlyRate}/hr × billable hours during 7AM-7PM</p>
+                                    </div>
+                                ) : (
+                                    <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                        {startDateTime && startDateTime.match(/^(Sat|Sun),/)
+                                            ? "Free on weekend"
+                                            : estimatedCost === "Free on weekends"
+                                                ? "Free on weekend" // Fallback in case estimatedCost shows weekend but detection here doesn't
+                                                : estimatedCost === "$0.00" && lot.rateType === 'Hourly' && lot.features?.includes('Metered Parking') && startDateTime && startDateTime.match(/(\d+):(\d+)\s*([AP]M)/) && parseInt(startDateTime.match(/(\d+):(\d+)\s*([AP]M)/)[1]) >= 7 && startDateTime.includes('PM')
+                                                    ? "Free after 7:00 PM for metered parking"
+                                                    : estimatedCost === "$0.00" && lot.rateType === 'Permit-based' && startDateTime &&
+                                                        ((startDateTime.match(/(\d+):(\d+)\s*([AP]M)/) && parseInt(startDateTime.match(/(\d+):(\d+)\s*([AP]M)/)[1]) < 7 && startDateTime.includes('AM')) ||
+                                                            (startDateTime.match(/(\d+):(\d+)\s*([AP]M)/) && parseInt(startDateTime.match(/(\d+):(\d+)\s*([AP]M)/)[1]) >= 4 && startDateTime.includes('PM')))
+                                                        ? startDateTime.includes('AM') ? "Free before 7:00 AM for permit-based lots" : "Free after 4:00 PM for permit-based lots"
+                                                        : lot.isEV
+                                                            ? `$${lot.evChargingRate}/hour × ${duration.replace(' hours', '')}`
+                                                            : lot.rateType === 'Hourly'
+                                                                ? `$${lot.hourlyRate}/hour × ${duration.replace(' hours', '')}`
+                                                                : 'Semester permit rate'
+                                        }
+                                    </p>
+                                )}
                             </div>
 
                             {/* Reserve Button */}
@@ -623,96 +805,18 @@ const LotDetailsView = ({
                             </p>
                         </div>
                     </div>
-                </div>
-            </div>
 
-            {/* Feature list */}
-            <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                {/* Price */}
-                <div className="flex items-center">
-                    <FaDollarSign className="text-lg mr-2 text-green-600" />
-                    <div>
-                        <p className="text-xs">Price</p>
-                        <p className="font-medium">{lot.price}</p>
-                    </div>
-                </div>
-
-                {/* Available spaces */}
-                <div className="flex items-center">
-                    <FaParking className="text-lg mr-2 text-blue-600" />
-                    <div>
-                        <p className="text-xs">Available Spots</p>
-                        <p className="font-medium">{lot.availableSpots} of {lot.totalSpaces}</p>
-                    </div>
-                </div>
-
-                {/* Distance */}
-                <div className="flex items-center">
-                    <FaLocationArrow className="text-lg mr-2 text-purple-600" />
-                    <div>
-                        <p className="text-xs">Distance</p>
-                        <p className="font-medium">{lot.distance || routeDistance || "Unknown"}</p>
-                    </div>
-                </div>
-
-                {/* Travel Time */}
-                <div className="flex items-center">
-                    <FaClock className="text-lg mr-2 text-orange-600" />
-                    <div>
-                        <p className="text-xs">Travel Time</p>
-                        <p className="font-medium">
-                            {routeDuration ? `${routeDuration} min ${getTransportText()}` : "Calculating..."}
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            {/* EV Charging Information - Only show if lot has EV features */}
-            {lot.features && lot.features.isEV && (
-                <div className={`mb-6 p-4 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-blue-50 border-blue-200'}`}>
-                    <div className="flex items-start">
-                        <FaChargingStation className={`text-xl mr-3 mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
-                        <div>
-                            <h3 className={`font-bold text-lg mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                EV Charging Information
-                            </h3>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mb-3">
-                                <div>
-                                    <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Charging Rate</p>
-                                    <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                        ${lot.evChargingRate || 1.86}/hour ({lot.evMinimumHours || 1}-Hour Minimum, {lot.evMaximumHours || 24}-Hour Maximum)
-                                    </p>
-                                </div>
-
-                                <div>
-                                    <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Idle Charging Fee</p>
-                                    <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                        ${lot.idleChargingFee || 2.50}/hour after {lot.evGracePeriodMinutes || 30} minute grace period
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                <p className="mb-2">
-                                    <span className="font-medium">Note: </span>
-                                    Use of EV Charging Station parking spaces requires a station wand to be plugged
-                                    into a vehicle at all times.
-                                </p>
-                                <p>
-                                    EV Charging Station parking spaces located inside of metered parking lots only
-                                    require EV Charging Station payment, and not payment to the metered parking lot pay station.
-                                </p>
-                                <p className="mt-2">
-                                    <span className="font-medium">Idle Charging Fee: </span>
-                                    ${lot.idleChargingFee || 2.50}/hour for vehicles that are fully charged but remain parked.
-                                    This charge will begin after a grace period of {lot.evGracePeriodMinutes || 30} minutes.
-                                </p>
-                            </div>
+                    {/* Parking Availability Forecast */}
+                    {startDateTime && (
+                        <div className="mt-8">
+                            <ParkingForecast
+                                darkMode={darkMode}
+                                lot={lot}
+                            />
                         </div>
-                    </div>
+                    )}
                 </div>
-            )}
+            </div>
         </div>
     );
 };

@@ -182,9 +182,9 @@ const ManageTickets = ({ isAuthenticated, darkMode }) => {
     const filteredTickets = tickets.filter(ticket => {
         const matchesSearch = searchTerm === '' ||
             ticket.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            ticket.user.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            ticket.user.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            ticket.user.email.toLowerCase().includes(searchTerm.toLowerCase());
+            (ticket.user && ticket.user.firstName && ticket.user.firstName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (ticket.user && ticket.user.lastName && ticket.user.lastName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (ticket.user && ticket.user.email && ticket.user.email.toLowerCase().includes(searchTerm.toLowerCase()));
 
         return matchesSearch;
     });
@@ -379,8 +379,14 @@ const ManageTickets = ({ isAuthenticated, darkMode }) => {
                                         <div className="flex items-center">
                                             <FaUser className="mr-2 text-gray-400" />
                                             <div>
-                                                <div>{ticket.user.firstName} {ticket.user.lastName}</div>
-                                                <div className="text-sm text-gray-500">{ticket.user.email}</div>
+                                                {ticket.user ? (
+                                                    <>
+                                                        <div>{ticket.user.firstName} {ticket.user.lastName}</div>
+                                                        <div className="text-sm text-gray-500">{ticket.user.email}</div>
+                                                    </>
+                                                ) : (
+                                                    <div className="text-sm text-gray-500">User not found</div>
+                                                )}
                                             </div>
                                         </div>
                                     </td>

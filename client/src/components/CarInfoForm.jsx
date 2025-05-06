@@ -10,7 +10,7 @@ import { FaArrowLeft, FaCar, FaExclamationCircle, FaCheckCircle, FaTicketAlt } f
 import PropTypes from 'prop-types';
 import { CarService } from '../utils/api';
 
-const CarInfoForm = ({ darkMode, lotName, permitType, onBackClick, onContinue, isAuthenticated }) => {
+const CarInfoForm = ({ darkMode, lotName, permitType, onBackClick, onContinue, isAuthenticated, isSubmitting = false }) => {
     const [vehicleInfo, setVehicleInfo] = useState({
         plateNumber: '',
         state: 'New York',
@@ -265,57 +265,47 @@ const CarInfoForm = ({ darkMode, lotName, permitType, onBackClick, onContinue, i
         }
     }, [vehicleInfo, touched]);
 
+    // Handle form submission
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setFormSubmitted(true);
 
-        // Set all fields as touched
+        // Prevent submission if already submitting
+        if (isSubmitting) return;
+
+        // Mark all fields as touched for validation
         const allTouched = {};
         Object.keys(vehicleInfo).forEach(key => {
             allTouched[key] = true;
         });
         setTouched(allTouched);
 
-        if (!validateForm()) {
-            // Scroll to first error and focus it
-            const firstErrorField = document.querySelector('.error-border');
-            if (firstErrorField) {
-                firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                firstErrorField.focus();
-            }
-            return;
+        // Validate all fields
+        const formErrors = validateForm();
+        setErrors(formErrors);
+
+        // Count errors
+        const errorCount = Object.keys(formErrors).length;
+        if (errorCount > 0) {
+            console.log('Form validation errors:', errorCount);
+            return; // Don't submit if there are errors
         }
 
-        // If saveCarInfo is checked and no car is selected, save car information
-        if (saveCarInfo && !selectedSavedCarId) {
-            try {
-                if (isAuthenticated) {
-                    // If logged in, save to backend
-                    const carData = {
-                        plateNumber: vehicleInfo.plateNumber,
-                        stateProv: vehicleInfo.state,
-                        make: vehicleInfo.make,
-                        model: vehicleInfo.model,
-                        color: vehicleInfo.color,
-                        bodyType: vehicleInfo.bodyType,
-                        year: vehicleInfo.year
-                    };
+        try {
+            setFormSubmitted(true);
 
-                    await CarService.saveCar(carData);
-                } else {
-                    // If not logged in, save to localStorage
-                    localStorage.setItem('userCarInfo', JSON.stringify(vehicleInfo));
-                }
-            } catch (error) {
-                console.error('Error saving car info:', error);
+            // Add carId field if we selected a saved car
+            const finalVehicleInfo = { ...vehicleInfo };
+            if (selectedSavedCarId) {
+                finalVehicleInfo.carId = selectedSavedCarId;
             }
-        }
 
-        // If a saved car is selected, pass the car ID instead of the car details
-        if (selectedSavedCarId && isAuthenticated) {
-            onContinue({ carId: selectedSavedCarId });
-        } else {
-            onContinue(vehicleInfo);
+            // Pass data to parent component
+            onContinue({
+                ...finalVehicleInfo,
+                saveAsPrimary: saveCarInfo && !selectedSavedCarId
+            });
+        } catch (error) {
+            console.error('Error submitting car info form:', error);
         }
     };
 
@@ -342,7 +332,7 @@ const CarInfoForm = ({ darkMode, lotName, permitType, onBackClick, onContinue, i
                 <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Reserving spot at:</p>
                 <p className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{lotName}</p>
 
-                {permitType && (
+                {permitType && !lotName.includes('Metered') && (
                     <div className="mt-2 flex items-center">
                         <FaTicketAlt className={`mr-2 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
                         <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
@@ -733,8 +723,8 @@ const CarInfoForm = ({ darkMode, lotName, permitType, onBackClick, onContinue, i
                             </div>
                         </div>
                     )}
-                    
-                    {/* Changes below made on/before 4/6/2025, please refer to top of file for appropriate credit */} 
+
+                    {/* Changes below made on/before 4/6/2025, please refer to top of file for appropriate credit */}
                     <div className="flex items-center mb-4">
                         <input
                             id="saveCarInfo"
@@ -807,7 +797,8 @@ CarInfoForm.propTypes = {
     permitType: PropTypes.string,
     onBackClick: PropTypes.func.isRequired,
     onContinue: PropTypes.func.isRequired,
-    isAuthenticated: PropTypes.bool
+    isAuthenticated: PropTypes.bool,
+    isSubmitting: PropTypes.bool
 };
 
 // Add defaultProps
@@ -815,5 +806,6 @@ CarInfoForm.defaultProps = {
     darkMode: false,
     lotName: '',
     permitType: '',
-    isAuthenticated: false
+    isAuthenticated: false,
+    isSubmitting: false
 }; 

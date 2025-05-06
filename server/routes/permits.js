@@ -1,3 +1,4 @@
+
 // TP: this .jsx file's code was heavily manipulated, optimized, and contributed to by ChatGPT (after the initial was written by Student) to provide clarity on bugs, modularize, and optimize/provide better solutions during the coding process. 
 // It was prompted to take the initial iteration/changes and modify/optimize it to adapt for more concise techniques to achieve the desired functionalities.
 // It was also prompted to explain all changes in detail (completely studied/understood by the student) before the AI's optimized/modified version of the student written code was added to the code file. 
@@ -7,6 +8,18 @@
 
 // Reference: https://docs.stripe.com/webhooks?lang=node
 
+/**
+ * This module defines API routes for managing parking permits, including:
+ * - Creating, retrieving, updating, and deleting parking permits
+ * - Automatic expiration handling for permits
+ * - Integration with payment systems (Stripe)
+ * - Notification systems (in-app and email)
+ * - Management of related reservations when permits change
+ * - Revenue tracking for permit purchases
+ * 
+ * Permits represent the actual purchased parking rights by users, as opposed to
+ * permit types which are the templates/options available for purchase.
+ */
 
 const express = require('express');
 const router = express.Router();
@@ -15,11 +28,29 @@ const { verifyToken, isAdmin } = require('../middleware/auth');
 const RevenueStatistics = require('../models/revenue_statistics');
 const { updateExpiredPermits } = require('../utils/permitUtils');
 const NotificationHelper = require('../utils/notificationHelper');
+const emailService = require('../services/emailService');
 const Lot = require('../models/lot');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const Reservation = require('../models/reservation');
+const User = require('../models/users');
 
-// GET /api/permits - Retrieve permits with optional filtering & pagination
+/**
+ * GET /api/permits
+ * 
+ * Retrieves a paginated list of permits with optional filtering
+ * Updates expired permits before returning results
+ * Used by users to view their permits and by admins to manage all permits
+ * 
+ * @access Authenticated users (regular users see only their permits)
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @query {string} [status] - Filter by permit status (active, expired, etc.)
+ * @query {string} [permitType] - Filter permits by type
+ * @query {string} [search] - Search term for permit number, name, or user info
+ * @query {number} [page=1] - Page number for pagination
+ * @query {number} [limit=10] - Number of results per page
+ * @query {string} [userId] - Filter permits by specific user ID
+ * @returns {Object} - Permits array and pagination metadata
+ */
 router.get('/', verifyToken, async (req, res) => {
   try {
     // First update any expired permits in the database
@@ -86,7 +117,17 @@ router.get('/', verifyToken, async (req, res) => {
   }
 });
 
-// GET /api/permits/:id - Retrieve a single permit by its ID
+/**
+ * GET /api/permits/:id
+ * 
+ * Retrieves details for a single permit by its ID
+ * Updates expired permits status before returning results
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @param {string} id - Permit ID to retrieve
+ * @returns {Object} - Complete permit information
+ */
 router.get('/:id', verifyToken, async (req, res) => {
   try {
     // Update expired permits first
@@ -103,7 +144,32 @@ router.get('/:id', verifyToken, async (req, res) => {
   }
 });
 
-// POST /api/permits - Create a new permit
+/**
+ * POST /api/permits
+ * 
+ * Creates a new parking permit for a user
+ * Decreases the available quantity for the permit type
+ * Records revenue data for paid permits
+ * Sends notifications and emails to the user
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @body {string} permitNumber - Unique identifier for the permit
+ * @body {string} permitName - Display name for the permit
+ * @body {string} permitType - Type of permit (matches permit types)
+ * @body {string} userId - ID of the user who owns the permit
+ * @body {string} userFullName - Name of the user (for easier querying)
+ * @body {string} userEmail - Email of the user (for easier querying)
+ * @body {Array} lots - Array of parking lots where this permit is valid
+ * @body {Date} startDate - When the permit becomes valid
+ * @body {Date} endDate - When the permit expires
+ * @body {string} status - Current status (active, expired, etc.)
+ * @body {number} price - Cost of the permit
+ * @body {string} paymentStatus - Payment status (paid, unpaid, etc.)
+ * @body {string} paymentId - ID from payment processor
+ * @body {string} permitTypeId - Reference to the permit type template
+ * @returns {Object} - Success message and created permit data
+ */
 router.post('/', verifyToken, async (req, res) => {
   try {
     // Expected body: permitNumber, permitName, permitType, userId, userFullName, userEmail, lots,
@@ -152,6 +218,38 @@ router.post('/', verifyToken, async (req, res) => {
           '/dashboard'
         );
         console.log('Permit creation notification sent to user:', savedPermit.userId);
+
+        // Send email confirmation about the new permit
+        try {
+          // Get user email
+          const user = await User.findById(savedPermit.userId);
+          if (user && user.email) {
+            // Since there's no dedicated permit email method, use reservation confirmation
+            // with a custom message for permit creation
+            const emailResult = await emailService.sendReservationConfirmation(
+              user.email,
+              `${user.firstName} ${user.lastName}`,
+              {
+                _id: savedPermit._id,
+                id: savedPermit.permitNumber,
+                lotId: { name: savedPermit.lots.map(l => l.lotName).join(', ') },
+                startTime: savedPermit.startDate,
+                endTime: savedPermit.endDate,
+                status: 'Permit Created',
+                totalPrice: savedPermit.price,
+                permitDetails: {
+                  permitName: savedPermit.permitName,
+                  permitType: savedPermit.permitType
+                }
+              },
+              process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+            );
+            console.log('Permit creation email sent:', emailResult.messageId);
+          }
+        } catch (emailError) {
+          console.error('Failed to send permit creation email:', emailError);
+          // Continue even if email sending fails
+        }
       }
     } catch (notificationError) {
       console.error('Error creating permit notification:', notificationError);
@@ -165,7 +263,20 @@ router.post('/', verifyToken, async (req, res) => {
   }
 });
 
-// PUT /api/permits/:id - Update an existing permit
+/**
+ * PUT /api/permits/:id
+ * 
+ * Updates an existing permit's information
+ * Supports partial updates, including just the end date
+ * Records revenue when payment status changes to paid
+ * Sends notifications to users about permit changes
+ * 
+ * @access Authenticated users
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @param {string} id - ID of permit to update
+ * @body {Object} - Fields to update (all fields optional)
+ * @returns {Object} - Success message and updated permit data
+ */
 router.put('/:id', verifyToken, async (req, res) => {
   try {
     // Get the current permit to compare changes
@@ -219,10 +330,73 @@ router.put('/:id', verifyToken, async (req, res) => {
         }
       }
 
+      // Check if status is changing from inactive to active
+      const statusChangedToActive =
+        req.body.status === 'active' &&
+        currentPermit.status !== 'active';
+
+      // If status changed to active, record the revenue
+      if (statusChangedToActive && updatedPermit.price > 0) {
+        try {
+          await RevenueStatistics.recordPermitPurchase(updatedPermit.price);
+          console.log(`Recorded revenue for permit activation: $${updatedPermit.price}`);
+        } catch (revenueError) {
+          console.error('Failed to record revenue statistics:', revenueError);
+          // Continue processing even if revenue recording fails
+        }
+      }
+
       res.status(200).json({
         message: 'Permit updated successfully',
         permit: updatedPermit
       });
+
+      // Create notifications for the user about their permit being updated
+      try {
+        if (updatedPermit.userId) {
+          await NotificationHelper.createSystemNotification(
+            updatedPermit.userId,
+            statusChangedToActive ? 'Permit Activated' : 'Permit Payment Processed',
+            `Your ${updatedPermit.permitName} permit is now active until ${new Date(updatedPermit.endDate).toLocaleDateString()}.`,
+            '/dashboard'
+          );
+          console.log('Permit status update notification sent to user:', updatedPermit.userId);
+
+          // Send email notification for permit activation/update
+          try {
+            // Get user email
+            const user = await User.findById(updatedPermit.userId);
+            if (user && user.email) {
+              // Use reservation confirmation with custom message for permit update
+              const emailResult = await emailService.sendReservationConfirmation(
+                user.email,
+                `${user.firstName} ${user.lastName}`,
+                {
+                  _id: updatedPermit._id,
+                  id: updatedPermit.permitNumber,
+                  lotId: { name: updatedPermit.lots.map(l => l.lotName).join(', ') },
+                  startTime: updatedPermit.startDate,
+                  endTime: updatedPermit.endDate,
+                  status: statusChangedToActive ? 'Permit Activated' : 'Payment Processed',
+                  totalPrice: updatedPermit.price,
+                  permitDetails: {
+                    permitName: updatedPermit.permitName,
+                    permitType: updatedPermit.permitType
+                  }
+                },
+                process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+              );
+              console.log('Permit update email sent:', emailResult.messageId);
+            }
+          } catch (emailError) {
+            console.error('Failed to send permit update email:', emailError);
+            // Continue even if email sending fails
+          }
+        }
+      } catch (notificationError) {
+        console.error('Error creating permit status notification:', notificationError);
+        // Continue even if notification creation fails
+      }
     }
   } catch (error) {
     console.error('Error updating permit:', error);
@@ -230,7 +404,20 @@ router.put('/:id', verifyToken, async (req, res) => {
   }
 });
 
-// DELETE /api/permits/:id - Delete a permit (admin only)
+/**
+ * DELETE /api/permits/:id
+ * 
+ * Deletes a permit and cancels all associated reservations
+ * Processes refunds for paid reservations via Stripe
+ * Sends notifications and emails about permit deletion and reservation cancellations
+ * Updates parking lot available spaces
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} id - ID of permit to delete
+ * @returns {Object} - Success message, list of cancelled reservations, and refund details
+ */
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     // Find the permit first to get user information
@@ -367,19 +554,46 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     // Now delete the permit
     const deletedPermit = await Permit.findByIdAndDelete(req.params.id);
 
-    // Create a notification for the user about the deleted permit
+    // Create notifications for the user about their permit being deleted
     try {
-      // Only create notification if userId exists
-      if (userId) {
-        await NotificationHelper.createSystemNotification(
-          userId,
-          'Permit Deleted',
-          `Your ${permit.permitName || 'parking permit'} has been deleted by an administrator.`,
-          'Your permit has been deleted and any reservations requiring this permit have been cancelled and refunded.',
-          '/past-permits'
-        );
-      } else {
-        console.log('Skipping notification creation - no userId found on permit');
+      await NotificationHelper.createSystemNotification(
+        permit.userId,
+        'Permit Deleted',
+        `Your ${permit.permitName} has been removed. Any associated reservations have been cancelled.`,
+        '/dashboard'
+      );
+      console.log('Permit deletion notification sent to user:', permit.userId);
+
+      // Send email notification about permit deletion
+      try {
+        // Get user email
+        const user = await User.findById(permit.userId);
+        if (user && user.email) {
+          // Use reservation confirmation with cancelled status for permit deletion
+          const emailResult = await emailService.sendReservationConfirmation(
+            user.email,
+            `${user.firstName} ${user.lastName}`,
+            {
+              _id: permit._id,
+              id: permit.permitNumber,
+              lotId: { name: permit.lots.map(l => l.lotName).join(', ') },
+              startTime: permit.startDate,
+              endTime: permit.endDate,
+              status: 'cancelled',
+              totalPrice: permit.price,
+              permitDetails: {
+                permitName: permit.permitName,
+                permitType: permit.permitType,
+                message: 'Your permit has been deleted by an administrator. Any associated reservations have been cancelled.'
+              }
+            },
+            process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+          );
+          console.log('Permit deletion email sent:', emailResult.messageId);
+        }
+      } catch (emailError) {
+        console.error('Failed to send permit deletion email:', emailError);
+        // Continue even if email sending fails
       }
     } catch (notificationError) {
       console.error('Error creating permit deletion notification:', notificationError);
@@ -396,7 +610,17 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
-// PUT /api/permits/check-expired - Admin endpoint to manually check and update expired permits
+/**
+ * PUT /api/permits/check-expired
+ * 
+ * Admin endpoint to manually trigger the expired permit check
+ * Updates permits that have passed their end date to "expired" status
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @returns {Object} - Success message and count of updated permits
+ */
 router.put('/check-expired', verifyToken, isAdmin, async (req, res) => {
   try {
     const updatedCount = await updateExpiredPermits();

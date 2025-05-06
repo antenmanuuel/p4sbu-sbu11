@@ -1,10 +1,37 @@
+/**
+ * This module defines API routes for parking lot management, including:
+ * - Retrieving parking lots with filtering and searching
+ * - Creating, updating, and deleting parking lots (admin only)
+ * - Managing lot status and capacity
+ * 
+ * The module handles both public routes for viewing lots and
+ * restricted admin-only routes for managing the lots data.
+ * Includes robust validation using express-validator.
+ */
+
 const express = require('express');
 const router = express.Router();
 const { body, param, validationResult } = require('express-validator');
 const Lot = require('../models/lot');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 
-// GET /api/lots - Get all lots with filtering and pagination
+/**
+ * GET /api/lots
+ * 
+ * Retrieves a paginated and filtered list of parking lots
+ * Supports complex filtering by status, permit type, rate type, and user type
+ * Includes search functionality for lot name and address
+ * 
+ * @access Public
+ * @query {string} [page=1] - Page number for pagination
+ * @query {string} [limit=10] - Number of results per page
+ * @query {string} [status] - Filter by lot status (Active, Inactive, Maintenance)
+ * @query {string} [permitType] - Filter by permitted parking type
+ * @query {string} [rateType] - Filter by rate type (Hourly, Permit-based)
+ * @query {string} [userType] - Filter for lots appropriate for specific user types
+ * @query {string} [search] - Search term for lot name and address
+ * @returns {Object} - Lots array and pagination metadata
+ */
 router.get('/', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
@@ -33,13 +60,54 @@ router.get('/', async (req, res) => {
             }
         }
 
+        // Handle userType filter - but don't filter out metered lots or other general permits
+        if (req.query.userType && req.query.userType !== 'admin') {
+            const userType = req.query.userType.toLowerCase();
+
+            // For visitors, only show metered lots
+            if (userType === 'visitor') {
+                filterQuery['features.isMetered'] = true;
+            } else {
+                filterQuery.$or = [
+                    // Always include metered lots
+                    { 'features.isMetered': true },
+
+                    // Include lots with appropriate permit types
+                    {
+                        permitTypes: {
+                            $in: userType === 'faculty'
+                                ? [/faculty/i, /staff/i, /all/i, /visitor/i, /general/i]
+                                : userType === 'student'
+                                    ? [/student/i, /commuter/i, /resident/i, /all/i, /visitor/i, /general/i]
+                                    : [/.*/] // Include all lots if userType is unknown
+                        }
+                    }
+                ];
+            }
+        }
+
         // Search functionality
         if (req.query.search) {
             const searchTerm = req.query.search;
-            filterQuery.$or = [
-                { name: { $regex: searchTerm, $options: 'i' } },
-                { address: { $regex: searchTerm, $options: 'i' } }
-            ];
+            // If we already have an $or condition from userType, we need to use $and to combine
+            if (filterQuery.$or) {
+                filterQuery.$and = [
+                    { $or: filterQuery.$or },
+                    {
+                        $or: [
+                            { name: { $regex: searchTerm, $options: 'i' } },
+                            { address: { $regex: searchTerm, $options: 'i' } }
+                        ]
+                    }
+                ];
+                // Remove the original $or now that it's in $and
+                delete filterQuery.$or;
+            } else {
+                filterQuery.$or = [
+                    { name: { $regex: searchTerm, $options: 'i' } },
+                    { address: { $regex: searchTerm, $options: 'i' } }
+                ];
+            }
         }
 
         // Get total count for pagination
@@ -66,7 +134,16 @@ router.get('/', async (req, res) => {
     }
 });
 
-// GET /api/lots/:id - Get a single lot by ID
+/**
+ * GET /api/lots/:id
+ * 
+ * Retrieves a single parking lot by its MongoDB ID
+ * Includes validation to ensure the ID is in proper format
+ * 
+ * @access Public
+ * @param {string} id - MongoDB ID of the parking lot
+ * @returns {Object} - Complete parking lot information
+ */
 router.get('/:id', [
     param('id').isMongoId().withMessage('Invalid lot ID')
 ], async (req, res) => {
@@ -89,7 +166,27 @@ router.get('/:id', [
     }
 });
 
-// POST /api/lots - Create a new lot (admin only)
+/**
+ * POST /api/lots
+ * 
+ * Creates a new parking lot with a unique identifier
+ * Includes comprehensive validation for all required fields
+ * Generates a unique lotId for the new parking lot
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @body {string} name - Name of the parking lot
+ * @body {string} address - Physical address of the lot
+ * @body {Object} location - Geographic coordinates
+ * @body {number} location.latitude - Latitude coordinate
+ * @body {number} location.longitude - Longitude coordinate
+ * @body {number} totalSpaces - Total parking capacity
+ * @body {number} availableSpaces - Currently available spaces
+ * @body {Array<string>} permitTypes - Types of permits allowed in this lot
+ * @body {string} status - Current lot status (Active, Inactive, Maintenance)
+ * @returns {Object} - Success message and created lot data
+ */
 router.post('/', [
     verifyToken,
     isAdmin,
@@ -139,9 +236,30 @@ router.post('/', [
 });
 
 /**
- * @route PUT /api/lots/:id
- * @description Update a parking lot
- * @access Private (Admin only)
+ * PUT /api/lots/:id
+ * 
+ * Updates an existing parking lot's information
+ * Supports partial updates with validation for all fields
+ * Includes intelligent handling of capacity constraints:
+ * - Ensures available spaces don't exceed total spaces
+ * - Adjusts available spaces if total capacity is reduced
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} id - MongoDB ID of the lot to update
+ * @body {string} [name] - Name of the parking lot
+ * @body {string} [address] - Physical address of the lot
+ * @body {Object} [location] - Geographic coordinates
+ * @body {number} [totalSpaces] - Total parking capacity
+ * @body {number} [availableSpaces] - Currently available spaces
+ * @body {Array<string>} [permitTypes] - Types of permits allowed
+ * @body {string} [rateType] - Rate type (Hourly, Permit-based)
+ * @body {number} [hourlyRate] - Cost per hour for hourly parking
+ * @body {number} [semesterRate] - Cost per semester for permit parking
+ * @body {string} [status] - Lot status (Active, Inactive, Maintenance)
+ * @body {Object} [features] - Additional lot features and amenities
+ * @returns {Object} - Success message and updated lot data
  */
 router.put('/:id', [
     verifyToken,
@@ -247,7 +365,19 @@ router.put('/:id', [
     }
 });
 
-// PATCH /api/lots/:id/status - Update a lot's status (admin only)
+/**
+ * PATCH /api/lots/:id/status
+ * 
+ * Updates only the status of a parking lot
+ * Simplified endpoint for quick status changes without modifying other data
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} id - MongoDB ID of the lot to update
+ * @body {string} status - New status ('Active', 'Inactive', or 'Maintenance')
+ * @returns {Object} - Updated lot information
+ */
 router.patch('/:id/status', [
     verifyToken,
     isAdmin,
@@ -277,7 +407,18 @@ router.patch('/:id/status', [
     }
 });
 
-// DELETE /api/lots/:id - Delete a lot (admin only)
+/**
+ * DELETE /api/lots/:id
+ * 
+ * Permanently removes a parking lot from the system
+ * Requires admin authentication and validates the lot ID
+ * 
+ * @access Admin only
+ * @middleware verifyToken - Ensures request has valid authentication
+ * @middleware isAdmin - Verifies the user has admin privileges
+ * @param {string} id - MongoDB ID of the lot to delete
+ * @returns {Object} - Success message
+ */
 router.delete('/:id', [
     verifyToken,
     isAdmin,
@@ -302,4 +443,4 @@ router.delete('/:id', [
     }
 });
 
-module.exports = router; 
+module.exports = router;
