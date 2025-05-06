@@ -39,7 +39,7 @@ const EventRequestSchema = new mongoose.Schema({
         min: 1
     },
     parkingLotPreference: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: String,
         ref: 'Lot',
         required: false
     },

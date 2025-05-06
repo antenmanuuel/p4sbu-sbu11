@@ -158,6 +158,34 @@ jest.mock('../models/revenue_statistics', () => mockRevenueStatistics);
 // Mock NotificationHelper
 jest.mock('../utils/notificationHelper', () => mockNotificationHelper);
 
+// Mock Stripe before importing routes
+jest.mock('stripe', () => {
+    return jest.fn().mockImplementation(() => {
+        return {
+            paymentMethods: {
+                list: jest.fn().mockResolvedValue({
+                    data: [{ id: 'pm_123456' }]
+                }),
+                attach: jest.fn().mockResolvedValue({})
+            },
+            customers: {
+                create: jest.fn().mockResolvedValue({ id: 'cus_123456' })
+            },
+            paymentIntents: {
+                create: jest.fn().mockResolvedValue({
+                    id: 'pi_123456',
+                    client_secret: 'secret',
+                    status: 'succeeded',
+                    charges: { data: [{ receipt_url: 'https://receipt.url' }] }
+                })
+            }
+        };
+    });
+});
+
+// Set test environment before importing routes
+process.env.NODE_ENV = 'test';
+
 // Import the actual routes after mocking
 const ticketsRoutes = require('../routes/tickets');
 app.use('/api', ticketsRoutes);
@@ -165,6 +193,11 @@ app.use('/api', ticketsRoutes);
 describe('Tickets Routes', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+    });
+
+    afterAll(() => {
+        // Clean up environment variable after tests
+        delete process.env.NODE_ENV;
     });
 
     describe('User Ticket Routes', () => {
