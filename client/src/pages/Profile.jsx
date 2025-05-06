@@ -478,8 +478,11 @@ const Profile = ({ darkMode }) => {
                         ) : (
                             <div className={`rounded-lg shadow-md p-6 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                 <p>You don't have any active parking permits.</p>
-                                <button className="mt-4 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">
-                                    Purchase a Permit
+                                <button
+                                    onClick={() => navigate('/find-parking')}
+                                    className="mt-4 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                                >
+                                    Find and Purchase Permit
                                 </button>
                             </div>
                         )}
@@ -728,4 +731,4 @@ const Profile = ({ darkMode }) => {
     );
 };
 
-export default Profile; 
+export default Profile;
