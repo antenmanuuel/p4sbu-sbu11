@@ -23,7 +23,7 @@ const emailService = require('../services/emailService');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const Car = require('../models/car');
 const { updateExpiredReservations } = require('../utils/reservationUtils');
-const RevenueStatistics = require('../models/revenueStatistics');
+const RevenueStatistics = require('../models/revenue_statistics');
 
 /**
  * Helper function to generate a unique reservation ID
