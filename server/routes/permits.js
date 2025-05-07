@@ -1,4 +1,3 @@
-
 // TP: this .jsx file's code was heavily manipulated, optimized, and contributed to by ChatGPT (after the initial was written by Student) to provide clarity on bugs, modularize, and optimize/provide better solutions during the coding process. 
 // It was prompted to take the initial iteration/changes and modify/optimize it to adapt for more concise techniques to achieve the desired functionalities.
 // It was also prompted to explain all changes in detail (completely studied/understood by the student) before the AI's optimized/modified version of the student written code was added to the code file. 
@@ -240,9 +239,17 @@ router.post('/', verifyToken, async (req, res) => {
                 permitDetails: {
                   permitName: savedPermit.permitName,
                   permitType: savedPermit.permitType
-                }
+                },
+                // Add receipt information if this is a paid permit
+                receiptInfo: savedPermit.paymentStatus === 'paid' && savedPermit.price > 0 ? {
+                  paymentId: savedPermit.paymentId,
+                  paymentDate: new Date(),
+                  paymentMethod: 'Online Payment',
+                  amount: savedPermit.price,
+                  description: `Payment for ${savedPermit.permitName} Permit - Valid until ${new Date(savedPermit.endDate).toLocaleDateString()}`
+                } : null
               },
-              process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+              process.env.CLIENT_BASE_URL || process.env.PROD_CLIENT_URL || 'https://p4sbu-parking-app-8897a44819c2.herokuapp.com' || 'http://localhost:5173'
             );
             console.log('Permit creation email sent:', emailResult.messageId);
           }
@@ -382,9 +389,17 @@ router.put('/:id', verifyToken, async (req, res) => {
                   permitDetails: {
                     permitName: updatedPermit.permitName,
                     permitType: updatedPermit.permitType
-                  }
+                  },
+                  // Add receipt information for paid permits
+                  receiptInfo: isPaymentStatusChangingToPaid || statusChangedToActive ? {
+                    paymentId: updatedPermit.paymentId,
+                    paymentDate: new Date(),
+                    paymentMethod: 'Online Payment',
+                    amount: updatedPermit.price,
+                    description: `Payment for ${updatedPermit.permitName} Permit - Valid until ${new Date(updatedPermit.endDate).toLocaleDateString()}`
+                  } : null
                 },
-                process.env.CLIENT_BASE_URL || 'http://localhost:5173'
+                process.env.CLIENT_BASE_URL || process.env.PROD_CLIENT_URL || 'https://p4sbu-parking-app-8897a44819c2.herokuapp.com' || 'http://localhost:5173'
               );
               console.log('Permit update email sent:', emailResult.messageId);
             }

@@ -217,19 +217,18 @@ RevenueStatisticsSchema.statics.recordRefund = async function (amount) {
             });
         }
 
-        // Deduct the refunded amount from the total revenue
-        // We don't know which category the original payment was in, 
-        // so we'll deduct from 'other' as a general category
+        // Deduct the refunded amount from the permits category and total revenue
+        // This assumes refunds are primarily for permit purchases
         revenueRecord.permits -= amount;
         revenueRecord.totalRevenue -= amount;
 
         // Ensure we don't go negative
-        if (revenueRecord.permits < 0) revenueRecord.other = 0;
+        if (revenueRecord.permits < 0) revenueRecord.permits = 0;
         if (revenueRecord.totalRevenue < 0) revenueRecord.totalRevenue = 0;
 
         // Save the updated record
         await revenueRecord.save();
-        console.log(`Recorded refund of $${amount} for ${year}-${month + 1}`);
+        console.log(`Recorded permit refund of $${amount} for ${year}-${month + 1}`);
 
         return revenueRecord;
     } catch (error) {
@@ -280,10 +279,10 @@ RevenueStatisticsSchema.statics.recordMeteredPurchase = async function (amount) 
     }
 };
 
-// Static method to record a metered parking purchase
+// Static method to record a metered parking refund
 RevenueStatisticsSchema.statics.recordMeteredRefund = async function (amount) {
     if (!amount || amount <= 0) {
-        console.error('Invalid amount for refund', amount);
+        console.error('Invalid amount for metered refund', amount);
         return null;
     }
 
@@ -308,9 +307,7 @@ RevenueStatisticsSchema.statics.recordMeteredRefund = async function (amount) {
             });
         }
 
-        // Deduct the refunded amount from the total revenue
-        // We don't know which category the original payment was in, 
-        // so we'll deduct from 'other' as a general category
+        // Deduct the refunded amount from the metered parking category and total revenue
         revenueRecord.metered -= amount;
         revenueRecord.totalRevenue -= amount;
 
@@ -320,11 +317,11 @@ RevenueStatisticsSchema.statics.recordMeteredRefund = async function (amount) {
 
         // Save the updated record
         await revenueRecord.save();
-        console.log(`Recorded refund of $${amount} for ${year}-${month + 1}`);
+        console.log(`Recorded metered parking refund of $${amount} for ${year}-${month + 1}`);
 
         return revenueRecord;
     } catch (error) {
-        console.error('Error recording refund:', error);
+        console.error('Error recording metered refund:', error);
         throw error;
     }
 };
