@@ -12,18 +12,18 @@
 
 const express = require('express');
 const router = express.Router();
+const { v4: uuidv4 } = require('uuid');
+const { verifyToken } = require('../middleware/auth');
 const Reservation = require('../models/reservation');
 const Lot = require('../models/lot');
-const Car = require('../models/car');
-const Permit = require('../models/permits');
-const PermitType = require('../models/permit_types');
 const User = require('../models/users');
-const { verifyToken } = require('../middleware/auth');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const RevenueStatistics = require('../models/revenue_statistics');
-const { updateExpiredReservations } = require('../utils/reservationUtils');
+const Permit = require('../models/permits');
 const NotificationHelper = require('../utils/notificationHelper');
 const emailService = require('../services/emailService');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const Car = require('../models/car');
+const { updateExpiredReservations } = require('../utils/reservationUtils');
+const RevenueStatistics = require('../models/revenue_statistics');
 
 /**
  * Helper function to generate a unique reservation ID
@@ -65,7 +65,7 @@ router.get('/', verifyToken, async (req, res) => {
         // First update any expired reservations in the database
         await updateExpiredReservations();
 
-        const { status, startDate, endDate, showPastOnly, search } = req.query;
+        const { startDate, endDate, showPastOnly, search } = req.query;
 
         // Build query
         const query = { user: req.user.userId }; // Only show user's own reservations
@@ -91,7 +91,6 @@ router.get('/', verifyToken, async (req, res) => {
 
         // Search filter
         if (search && search.trim()) {
-            const searchQuery = search.trim();
             // We'll manually filter after getting results since we need to search in populated fields
         }
 
@@ -343,6 +342,21 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
                             originalAmount: reservation.totalPrice,
                             adjustedAmount: adjustedPrice
                         };
+
+                        // Record refund in revenue statistics
+                        try {
+                            // Use the appropriate refund type based on the lot type
+                            if (isMeteredLot || (lot.rateType === 'Hourly')) {
+                                await RevenueStatistics.recordMeteredRefund(refund.amount / 100);
+                                console.log(`Recorded metered parking refund: $${refund.amount / 100} for reservation at ${lot.name}`);
+                            } else {
+                                await RevenueStatistics.recordRefund(refund.amount / 100);
+                                console.log(`Recorded refund: $${refund.amount / 100} for reservation at ${lot.name}`);
+                            }
+                        } catch (revenueError) {
+                            console.error('Failed to record refund in revenue statistics:', revenueError);
+                            // Continue processing even if revenue recording fails
+                        }
                     }
 
                     // Add specific notification for metered lot refunds
@@ -404,6 +418,36 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
                 message,
                 '/dashboard'
             );
+
+            // Send email notification about the cancellation
+            try {
+                // Get user details for email
+                const user = await User.findById(req.user.userId);
+
+                if (user && user.email) {
+                    // Send email notification about the cancellation
+                    const emailResult = await emailService.sendReservationConfirmation(
+                        user.email,
+                        `${user.firstName} ${user.lastName}`,
+                        {
+                            _id: reservation._id,
+                            id: reservation.reservationId,
+                            lotId: reservation.lotId,
+                            startTime: reservation.startTime,
+                            endTime: reservation.endTime,
+                            status: 'cancelled',
+                            totalPrice: reservation.totalPrice,
+                            refundInfo: reservation.refundInfo || null
+                        },
+                        process.env.CLIENT_BASE_URL || process.env.PROD_CLIENT_URL || 'https://p4sbu-parking-app-8897a44819c2.herokuapp.com' || 'http://localhost:5173'
+                    );
+
+                    console.log(`Reservation cancellation email sent to ${user.email}: ${emailResult.success ? emailResult.messageId || 'success' : 'failed'}`);
+                }
+            } catch (emailError) {
+                console.error('Failed to send reservation cancellation email:', emailError);
+                // Continue even if email sending fails
+            }
         } catch (error) {
             console.error('Notification error:', error);
         }
@@ -457,7 +501,7 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
  */
 router.post('/:id/extend', verifyToken, async (req, res) => {
     try {
-        const { additionalHours, isMetered } = req.body;
+        const { additionalHours } = req.body;
 
         if (!additionalHours || isNaN(additionalHours) || additionalHours <= 0) {
             return res.status(400).json({
@@ -544,6 +588,21 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
                     paymentIntentId: paymentIntent.id,
                     amount: additionalPrice
                 };
+
+                // Record revenue statistics for the extension payment
+                try {
+                    if (reservation.lotId.rateType === 'Hourly' || (reservation.lotId.features && reservation.lotId.features.isMetered)) {
+                        await RevenueStatistics.recordMeteredPurchase(additionalPrice);
+                        console.log(`Recorded metered parking extension revenue: $${additionalPrice} for reservation at ${reservation.lotId.name}`);
+                    } else {
+                        // For other types of reservations, record as permit revenue
+                        await RevenueStatistics.recordPermitPurchase(additionalPrice);
+                        console.log(`Recorded extension revenue: $${additionalPrice} for reservation at ${reservation.lotId.name}`);
+                    }
+                } catch (revenueError) {
+                    console.error('Failed to record extension revenue statistics:', revenueError);
+                    // Continue processing even if revenue recording fails
+                }
             } catch (stripeError) {
                 console.error('Stripe payment failed for extension:', stripeError);
                 return res.status(400).json({
@@ -579,6 +638,41 @@ router.post('/:id/extend', verifyToken, async (req, res) => {
                 `Your reservation at ${reservation.lotId.name} has been extended for ${additionalHours} hours.`,
                 '/dashboard'
             );
+
+            // Send email notification about the reservation extension
+            try {
+                // Get user details for email
+                const user = await User.findById(req.user.userId);
+
+                if (user && user.email) {
+                    // Send email notification about the extension
+                    const emailResult = await emailService.sendReservationConfirmation(
+                        user.email,
+                        `${user.firstName} ${user.lastName}`,
+                        {
+                            _id: reservation._id,
+                            id: reservation.reservationId,
+                            lotId: reservation.lotId,
+                            startTime: reservation.startTime,
+                            endTime: newEndTime, // Updated end time
+                            status: reservation.status,
+                            totalPrice: reservation.totalPrice,
+                            additionalInfo: {
+                                isExtension: true,
+                                additionalHours: additionalHours,
+                                additionalPrice: additionalPrice,
+                                extensionMessage: `Your reservation has been extended for ${additionalHours} additional hours.`
+                            }
+                        },
+                        process.env.CLIENT_BASE_URL || process.env.PROD_CLIENT_URL || 'https://p4sbu-parking-app-8897a44819c2.herokuapp.com' || 'http://localhost:5173'
+                    );
+
+                    console.log(`Reservation extension email sent to ${user.email}: ${emailResult.success ? emailResult.messageId || 'success' : 'failed'}`);
+                }
+            } catch (emailError) {
+                console.error('Failed to send reservation extension email:', emailError);
+                // Continue even if email sending fails
+            }
         } catch (error) {
             console.error('Error creating notification:', error);
         }
@@ -788,13 +882,20 @@ router.post('/', verifyToken, async (req, res) => {
                     await oldPermit.save();
 
                     refundResult = {
-                        success: true,
+                        customerId: user.stripeCustomerId,
                         refundId: refund.id,
                         amount: refund.amount / 100,
                         status: refund.status
                     };
 
-                    console.log(`Successfully refunded permit ${oldPermit.permitNumber} (${oldPermit.permitType})`);
+                    // Record permit refund in revenue statistics
+                    try {
+                        await RevenueStatistics.recordRefund(refund.amount / 100);
+                        console.log(`Recorded permit refund: $${refund.amount / 100} for ${oldPermit.permitType} permit`);
+                    } catch (revenueError) {
+                        console.error('Failed to record permit refund in revenue statistics:', revenueError);
+                        // Continue processing even if revenue recording fails
+                    }
 
                     // Notify user of refund
                     try {
@@ -934,6 +1035,25 @@ router.post('/', verifyToken, async (req, res) => {
                 stripePaymentIntentId = paymentIntent.id;
                 stripePaymentMethodId = paymentInfo.paymentMethodId;
                 stripeReceiptUrl = paymentIntent.charges?.data[0]?.receipt_url || null;
+
+                // Record revenue statistics for this payment if it was successful
+                if (paymentStatus === 'completed' && totalPrice > 0) {
+                    try {
+                        // Only hourly parking revenue is tracked here (permit revenue is tracked separately)
+                        if (lot.rateType === 'Hourly' || (lot.features && lot.features.isMetered)) {
+                            await RevenueStatistics.recordMeteredPurchase(totalPrice);
+                            console.log(`Recorded metered parking revenue: $${totalPrice} for reservation at ${lot.name}`);
+                        } else {
+                            // For other types of non-permit reservations, record as permit revenue
+                            // since there isn't a specific category for non-metered, non-permit reservations
+                            await RevenueStatistics.recordPermitPurchase(totalPrice);
+                            console.log(`Recorded reservation revenue: $${totalPrice} for reservation at ${lot.name}`);
+                        }
+                    } catch (revenueError) {
+                        console.error('Failed to record revenue statistics:', revenueError);
+                        // Continue processing even if revenue recording fails
+                    }
+                }
             } catch (stripeError) {
                 console.error('Stripe payment failed:', stripeError);
                 return res.status(400).json({
@@ -999,6 +1119,12 @@ router.post('/', verifyToken, async (req, res) => {
                 // Trim permitType to remove any trailing/leading spaces
                 const cleanPermitType = permitType ? permitType.trim() : permitType;
 
+                // Extract the base permit type without the word "Permit" if present
+                let basePermitType = cleanPermitType;
+                if (basePermitType && basePermitType.endsWith(' Permit')) {
+                    basePermitType = basePermitType.replace(' Permit', '');
+                }
+
                 // Create a new permit with end date 4 months from now
                 const fourMonthsFromNow = new Date();
                 fourMonthsFromNow.setMonth(fourMonthsFromNow.getMonth() + 4);
@@ -1008,8 +1134,8 @@ router.post('/', verifyToken, async (req, res) => {
 
                 newPermit = new Permit({
                     permitNumber,
-                    permitName: `${cleanPermitType} Permit`,
-                    permitType: cleanPermitType,
+                    permitName: `${cleanPermitType}`,
+                    permitType: basePermitType,
                     userId: req.user.userId,
                     userFullName: `${user.firstName} ${user.lastName}`,
                     userEmail: user.email,
@@ -1031,6 +1157,17 @@ router.post('/', verifyToken, async (req, res) => {
                 await newPermit.save();
                 console.log('New permit created:', newPermit._id);
 
+                // Record permit purchase in revenue statistics
+                try {
+                    if (newPermit.price > 0 && newPermit.paymentStatus === 'paid') {
+                        await RevenueStatistics.recordPermitPurchase(newPermit.price);
+                        console.log(`Recorded permit purchase revenue: $${newPermit.price} for ${newPermit.permitName}`);
+                    }
+                } catch (revenueError) {
+                    console.error('Failed to record permit purchase revenue:', revenueError);
+                    // Continue processing even if revenue recording fails
+                }
+
                 // Create notification for permit
                 try {
                     await NotificationHelper.createSystemNotification(
@@ -1039,6 +1176,45 @@ router.post('/', verifyToken, async (req, res) => {
                         `Your ${cleanPermitType} permit has been created and is now active until ${fourMonthsFromNow.toLocaleDateString()}.`,
                         '/dashboard'
                     );
+
+                    // Send email notification about the new permit
+                    try {
+                        if (user.email) {
+                            // Send email notification about the permit
+                            const emailResult = await emailService.sendReservationConfirmation(
+                                user.email,
+                                `${user.firstName} ${user.lastName}`,
+                                {
+                                    _id: newPermit._id,
+                                    id: newPermit.permitNumber,
+                                    lotId: { name: lot.name },
+                                    startTime: newPermit.startDate,
+                                    endTime: newPermit.endDate,
+                                    status: 'Permit Created',
+                                    totalPrice: newPermit.price,
+                                    permitDetails: {
+                                        permitType: cleanPermitType,
+                                        permitNumber: newPermit.permitNumber
+                                    },
+                                    // Add receipt information if payment was processed
+                                    receiptInfo: newPermit.price > 0 && stripePaymentIntentId ? {
+                                        paymentId: stripePaymentIntentId,
+                                        paymentDate: new Date(),
+                                        paymentMethod: stripePaymentMethodId ? 'Credit Card' : 'Online Payment',
+                                        receiptUrl: stripeReceiptUrl || null,
+                                        amount: newPermit.price,
+                                        description: `Payment for ${cleanPermitType} Permit - Valid until ${fourMonthsFromNow.toLocaleDateString()}`
+                                    } : null
+                                },
+                                process.env.CLIENT_BASE_URL || process.env.PROD_CLIENT_URL || 'https://p4sbu-parking-app-8897a44819c2.herokuapp.com' || 'http://localhost:5173'
+                            );
+
+                            console.log(`Permit creation email sent to ${user.email}: ${emailResult.success ? emailResult.messageId || 'success' : 'failed'}`);
+                        }
+                    } catch (emailError) {
+                        console.error('Failed to send permit creation email:', emailError);
+                        // Continue even if email sending fails
+                    }
                 } catch (notificationError) {
                     console.error('Error creating permit notification:', notificationError);
                 }
@@ -1119,6 +1295,24 @@ router.post('/', verifyToken, async (req, res) => {
                 `Your reservation at ${lot.name} has been confirmed.`,
                 '/dashboard'
             );
+
+            // Send email notification about the new reservation
+            try {
+                if (user.email) {
+                    // Send email notification about the reservation
+                    const emailResult = await emailService.sendReservationConfirmation(
+                        user.email,
+                        `${user.firstName} ${user.lastName}`,
+                        savedReservation,
+                        process.env.CLIENT_BASE_URL || process.env.PROD_CLIENT_URL || 'https://p4sbu-parking-app-8897a44819c2.herokuapp.com' || 'http://localhost:5173'
+                    );
+
+                    console.log(`Reservation confirmation email sent to ${user.email}: ${emailResult.success ? emailResult.messageId || 'success' : 'failed'}`);
+                }
+            } catch (emailError) {
+                console.error('Failed to send reservation confirmation email:', emailError);
+                // Continue even if email sending fails
+            }
         } catch (notificationError) {
             console.error('Error creating notification:', notificationError);
         }
