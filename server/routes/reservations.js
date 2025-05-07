@@ -999,6 +999,12 @@ router.post('/', verifyToken, async (req, res) => {
                 // Trim permitType to remove any trailing/leading spaces
                 const cleanPermitType = permitType ? permitType.trim() : permitType;
 
+                // Extract the base permit type without the word "Permit" if present
+                let basePermitType = cleanPermitType;
+                if (basePermitType && basePermitType.endsWith(' Permit')) {
+                    basePermitType = basePermitType.replace(' Permit', '');
+                }
+
                 // Create a new permit with end date 4 months from now
                 const fourMonthsFromNow = new Date();
                 fourMonthsFromNow.setMonth(fourMonthsFromNow.getMonth() + 4);
@@ -1008,8 +1014,8 @@ router.post('/', verifyToken, async (req, res) => {
 
                 newPermit = new Permit({
                     permitNumber,
-                    permitName: `${cleanPermitType} Permit`,
-                    permitType: cleanPermitType,
+                    permitName: `${cleanPermitType}`,
+                    permitType: basePermitType,
                     userId: req.user.userId,
                     userFullName: `${user.firstName} ${user.lastName}`,
                     userEmail: user.email,
