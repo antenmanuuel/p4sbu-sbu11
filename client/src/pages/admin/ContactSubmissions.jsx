@@ -128,17 +128,28 @@ const ContactSubmissions = ({ darkMode, isAuthenticated }) => {
             const result = await AdminService.updateContactSubmission(selectedSubmission._id, { status });
 
             if (result.success) {
-                // Update the submission in the list
+                // Extract the updated submission data from the response
+                const updatedSubmission = result.data.data.data || result.data.data;
+
+                // Update the submission in the list with the correct path in the response
                 const updatedSubmissions = submissions.map((sub) =>
-                    sub._id === selectedSubmission._id ? result.data.data : sub
+                    sub._id === selectedSubmission._id ? updatedSubmission : sub
                 );
 
+                // Update both states with the correct data
                 setSubmissions(updatedSubmissions);
-                setSelectedSubmission(result.data.data);
+                setSelectedSubmission(updatedSubmission);
                 setStatusUpdateSuccess(true);
 
                 // Refresh counts
                 fetchCounts();
+
+                // Force rerender of the current view
+                if (filter !== 'all' && status !== filter) {
+                    // If filtered view and status changed to something not in filter,
+                    // fetch submissions to update the list correctly
+                    fetchSubmissions();
+                }
             } else {
                 setError(result.error || 'Failed to update status');
             }
@@ -185,17 +196,26 @@ const ContactSubmissions = ({ darkMode, isAuthenticated }) => {
             });
 
             if (result.success) {
+                // Extract the updated submission from the response
+                const updatedSubmission = result.data.data.submission;
+
                 // Update the selected submission with the new data
-                setSelectedSubmission(result.data.data.submission);
+                setSelectedSubmission(updatedSubmission);
                 setFollowupMessage('');
                 setFollowupSuccess(true);
 
                 // Also update the submission in the list
                 const updatedSubmissions = submissions.map((sub) =>
-                    sub._id === selectedSubmission._id ? result.data.data.submission : sub
+                    sub._id === selectedSubmission._id ? updatedSubmission : sub
                 );
 
                 setSubmissions(updatedSubmissions);
+
+                // If follow-up changed status (e.g., from new to in-progress)
+                // and we're in a filtered view, we may need to refresh the list
+                if (filter !== 'all' && updatedSubmission.status !== selectedSubmission.status) {
+                    fetchSubmissions();
+                }
 
                 // Refresh counts in case status changed
                 fetchCounts();

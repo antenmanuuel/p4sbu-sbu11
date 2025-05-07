@@ -83,7 +83,7 @@ const AboutUs = ({ darkMode, user }) => {
                             </p>
 
                             <div className="mt-6">
-                                <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'} flex items-center`}>
+                                <p className={`text-base ${darkMode ? 'text-gray-300' : 'text-gray-700'} flex items-center`}>
                                     <FaInfoCircle className="flex-shrink-0 mr-2" />
                                     This project is designed to complement the official <a href="https://www.stonybrook.edu/mobility-and-parking/#" target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline">Mobility & Parking Services</a> at Stony Brook University.
                                 </p>
@@ -186,7 +186,7 @@ const AboutUs = ({ darkMode, user }) => {
                                 {feature.description}
                             </p>
                             <div className="mt-4 text-center">
-                                <span className={`inline-flex items-center text-sm font-medium ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
+                                <span className={`inline-flex items-center text-base font-medium ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
                                     Learn more <FaExternalLinkAlt className="ml-1 w-3 h-3" />
                                 </span>
                             </div>

@@ -1,15 +1,15 @@
- /**
- * This module provides email delivery functionality throughout the application,
- * handling various types of notifications including:
- * - Password reset requests
- * - Reservation confirmations and updates
- * - Citation/fine notifications
- * - Contact form submissions and responses
- * - Account registration and approval
- * 
- * It uses nodemailer with Gmail SMTP for delivery and includes fallback
- * behavior when email credentials are not configured.
- */
+/**
+* This module provides email delivery functionality throughout the application,
+* handling various types of notifications including:
+* - Password reset requests
+* - Reservation confirmations and updates
+* - Citation/fine notifications
+* - Contact form submissions and responses
+* - Account registration and approval
+* 
+* It uses nodemailer with Gmail SMTP for delivery and includes fallback
+* behavior when email credentials are not configured.
+*/
 
 // Import the nodemailer library for sending emails
 const nodemailer = require('nodemailer');
@@ -19,6 +19,9 @@ require('dotenv').config();
 // Variables to track email configuration state
 let transporter;
 let emailConfigured = false;
+
+// Define the production URL as specified
+const PRODUCTION_URL = 'https://p4sbu-parking-app-8897a44819c2.herokuapp.com';
 
 /**
  * EMAIL SERVICE INITIALIZATION
@@ -105,7 +108,9 @@ const emailService = {
             console.log('- Recipient:', to);
 
             // Sanitize the base URL to prevent URL construction issues
-            const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+            const cleanBaseUrl = baseUrl ?
+                (baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl) :
+                (process.env.PROD_CLIENT_URL || PRODUCTION_URL || 'http://localhost:5173');
 
             // Construct the complete reset URL for the user to click
             const resetUrl = `${cleanBaseUrl}/reset-password/${token}`;
@@ -175,7 +180,7 @@ const emailService = {
             // Validate baseUrl to prevent errors
             if (typeof baseUrl !== 'string') {
                 console.warn('Invalid baseUrl provided to sendReservationConfirmation:', baseUrl);
-                baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_BASE_URL || 'http://localhost:5173';
+                baseUrl = process.env.PROD_CLIENT_URL || PRODUCTION_URL || 'http://localhost:5173';
             }
 
             // Format dates for user-friendly display
@@ -188,6 +193,7 @@ const emailService = {
 
             // Determine the type of notification (cancellation, reminder, or confirmation)
             const isCancelled = reservation.status === 'cancelled';
+            const isExtension = reservation.additionalInfo && reservation.additionalInfo.isExtension;
 
             // Set appropriate subject based on notification type
             let subject;
@@ -195,6 +201,8 @@ const emailService = {
                 subject = 'Parking Reservation Reminder';
             } else if (isCancelled) {
                 subject = 'Parking Reservation Cancelled';
+            } else if (isExtension) {
+                subject = 'Parking Reservation Extended';
             } else {
                 subject = 'Parking Reservation Confirmation';
             }
@@ -207,6 +215,10 @@ const emailService = {
             } else if (isCancelled) {
                 heading = 'Reservation Cancellation';
                 message = 'Your parking reservation has been cancelled. Here are the details:';
+            } else if (isExtension) {
+                heading = 'Reservation Extended';
+                message = reservation.additionalInfo.extensionMessage ||
+                    `Your parking reservation has been extended for ${reservation.additionalInfo.additionalHours} hours. Here are the updated details:`;
             } else {
                 heading = 'Reservation Confirmation';
                 message = 'Your parking reservation has been confirmed. Here are the details:';
@@ -245,11 +257,47 @@ const emailService = {
               <a href="${reservationUrl}" style="background-color: #cc0000; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">View Reservation</a>
             </div>
             
+            ${isExtension && reservation.additionalInfo ? `
+            <div style="background-color: #f0f9ff; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #3b82f6;">
+              <p><strong>Extension Details:</strong></p>
+              <p>Added time: ${reservation.additionalInfo.additionalHours} hours</p>
+              ${reservation.additionalInfo.additionalPrice > 0 ?
+                            `<p>Additional cost: $${parseFloat(reservation.additionalInfo.additionalPrice).toFixed(2)}</p>` :
+                            ''}
+            </div>
+            ` : ''}
+            
+            ${reservation.permitDetails ? `
+            <div style="background-color: #f0f8ea; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #10b981;">
+              <p><strong>Permit Details:</strong></p>
+              <p>Type: ${reservation.permitDetails.permitType}</p>
+              <p>Permit Number: ${reservation.permitDetails.permitNumber}</p>
+              <p>Valid From: ${new Date(reservation.startTime).toLocaleDateString()}</p>
+              <p>Valid Until: ${new Date(reservation.endTime).toLocaleDateString()}</p>
+            </div>
+            ` : ''}
+            
+            ${reservation.receiptInfo ? `
+            <div style="background-color: #fff8e6; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+              <h3 style="margin-top: 0; color: #333;">Payment Receipt</h3>
+              <p><strong>Payment Date:</strong> ${new Date(reservation.receiptInfo.paymentDate).toLocaleString()}</p>
+              <p><strong>Amount Paid:</strong> $${parseFloat(reservation.receiptInfo.amount).toFixed(2)}</p>
+              <p><strong>Payment Method:</strong> ${reservation.receiptInfo.paymentMethod}</p>
+              <p><strong>Description:</strong> ${reservation.receiptInfo.description}</p>
+              <p><strong>Transaction ID:</strong> ${reservation.receiptInfo.paymentId}</p>
+              ${reservation.receiptInfo.receiptUrl ?
+                            `<p><a href="${reservation.receiptInfo.receiptUrl}" target="_blank" style="color: #cc0000; text-decoration: underline;">View Detailed Receipt</a></p>` :
+                            ''}
+            </div>
+            ` : ''}
+            
             <p>${isCancelled
                         ? 'If you believe this cancellation was made in error, please contact our support team.'
                         : isReminder
                             ? 'Remember to arrive on time for your reservation. If you need to make any changes, please do so at least 2 hours before the scheduled start time.'
-                            : 'Thank you for using the SBU Parking System. If you need to make any changes to your reservation, please visit your dashboard.'}</p>
+                            : isExtension
+                                ? 'The end time of your reservation has been updated. You can view the details in your dashboard.'
+                                : 'Thank you for using the SBU Parking System. If you need to make any changes to your reservation, please visit your dashboard.'}</p>
             
             <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
             <p style="color: #666; text-align: center; font-size: 12px;">
@@ -299,7 +347,9 @@ const emailService = {
             const dueDate = citation.dueDate ? new Date(citation.dueDate).toLocaleDateString() : 'Two weeks from issue date';
 
             // Create URL for viewing/paying the citation
-            const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+            const cleanBaseUrl = baseUrl ?
+                (baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl) :
+                (process.env.PROD_CLIENT_URL || PRODUCTION_URL || 'http://localhost:5173');
             const citationUrl = `${cleanBaseUrl}/past-citations`;
 
             // Set subject based on whether this is a payment confirmation or citation notice
@@ -633,7 +683,7 @@ const emailService = {
         try {
             // Ensure baseUrl is a string
             if (typeof baseUrl !== 'string') {
-                baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_BASE_URL || 'http://localhost:5173';
+                baseUrl = process.env.PROD_CLIENT_URL || PRODUCTION_URL || 'http://localhost:5173';
             }
 
             // Create login URL
@@ -712,7 +762,7 @@ const emailService = {
         try {
             // Ensure baseUrl is a string
             if (typeof baseUrl !== 'string') {
-                baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_BASE_URL || 'http://localhost:5173';
+                baseUrl = process.env.PROD_CLIENT_URL || PRODUCTION_URL || 'http://localhost:5173';
             }
 
             // Create dashboard URL
