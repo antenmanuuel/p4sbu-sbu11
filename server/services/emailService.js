@@ -1,4 +1,4 @@
- /**
+/**
  * This module provides email delivery functionality throughout the application,
  * handling various types of notifications including:
  * - Password reset requests
@@ -19,6 +19,9 @@ require('dotenv').config();
 // Variables to track email configuration state
 let transporter;
 let emailConfigured = false;
+
+// Define the production URL as specified
+const PRODUCTION_URL = 'https://p4sbu-parking-app-8897a44819c2.herokuapp.com';
 
 /**
  * EMAIL SERVICE INITIALIZATION
@@ -105,7 +108,9 @@ const emailService = {
             console.log('- Recipient:', to);
 
             // Sanitize the base URL to prevent URL construction issues
-            const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+            const cleanBaseUrl = baseUrl ?
+                (baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl) :
+                (process.env.PROD_CLIENT_URL || PRODUCTION_URL || 'http://localhost:5173');
 
             // Construct the complete reset URL for the user to click
             const resetUrl = `${cleanBaseUrl}/reset-password/${token}`;
@@ -175,7 +180,7 @@ const emailService = {
             // Validate baseUrl to prevent errors
             if (typeof baseUrl !== 'string') {
                 console.warn('Invalid baseUrl provided to sendReservationConfirmation:', baseUrl);
-                baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_BASE_URL || 'http://localhost:5173';
+                baseUrl = process.env.PROD_CLIENT_URL || PRODUCTION_URL || 'http://localhost:5173';
             }
 
             // Format dates for user-friendly display
@@ -299,7 +304,9 @@ const emailService = {
             const dueDate = citation.dueDate ? new Date(citation.dueDate).toLocaleDateString() : 'Two weeks from issue date';
 
             // Create URL for viewing/paying the citation
-            const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+            const cleanBaseUrl = baseUrl ?
+                (baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl) :
+                (process.env.PROD_CLIENT_URL || PRODUCTION_URL || 'http://localhost:5173');
             const citationUrl = `${cleanBaseUrl}/past-citations`;
 
             // Set subject based on whether this is a payment confirmation or citation notice
@@ -633,7 +640,7 @@ const emailService = {
         try {
             // Ensure baseUrl is a string
             if (typeof baseUrl !== 'string') {
-                baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_BASE_URL || 'http://localhost:5173';
+                baseUrl = process.env.PROD_CLIENT_URL || PRODUCTION_URL || 'http://localhost:5173';
             }
 
             // Create login URL
@@ -712,7 +719,7 @@ const emailService = {
         try {
             // Ensure baseUrl is a string
             if (typeof baseUrl !== 'string') {
-                baseUrl = process.env.PROD_CLIENT_URL || process.env.CLIENT_BASE_URL || 'http://localhost:5173';
+                baseUrl = process.env.PROD_CLIENT_URL || PRODUCTION_URL || 'http://localhost:5173';
             }
 
             // Create dashboard URL
