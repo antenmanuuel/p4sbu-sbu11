@@ -21,10 +21,9 @@ export default defineConfig({
     include: [
       'react',
       'react-dom',
-      'react-icons',
       'react-router',
       'react-router-dom'
     ]
   },
-  base: '/'  // changed from './' for proper absolute paths in production
+  base: '/'
 })

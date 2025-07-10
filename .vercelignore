@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+server/node_modules/
+client/node_modules/
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+server/.env
+client/.env
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Coverage and test files
+coverage/
+server/coverage/
+client/coverage/
+*.test.js
+**/*.test.js
+/server/tests/
+/client/cypress/
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build artifacts (client dist will be handled separately)
+client/dist/
+server/dist/
+
+# Heroku specific files (no longer needed)
+Procfile
+HEROKU_DEPLOYMENT.md
+HEROKU_ENV_SETUP.md
+
+# Documentation and scripts that aren't needed for deployment
+docs/
+scripts/
+*.md
+!VERCEL_DEPLOYMENT.md
+
+# Zone Identifier files
+*.Zone.Identifier 

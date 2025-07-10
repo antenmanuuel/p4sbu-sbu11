@@ -27,6 +27,7 @@ try {
     const cors = require('cors');
     // Database connection utility
     const { connectDB } = require('./config/db');
+    const mongoose = require('mongoose');
 
     //  ROUTE IMPORTS 
     // Import all route handlers to organize API endpoints by functionality
@@ -44,6 +45,7 @@ try {
     const revenueStatisticsRoutes = require('./routes/statistics'); // Financial reporting
     const contactRoutes = require('./routes/contact');       // Contact form and support
     const eventParkingRoutes = require('./routes/eventParking'); // Special event parking requests
+    const chatbotRoutes = require('./routes/chatbot');       // Chatbot API endpoints
 
     //  UTILITY IMPORTS 
     // Path: For file path operations, used for serving static files
@@ -237,6 +239,7 @@ try {
     app.use('/api/statistics', revenueStatisticsRoutes); // General statistics endpoints
     app.use('/api/contact', contactRoutes);         // Contact and support messaging
     app.use('/api/event-parking', eventParkingRoutes); // Special event parking requests
+    app.use('/api/chatbot', chatbotRoutes);         // Chatbot API endpoints
 
     //  HEALTH CHECK ENDPOINT 
     // Simple endpoint to verify the server is running
@@ -377,10 +380,13 @@ try {
 
     //  START SERVER 
     // Initialize the server with the configured port
-    startServer(PORT);
+    if (process.env.VERCEL) {
+        module.exports = app;
+    } else {
+        startServer(PORT);
+    }
 
 } catch (error) {
-    // Handle any uncaught errors during server initialization
     console.error('Fatal error during server initialization:', error);
     process.exit(1);
 }

@@ -152,6 +152,10 @@ STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
 # Relic configuration
 NEW_RELIC_APP_NAME=P4SBU
 NEW_RELIC_LICENSE_KEY=your_new_relic_license_key
+
+# Gemini AI configuration for chatbot
+# Get your API key from: https://makersuite.google.com/app/apikey
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 Create a `.env` file in the client directory with the following variables:
@@ -528,6 +532,19 @@ p4sbu-sbu11/
 ├── cypress.config.js        # Main Cypress configuration
 └── README.md                # Project documentation
 ```
+
+## Deployment
+
+The application is configured for deployment on **Vercel**. See [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md) for detailed deployment instructions.
+
+### Quick Deploy to Vercel
+
+1. Fork this repository
+2. Connect your GitHub repository to Vercel
+3. Configure environment variables in Vercel dashboard
+4. Deploy with one click
+
+For detailed setup instructions, environment variables, and troubleshooting, see the [Vercel Deployment Guide](VERCEL_DEPLOYMENT.md).
 
 ## License
 

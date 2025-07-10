@@ -32,6 +32,7 @@ import ManageEventRequests from './pages/admin/ManageEventRequests';
 import Notifications from './pages/Notifications.jsx';
 import PaymentComplete from './components/PaymentComplete.jsx';
 import InactivityTimer from './components/InactivityTimer.jsx';
+import Chatbot from './components/Chatbot.jsx';
 import EventParkingRequest from './pages/faculty/EventParkingRequest.jsx';
 import EventParkingRequests from './pages/faculty/EventParkingRequests.jsx';
 import EventParkingDetail from './pages/faculty/EventParkingDetail.jsx';
@@ -205,6 +206,13 @@ const AppContent = () => {
         isAuthenticated={isAuthenticated}
         onLogout={handleSessionTimeout}
         inactivityTimeout={inactivityTimeout}
+      />
+
+      {/* Chatbot */}
+      <Chatbot
+        darkMode={darkMode}
+        user={user}
+        isAuthenticated={isAuthenticated}
       />
 
       <Routes>

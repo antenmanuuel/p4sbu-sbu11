@@ -9,9 +9,15 @@
         "debug": "nodemon --inspect server.js",
         "test": "jest --detectOpenHandles",
         "test:watch": "jest --watch",
-        "test:concurrency": "node tests/concurrencyTest.js"
+        "test:concurrency": "node tests/concurrencyTest.js",
+        "test:gemini": "node scripts/test-gemini.js",
+        "test:parking": "node scripts/test-comprehensive-parking.js",
+        "list:buildings": "node scripts/list-buildings.js"
     },
     "dependencies": {
+        "@google/generative-ai": "^0.21.0",
+        "@supabase/supabase-js": "^2.50.2",
+        "axios": "^1.6.0",
         "bcrypt": "^5.1.1",
         "bcryptjs": "^3.0.2",
         "cors": "^2.8.5",
@@ -29,7 +35,7 @@
         "nodemailer-mailgun-transport": "^2.1.5",
         "pdfkit": "^0.16.0",
         "stripe": "^17.7.0",
-        "axios": "^1.6.0"
+        "supabase": "^2.30.4"
     },
     "devDependencies": {
         "jest": "^29.7.0",
@@ -38,7 +44,7 @@
         "supertest": "^6.3.4"
     },
     "engines": {
-        "node": "20.x",
+        "node": "22.x",
         "npm": "10.x"
     }
 }

@@ -2,13 +2,13 @@
   "name": "p4sbu-sbu11",
   "version": "1.0.0",
   "description": "Parking Management System",
-  "engines": {
-    "node": "20.x",
+ "engines": {
+    "node": "22.x",
     "npm": "10.x"
   },
   "scripts": {
     "start": "cd server && npm start",
-    "build": "cd client && npm install --include=dev && npm run build",
+    "build": "NPM_CONFIG_PRODUCTION=false npm run install-client && cd client && npm run build",
     "install-server": "cd server && npm install",
     "install-client": "cd client && npm install --include=dev --force",
     "heroku-postbuild": "NPM_CONFIG_PRODUCTION=false npm run install-server && npm run install-client && npm run build"

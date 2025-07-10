@@ -78,7 +78,56 @@ const LotSchema = new mongoose.Schema({
         isAccessible: {
             type: Boolean,
             default: false
+        },
+        isSemesterBased: {
+            type: Boolean,
+            default: false
         }
+    },
+    operatingHours: {
+        monday: {
+            start: { type: String, default: '00:00' },
+            end: { type: String, default: '23:59' },
+            isEnforced: { type: Boolean, default: true }
+        },
+        tuesday: {
+            start: { type: String, default: '00:00' },
+            end: { type: String, default: '23:59' },
+            isEnforced: { type: Boolean, default: true }
+        },
+        wednesday: {
+            start: { type: String, default: '00:00' },
+            end: { type: String, default: '23:59' },
+            isEnforced: { type: Boolean, default: true }
+        },
+        thursday: {
+            start: { type: String, default: '00:00' },
+            end: { type: String, default: '23:59' },
+            isEnforced: { type: Boolean, default: true }
+        },
+        friday: {
+            start: { type: String, default: '00:00' },
+            end: { type: String, default: '23:59' },
+            isEnforced: { type: Boolean, default: true }
+        },
+        saturday: {
+            start: { type: String, default: '09:00' },
+            end: { type: String, default: '18:00' },
+            isEnforced: { type: Boolean, default: true }
+        },
+        sunday: {
+            start: { type: String, default: '12:00' },
+            end: { type: String, default: '20:00' },
+            isEnforced: { type: Boolean, default: true }
+        }
+    },
+    evSpaces: {
+        total: { type: Number, default: 0 },
+        available: { type: Number, default: 0 }
+    },
+    meteredSpaces: {
+        total: { type: Number, default: 0 },
+        available: { type: Number, default: 0 }
     }
 }, {
     timestamps: true // Adds createdAt and updatedAt fields
