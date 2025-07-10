@@ -251,10 +251,10 @@ try {
     //  PRODUCTION CONFIGURATION 
     // Serve static files from React app in production environment
     if (process.env.NODE_ENV === 'production') {
-        console.log(`Serving static files from: ${path.join(__dirname, '../client/dist')}`);
+        console.log(`Serving static files from: ${path.join(__dirname, 'dist')}`);
 
         // Serve static files (JS, CSS, images) from the React build folder
-        app.use(express.static(path.join(__dirname, '../client/dist'), {
+        app.use(express.static(path.join(__dirname, 'dist'), {
             setHeaders: (res, path) => {
                 // Set proper MIME types for different file types
                 // This ensures browsers interpret the files correctly
@@ -275,7 +275,7 @@ try {
         // This enables client-side routing with React Router
         app.get('*', (req, res) => {
             console.log(`Serving index.html for path: ${req.originalUrl}`);
-            res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+            res.sendFile(path.join(__dirname, 'dist/index.html'));
         });
     }
 
