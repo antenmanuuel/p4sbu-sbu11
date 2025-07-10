@@ -1,20 +1,18 @@
 {
   "version": 2,
-  "name": "p4sbu-parking-system",
   "builds": [
-    {
-      "src": "server/server.js",
-      "use": "@vercel/node",
-      "config": {
-        "maxLambdaSize": "50mb",
-        "maxDuration": 30
-      }
-    },
     {
       "src": "client/package.json",
       "use": "@vercel/static-build",
       "config": {
         "distDir": "dist"
+      }
+    },
+    {
+      "src": "server/server.js",
+      "use": "@vercel/node",
+      "config": {
+        "maxDuration": 30
       }
     }
   ],
@@ -24,19 +22,8 @@
       "dest": "server/server.js"
     },
     {
-      "src": "/webhook/(.*)",
-      "dest": "server/server.js"
-    },
-    {
-      "src": "/health",
-      "dest": "server/server.js"
-    },
-    {
       "src": "/(.*)",
-      "dest": "client/dist/$1"
+      "dest": "server/server.js"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 } 
